@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW 既存大会 Item 更新 人工確認版
 // @namespace    pw-existing-tournament-item-updater-ui
-// @version      0.6.2
+// @version      0.6.3
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js
 // @description  既存大会URLをPreview/Resolveで人工確認してから、USDT販売許可ON、任意数の販売項目を更新する。作成・時間変更・Ticket Linkなし。
@@ -1339,7 +1339,7 @@
     const explicit = normalizeText(t.itemUpdateMode || '').toLowerCase();
     if (['position', 'pos', '順番', '顺序'].includes(explicit)) return 'position';
     if (['name', 'nome', '名前', '名称'].includes(explicit)) return 'name';
-    return /物販/.test(normalizeText(t.name)) ? 'position' : 'name';
+    return 'position';
   }
 
   function formFieldsToObject(form) {
@@ -1422,16 +1422,44 @@
       .filter(el => normalizeText(el.getAttribute('data-nome') || el.getAttribute('data-siglas') || el.innerText || el.textContent || ''));
   }
 
+  function parseItemLabelFromElement(el) {
+    const rawText = normalizeText(el?.innerText || el?.textContent || '');
+    const dataNome = normalizeText(el?.getAttribute?.('data-nome') || '');
+    const dataSiglas = normalizeText(el?.getAttribute?.('data-siglas') || '');
+
+    let nome = dataNome;
+    let siglas = dataSiglas;
+
+    if (!nome || !siglas) {
+      const text = rawText
+        .replace(/\b(edit|editar|update|save|salvar|編集|更新|保存)\b/ig, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const codeThenName = text.match(/^([A-Za-z0-9_-]{1,16})\s+(.+)$/);
+      if (codeThenName) {
+        if (!siglas) siglas = normalizeText(codeThenName[1]);
+        if (!nome) nome = normalizeText(codeThenName[2]);
+      } else if (!nome && text) {
+        nome = text;
+      }
+    }
+
+    return { nome, siglas, rawText };
+  }
+
   function collectExistingItemsForApi() {
     return getExistingItemElements().map((el, index) => {
       const idInfo = getItemIdInfoFromElement(el);
+      const label = parseItemLabelFromElement(el);
 
       return {
         index: index + 1,
         id_item: idInfo.id_item,
         id_item_source: idInfo.source,
-        nome: normalizeText(el.getAttribute('data-nome') || ''),
-        siglas: normalizeText(el.getAttribute('data-siglas') || ''),
+        nome: label.nome,
+        siglas: label.siglas,
+        rawText: label.rawText,
         data: getElementDataAttrs(el)
       };
     });
@@ -1468,9 +1496,12 @@
 
     const wantedName = normalizeText(item.nome);
     const wantedSiglas = normalizeText(item.siglas);
+    const wantedNameCompact = compactText(wantedName);
 
     return existingItems.find(x =>
       (wantedName && normalizeText(x.nome) === wantedName) ||
+      (wantedNameCompact && compactText(x.nome).includes(wantedNameCompact)) ||
+      (wantedNameCompact && compactText(x.rawText).includes(wantedNameCompact)) ||
       (wantedSiglas && normalizeText(x.siglas) === wantedSiglas)
     ) || null;
   }
@@ -1509,6 +1540,23 @@
 
     const mode = getItemUpdateMode(t);
     const results = [];
+
+    (t.items || []).forEach((item, i) => {
+      const existing = findExistingItemForApi(info.existingItems, item, mode, i);
+      appendReportToState(
+        state,
+        'ITEM_ORDER_CHECK',
+        `${i + 1}: oldName=${existing?.nome || '(new)'} / oldSiglas=${existing?.siglas || ''} → update as ${item.nome} / ${item.siglas || ''}`
+      );
+    });
+
+    if (info.existingItems.length > (t.items || []).length) {
+      appendReportToState(
+        state,
+        'ITEM_ORDER_WARN',
+        `item count=${info.existingItems.length}, only first/matched ${t.items.length} will be updated`
+      );
+    }
 
     for (let i = 0; i < (t.items || []).length; i++) {
       const item = t.items[i];
@@ -1551,7 +1599,7 @@
         `insertFormFields=${Object.keys(info.insertFormFields).join(', ') || '(none)'}`,
         'existingItems:',
         ...info.existingItems.map(x =>
-          `${x.index}. id_item=${x.id_item || '(missing)'} / source=${x.id_item_source || '(missing)'} / nome=${x.nome || '(empty)'} / siglas=${x.siglas || '(empty)'} / data=${JSON.stringify(x.data)}`
+          `${x.index}. id_item=${x.id_item || '(missing)'} / source=${x.id_item_source || '(missing)'} / nome=${x.nome || '(empty)'} / siglas=${x.siglas || '(empty)'} / text=${x.rawText || '(empty)'} / data=${JSON.stringify(x.data)}`
         )
       ];
 
@@ -2232,7 +2280,7 @@ panel.innerHTML = `
 
       <div style="font-size:11px;color:#f6d365;line-height:1.35;">
         ※ Item列は Item1_Name / Item1_Value ... Item2_Name ... の形式<br>
-        ※ Item_Update_Mode: name=名前/Siglas一致、position=既存項目順に上書き<br>
+        ※ Item_Update_Mode: 空白/position=既存項目順に上書き、name=名前/Siglas一致<br>
         ※ 同名/同Siglasの既存項目があれば編集、なければ新增<br>
         ※ 旧 EN/RE/Ticket 表頭もまだ読み込み可能<br>
         ※ URL未解決 / AMBIGUOUS / bad cache が残る場合 START禁止<br>
