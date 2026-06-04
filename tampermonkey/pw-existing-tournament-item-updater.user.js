@@ -416,6 +416,19 @@
     return compactText(input) === compactText(actual);
   }
 
+  function isTournamentRowNameMatch(inputName, actualName, rowText = '') {
+    const input = compactText(inputName);
+    const actual = compactText(actualName);
+    const row = compactText(rowText);
+
+    if (!input) return false;
+    if (actual === input) return true;
+    if (actual && actual.includes(input)) return true;
+    if (row && row.includes(input)) return true;
+
+    return false;
+  }
+
   function validateUrlCacheItem(inputName, item, key = '') {
     const expectedName = normalizeText(inputName);
 
@@ -960,7 +973,7 @@
     for (const row of rows) {
       const found = extractTournamentFromRow(row, inputName);
       if (!found) continue;
-      if (!isSameTournamentExactSafe(inputName, found.actualName)) continue;
+      if (!isTournamentRowNameMatch(inputName, found.actualName, found.rowText)) continue;
       matches.push(found);
     }
 
@@ -970,6 +983,16 @@
       seen.add(x.painelUrl);
       return true;
     });
+
+    const exact = unique.filter(x => isSameTournamentExactSafe(inputName, x.actualName));
+
+    if (exact.length === 1) {
+      return { status: 'FOUND', match: exact[0] };
+    }
+
+    if (exact.length > 1) {
+      return { status: 'AMBIGUOUS', matches: exact };
+    }
 
     if (unique.length === 1) {
       return { status: 'FOUND', match: unique[0] };
@@ -1649,6 +1672,14 @@
       const urlId = getUrlId(url);
 
       if (!isSafeUrlStatus(status)) {
+        if (url && id && urlId) {
+          r.tournamentId = r.tournamentId || id;
+          r.url = url;
+          r.urlStatus = 'OK_MANUAL';
+          r.statusReason = r.statusReason || 'manual URL accepted at START';
+          return;
+        }
+
         errors.push(`${prefix} URLが安全確定していない: ${status || '(empty)'}`);
         return;
       }
@@ -1681,8 +1712,17 @@
       return;
     }
 
-    const dataErrors = validateTournamentList(candidates);
-    const urlErrors = validateCandidateUrlRows(candidates);
+    const tournaments = candidates
+      .filter(t => normalizeText(t.use) === '1')
+      .filter(t => isSafeUrlStatus(t.urlStatus) || normalizeText(t.url || t.tournamentId));
+
+    if (!tournaments.length) {
+      alert('USE=1 かつ URL安全確定済みの候補がありません。');
+      return;
+    }
+
+    const dataErrors = validateTournamentList(tournaments);
+    const urlErrors = validateCandidateUrlRows(tournaments);
     const errors = [...dataErrors, ...urlErrors];
 
     if (errors.length) {
@@ -1691,15 +1731,6 @@
         errors.slice(0, 20).join('\n') +
         (errors.length > 20 ? `\n...还有 ${errors.length - 20} 个` : '')
       );
-      return;
-    }
-
-    const tournaments = candidates
-      .filter(t => normalizeText(t.use) === '1')
-      .filter(t => isSafeUrlStatus(t.urlStatus));
-
-    if (!tournaments.length) {
-      alert('USE=1 かつ URL安全確定済みの候補がありません。');
       return;
     }
 
