@@ -1,7 +1,9 @@
-// ==UserScript==
+﻿// ==UserScript==
 // @name         PW Ticket Link 人工確認版 v1.0
 // @namespace    pw-ticket-link-manual-confirm
-// @version      1.0.0
+// @version      1.0.1
+// @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-manual-confirm.user.js
+// @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-manual-confirm.user.js
 // @description  TicketLink用ルール表から候補作成 → URL厳密確認 → USE候補でTicket Link実行。URL検索はOPEN/CLOSED両方、Ticket optionはtn_のみ。
 // @author       xhpc007 + ChatGPT
 // @match        https://japanopt.pokerweb.com.br/*

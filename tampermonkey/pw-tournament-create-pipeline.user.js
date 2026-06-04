@@ -1,7 +1,9 @@
-// ==UserScript==
+﻿// ==UserScript==
 // @name         PW Tournament Create Pipeline v1.1.1 設定欄版 wait改善
 // @namespace    pw-tournament-create-pipeline
-// @version      1.1.1
+// @version      1.1.2
+// @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-pipeline.user.js
+// @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-pipeline.user.js
 // @description  TSV設定欄から大会を一括作成し、仮想通貨販売・EN/RE/TE・Ticket Linkを状態機で実行する。旧成功版POST流を維持。
 // @author       xhpc007 + ChatGPT
 // @match        https://japanopt.pokerweb.com.br/cb/*

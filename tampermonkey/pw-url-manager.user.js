@@ -1,7 +1,9 @@
-// ==UserScript==
+﻿// ==UserScript==
 // @name         PW URL Cache Manager v0.6
 // @namespace    pw-shared-url-cache-manager
-// @version      0.6.1
+// @version      0.6.2
+// @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-url-manager.user.js
+// @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-url-manager.user.js
 // @description  PW大会URL共用缓存管理工具。大会名リスト検索 / イベントPrefix全ページ収集 / 汚染チェック・修復 / Sheet用TSV出力。
 // @author       xhpc007 + ChatGPT
 // @match        https://japanopt.pokerweb.com.br/cb/*

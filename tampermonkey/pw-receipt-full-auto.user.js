@@ -1,6 +1,8 @@
-// ==UserScript==
+﻿// ==UserScript==
 // @name         PW Receipt Full Auto v6.0
-// @version      6.0.0
+// @version      6.0.1
+// @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-full-auto.user.js
+// @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-full-auto.user.js
 // @description  申請管理から申請キー単位で読み、PDF管理庫で重複防止する統合版
 // @description  SheetからGame IDとイベント設定を読み、PW APIで参加大会・支払い情報を取得してReceiverへ送信する統合版
 // @match        https://japanopt.pokerweb.com.br/*

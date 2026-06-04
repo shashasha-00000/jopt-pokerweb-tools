@@ -1,7 +1,9 @@
-// ==UserScript==
+﻿// ==UserScript==
 // @name         PW Tournament CLOSE + AUDIT Batch 私用版 V0.2
 // @namespace    xhpc007-pw-close-audit-batch-private
-// @version      0.2.0
+// @version      0.2.1
+// @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-close-audit-batch.user.js
+// @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-close-audit-batch.user.js
 // @description  PW比赛批量 CLOSE / 監査 私用版。带URL抓取、URL Cache、队列执行、页面刷新接力。
 // @author       xhpc007 + ChatGPT
 // @match        https://japanopt.pokerweb.com.br/cb/*

@@ -1,7 +1,9 @@
-// ==UserScript==
+﻿// ==UserScript==
 // @name         PW 既存大会 EN/RE/TE 更新 人工確認版
 // @namespace    pw-existing-tournament-item-updater-ui
-// @version      0.5-manual-url-resolve
+// @version      0.5.1
+// @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js
+// @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js
 // @description  既存大会URLをPreview/Resolveで人工確認してから、USDT販売許可ON、Entry/Re Entry/Ticketを更新する。作成・時間変更・Ticket Linkなし。
 // @author       xhpc007 + ChatGPT
 // @match        https://japanopt.pokerweb.com.br/cb/*
