@@ -58,10 +58,10 @@
     afterPostMs: 700,
     afterReloadMs: 1200,
 
-    flowKey: 'PW_EXISTING_ITEM_UPDATE_UI_STATE_V04',
-    inputKey: 'PW_EXISTING_ITEM_UPDATE_UI_INPUT_V04',
-    candidateKey: 'PW_EXISTING_ITEM_UPDATE_UI_CANDIDATES_V05',
-    lastReportKey: 'PW_EXISTING_ITEM_UPDATE_UI_LAST_REPORT_V04'
+    flowKey: 'PW_EXISTING_ITEM_UPDATE_UI_STATE_V06',
+    inputKey: 'PW_EXISTING_ITEM_UPDATE_UI_INPUT_V06',
+    candidateKey: 'PW_EXISTING_ITEM_UPDATE_UI_CANDIDATES_V06',
+    lastReportKey: 'PW_EXISTING_ITEM_UPDATE_UI_LAST_REPORT_V06'
   };
 
   let manualStop = false;
@@ -759,6 +759,12 @@
     const urlId = getUrlId(inputUrl);
 
     if (inputUrl) {
+      if (!inputId && !urlId) {
+        row.urlStatus = 'URL_INPUT_INVALID';
+        row.statusReason = `input URL is not painel URL: ${inputUrl}`;
+        return row;
+      }
+
       if (inputId && urlId && inputId !== urlId) {
         row.urlStatus = 'CACHE_ID_MISMATCH';
         row.statusReason = `input id=${inputId} urlId=${urlId}`;
@@ -1007,6 +1013,7 @@
       'URL_CACHE_BAD_ROW',
       'URL_AMBIGUOUS',
       'AMBIGUOUS',
+      'URL_INPUT_INVALID',
       'CACHE_ID_MISMATCH',
       'CACHE_NAME_ACTUAL_MISMATCH'
     ].includes(normalizeText(c.urlStatus));
