@@ -16,7 +16,7 @@
 
   const CONFIG = {
     eventYear: 2026,
-    defaultDateRange: "01/01/2025 - 31/12/2026",
+    defaultDateRange: "02/01/2025 - 31/12/2026",
     fetchInformacoes: true,
     betweenPlayerMs: 300,
     betweenTournamentMs: 200,
