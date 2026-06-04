@@ -1,10 +1,10 @@
 ﻿// ==UserScript==
-// @name         PW 既存大会 EN/RE/TE 更新 人工確認版
+// @name         PW 既存大会 Item 更新 人工確認版
 // @namespace    pw-existing-tournament-item-updater-ui
-// @version      0.5.1
+// @version      0.6.0
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js
-// @description  既存大会URLをPreview/Resolveで人工確認してから、USDT販売許可ON、Entry/Re Entry/Ticketを更新する。作成・時間変更・Ticket Linkなし。
+// @description  既存大会URLをPreview/Resolveで人工確認してから、USDT販売許可ON、任意数の販売項目を更新する。作成・時間変更・Ticket Linkなし。
 // @author       xhpc007 + ChatGPT
 // @match        https://japanopt.pokerweb.com.br/cb/*
 // @match        https://japanopt.pokerweb.com.br/*
@@ -250,6 +250,103 @@
     return v;
   }
 
+  function itemFeeText(item) {
+    return feeText(item?.valor, item?.taxa);
+  }
+
+  function makeItem({ nome, siglas, valor, taxa, fichas, limite, reposicionar }) {
+    const cleanNome = normalizeText(nome);
+    const cleanValor = normalizeMoneyForPW(valor);
+
+    if (!cleanNome || !cleanValor) return null;
+
+    return {
+      nome: cleanNome,
+      siglas: normalizeText(siglas),
+      valor: cleanValor,
+      taxa: normalizeMoneyForPW(taxa || '0'),
+      fichas: normalizeMoneyForPW(fichas || '0'),
+      limite: normalizePlainNumber(limite, '0'),
+      reposicionar: normalizePlainNumber(reposicionar, '0')
+    };
+  }
+
+  function getItemLabel(item) {
+    const siglas = normalizeText(item?.siglas || '');
+    return siglas ? `${item.nome}/${siglas}` : item.nome;
+  }
+
+  function itemListText(items) {
+    return (items || [])
+      .map(item => `${getItemLabel(item)}=${itemFeeText(item)} / Chips=${item.fichas || '0'}`)
+      .join(' ; ');
+  }
+
+  function findDynamicItemNumbers(header) {
+    const numbers = new Set();
+
+    header.forEach(h => {
+      const m = normalizeText(h).match(/^Item\s*(\d+)(?:_|$)/i);
+      if (m) numbers.add(Number(m[1]));
+    });
+
+    return [...numbers].sort((a, b) => a - b);
+  }
+
+  function buildItemListFromColumns(idx, get, options = {}) {
+    const items = [];
+
+    if (options.includeLegacy) {
+      const entryItem = makeItem({
+        nome: DEFAULTS.entryNome,
+        siglas: DEFAULTS.entrySiglas,
+        valor: get(idx('EN', 'Entry', 'EN_Valor')),
+        taxa: get(idx('EN_Tax', 'EN Tax', 'EN_Taxa')),
+        fichas: get(idx('EN_Chips', 'EN Chips')),
+        limite: get(idx('EN_Limit', 'EN Limit')) || DEFAULTS.enLimit,
+        reposicionar: get(idx('EN_Reposicionar', 'EN_Repo')) || DEFAULTS.enReposicionar
+      });
+
+      const reItem = makeItem({
+        nome: DEFAULTS.reNome,
+        siglas: DEFAULTS.reSiglas,
+        valor: get(idx('RE', 'ReEntry', 'Re Entry', 'RE_Valor')),
+        taxa: get(idx('RE_Tax', 'RE Tax', 'RE_Taxa')),
+        fichas: get(idx('RE_Chips', 'RE Chips')),
+        limite: get(idx('RE_Limit', 'RE Limit')) || DEFAULTS.reLimit,
+        reposicionar: get(idx('RE_Reposicionar', 'RE_Repo')) || DEFAULTS.reReposicionar
+      });
+
+      const ticketItem = makeItem({
+        nome: DEFAULTS.ticketNome,
+        siglas: DEFAULTS.ticketSiglas,
+        valor: get(idx('Ticket', 'TE', 'TIX', 'Ticket_Valor')),
+        taxa: get(idx('Ticket_Tax', 'TE_Tax', 'TIX_Tax', 'Ticket Tax')),
+        fichas: get(idx('Ticket_Chips', 'TE_Chips', 'TIX_Chips', 'Ticket Chips')),
+        limite: get(idx('Ticket_Limit', 'TE_Limit', 'TIX_Limit', 'Ticket Limit')) || DEFAULTS.ticketLimit,
+        reposicionar: get(idx('Ticket_Reposicionar', 'TE_Repo', 'TIX_Repo', 'Ticket_Repo')) || DEFAULTS.ticketReposicionar
+      });
+
+      [entryItem, reItem, ticketItem].filter(Boolean).forEach(item => items.push(item));
+    }
+
+    findDynamicItemNumbers(options.header || []).forEach(n => {
+      const item = makeItem({
+        nome: get(idx(`Item${n}_Name`, `Item${n}_Nome`, `Item${n}_商品名`, `Item${n}_名前`)),
+        siglas: get(idx(`Item${n}_Siglas`, `Item${n}_Code`, `Item${n}_略称`)),
+        valor: get(idx(`Item${n}_Value`, `Item${n}_Valor`, `Item${n}_Price`, `Item${n}`)),
+        taxa: get(idx(`Item${n}_Tax`, `Item${n}_Taxa`, `Item${n}_Fee`)),
+        fichas: get(idx(`Item${n}_Chips`, `Item${n}_Fichas`)),
+        limite: get(idx(`Item${n}_Limit`, `Item${n}_Limite`)),
+        reposicionar: get(idx(`Item${n}_Reposicionar`, `Item${n}_Repo`))
+      });
+
+      if (item) items.push(item);
+    });
+
+    return items;
+  }
+
   function getNoFromName(name) {
     const s = normalizeText(name);
 
@@ -463,7 +560,8 @@
       firstCols.includes('大会名') ||
       firstCols.includes('EN') ||
       firstCols.includes('URL') ||
-      firstCols.includes('TournamentId');
+      firstCols.includes('TournamentId') ||
+      firstCols.some(h => /^Item\s*\d+/i.test(h));
 
     const defaultHeader = [
       'Name',
@@ -500,26 +598,6 @@
     const iTournamentId = idx('TournamentId', 'tournamentId', 'ID');
     const iUrl = idx('URL', 'Url');
 
-    const iEN = idx('EN', 'Entry', 'EN_Valor');
-    const iENTax = idx('EN_Tax', 'EN Tax', 'EN_Taxa');
-    const iENChips = idx('EN_Chips', 'EN Chips');
-
-    const iRE = idx('RE', 'ReEntry', 'Re Entry', 'RE_Valor');
-    const iRETax = idx('RE_Tax', 'RE Tax', 'RE_Taxa');
-    const iREChips = idx('RE_Chips', 'RE Chips');
-
-    const iTicket = idx('Ticket', 'TE', 'Ticket_Valor');
-    const iTicketTax = idx('Ticket_Tax', 'TE_Tax', 'Ticket Tax');
-    const iTicketChips = idx('Ticket_Chips', 'TE_Chips', 'Ticket Chips');
-
-    const iENLimit = idx('EN_Limit', 'EN Limit');
-    const iRELimit = idx('RE_Limit', 'RE Limit');
-    const iTicketLimit = idx('Ticket_Limit', 'TE_Limit', 'Ticket Limit');
-
-    const iENRepo = idx('EN_Reposicionar', 'EN_Repo');
-    const iRERepo = idx('RE_Reposicionar', 'RE_Repo');
-    const iTicketRepo = idx('Ticket_Reposicionar', 'TE_Repo', 'Ticket_Repo');
-
     if (iName < 0) {
       throw new Error('TSV里找不到 Name 列');
     }
@@ -534,41 +612,19 @@
       const tournamentId = get(iTournamentId);
       const urlRaw = get(iUrl);
       const url = normalizeUrl(urlRaw || tournamentId);
-
-      const ticketValor = get(iTicket);
+      const items = buildItemListFromColumns(idx, get, { header, includeLegacy: true });
+      const entry = items.find(item => normalizeText(item.siglas) === DEFAULTS.entrySiglas) || {};
+      const reEntry = items.find(item => normalizeText(item.siglas) === DEFAULTS.reSiglas) || {};
+      const ticketEntry = items.find(item => ['Ti', 'TE', 'TIX'].includes(normalizeText(item.siglas))) || null;
 
       return {
         name,
         tournamentId,
         url,
-
-        entry: {
-          valor: normalizeMoneyForPW(get(iEN)),
-          taxa: normalizeMoneyForPW(get(iENTax) || '0'),
-          fichas: normalizeMoneyForPW(get(iENChips)),
-          limite: normalizePlainNumber(get(iENLimit), DEFAULTS.enLimit),
-          reposicionar: normalizePlainNumber(get(iENRepo), DEFAULTS.enReposicionar)
-        },
-
-        reEntry: {
-          valor: normalizeMoneyForPW(get(iRE)),
-          taxa: normalizeMoneyForPW(get(iRETax) || '0'),
-          fichas: normalizeMoneyForPW(get(iREChips)),
-          limite: normalizePlainNumber(get(iRELimit), DEFAULTS.reLimit),
-          reposicionar: normalizePlainNumber(get(iRERepo), DEFAULTS.reReposicionar)
-        },
-
-        ticketEntry: ticketValor
-          ? {
-              nome: DEFAULTS.ticketNome,
-              siglas: DEFAULTS.ticketSiglas,
-              valor: normalizeMoneyForPW(ticketValor),
-              taxa: normalizeMoneyForPW(get(iTicketTax) || '0'),
-              fichas: normalizeMoneyForPW(get(iTicketChips) || '0'),
-              limite: normalizePlainNumber(get(iTicketLimit), DEFAULTS.ticketLimit),
-              reposicionar: normalizePlainNumber(get(iTicketRepo), DEFAULTS.ticketReposicionar)
-            }
-          : null,
+        items,
+        entry,
+        reEntry,
+        ticketEntry,
 
         _line: lineIndex + 1
       };
@@ -580,10 +636,15 @@
 
     list.forEach((t, i) => {
       if (!t.name) errors.push(`${i + 1}: name empty`);
-      if (!t.entry.valor) errors.push(`${i + 1}: ${t.name} EN empty`);
-      if (!t.entry.fichas) errors.push(`${i + 1}: ${t.name} EN_Chips empty`);
-      if (!t.reEntry.valor) errors.push(`${i + 1}: ${t.name} RE empty`);
-      if (!t.reEntry.fichas) errors.push(`${i + 1}: ${t.name} RE_Chips empty`);
+      if (!Array.isArray(t.items) || !t.items.length) {
+        errors.push(`${i + 1}: ${t.name} item empty`);
+        return;
+      }
+
+      t.items.forEach((item, itemIndex) => {
+        if (!item.nome) errors.push(`${i + 1}: ${t.name} Item${itemIndex + 1}_Name empty`);
+        if (!item.valor) errors.push(`${i + 1}: ${t.name} ${item.nome || `Item${itemIndex + 1}`} value empty`);
+      });
     });
 
     return errors;
@@ -741,6 +802,21 @@
   }
 
   function candidateRowsToTsv(rows) {
+    const maxItems = Math.max(1, ...rows.map(r => (r.items || []).length));
+    const itemFields = [];
+
+    for (let i = 1; i <= maxItems; i++) {
+      itemFields.push(
+        `Item${i}_Name`,
+        `Item${i}_Siglas`,
+        `Item${i}_Value`,
+        `Item${i}_Tax`,
+        `Item${i}_Chips`,
+        `Item${i}_Limit`,
+        `Item${i}_Reposicionar`
+      );
+    }
+
     const header = [
       'USE',
       '大会名',
@@ -748,26 +824,27 @@
       'URL',
       '判定',
       '理由',
-      'EN',
-      'EN_Tax',
-      'EN_Chips',
-      'RE',
-      'RE_Tax',
-      'RE_Chips',
-      'Ticket',
-      'Ticket_Tax',
-      'Ticket_Chips',
-      'EN_Limit',
-      'RE_Limit',
-      'Ticket_Limit',
-      'EN_Reposicionar',
-      'RE_Reposicionar',
-      'Ticket_Reposicionar'
+      ...itemFields
     ];
 
     const lines = [header.join('\t')];
 
     rows.forEach(r => {
+      const itemValues = [];
+
+      for (let i = 0; i < maxItems; i++) {
+        const item = (r.items || [])[i] || {};
+        itemValues.push(
+          item.nome || '',
+          item.siglas || '',
+          item.valor || '',
+          item.taxa || '',
+          item.fichas || '',
+          item.limite || '',
+          item.reposicionar || ''
+        );
+      }
+
       lines.push([
         r.use || '',
         r.name || '',
@@ -775,21 +852,7 @@
         r.url || '',
         r.urlStatus || '',
         r.statusReason || '',
-        r.entry?.valor || '',
-        r.entry?.taxa || '',
-        r.entry?.fichas || '',
-        r.reEntry?.valor || '',
-        r.reEntry?.taxa || '',
-        r.reEntry?.fichas || '',
-        r.ticketEntry?.valor || '',
-        r.ticketEntry?.taxa || '',
-        r.ticketEntry?.fichas || '',
-        r.entry?.limite || '',
-        r.reEntry?.limite || '',
-        r.ticketEntry?.limite || '',
-        r.entry?.reposicionar || '',
-        r.reEntry?.reposicionar || '',
-        r.ticketEntry?.reposicionar || ''
+        ...itemValues
       ].map(v => String(v ?? '').replace(/\t/g, ' ')).join('\t'));
     });
 
@@ -1212,67 +1275,31 @@
   }
 
   // ============================================================
-  // 9. EN / RE / TE payload
+  // 9. Item payload
   // ============================================================
 
-  function buildEntryData(t) {
-    return {
-      nome: DEFAULTS.entryNome,
-      siglas: DEFAULTS.entrySiglas,
-      fichas: t.entry.fichas,
-      limite: t.entry.limite,
-      reposicionar: t.entry.reposicionar,
-      direito_img: DEFAULTS.direito_img,
-      pts_ranking: DEFAULTS.pts_ranking,
-      gameid_bloqueio: DEFAULTS.gameid_bloqueio,
-      valor: t.entry.valor,
-      taxa: t.entry.taxa,
-      rake: DEFAULTS.rake,
-      taxa_extras: DEFAULTS.taxa_extras
-    };
-  }
-
-  function buildReEntryData(t) {
-    return {
-      nome: DEFAULTS.reNome,
-      siglas: DEFAULTS.reSiglas,
-      fichas: t.reEntry.fichas,
-      limite: t.reEntry.limite,
-      reposicionar: t.reEntry.reposicionar,
-      direito_img: DEFAULTS.direito_img,
-      pts_ranking: DEFAULTS.pts_ranking,
-      gameid_bloqueio: DEFAULTS.gameid_bloqueio,
-      valor: t.reEntry.valor,
-      taxa: t.reEntry.taxa,
-      rake: DEFAULTS.rake,
-      taxa_extras: DEFAULTS.taxa_extras
-    };
-  }
-
-  function buildTicketEntryData(t, existingBtn) {
-    const te = t.ticketEntry || {};
-
+  function buildItemData(item, existingBtn) {
     const existingNome = existingBtn?.getAttribute?.('data-nome') || '';
     const existingSiglas = existingBtn?.getAttribute?.('data-siglas') || '';
 
     return {
-      nome: te.nome || existingNome || DEFAULTS.ticketNome,
-      siglas: te.siglas || existingSiglas || DEFAULTS.ticketSiglas,
-      fichas: te.fichas || '0',
-      limite: te.limite || DEFAULTS.ticketLimit,
-      reposicionar: te.reposicionar || DEFAULTS.ticketReposicionar,
+      nome: item.nome || existingNome,
+      siglas: item.siglas || existingSiglas || item.nome,
+      fichas: item.fichas || '0',
+      limite: item.limite || '1',
+      reposicionar: item.reposicionar || '0',
       direito_img: DEFAULTS.direito_img,
       pts_ranking: DEFAULTS.pts_ranking,
       gameid_bloqueio: DEFAULTS.gameid_bloqueio,
-      valor: te.valor,
-      taxa: te.taxa || '0',
+      valor: item.valor,
+      taxa: item.taxa || '0',
       rake: DEFAULTS.rake,
       taxa_extras: DEFAULTS.taxa_extras
     };
   }
 
   // ============================================================
-  // 10. EN / RE / TE modal
+  // 10. Item modal
   // ============================================================
 
   function findItemEditButtonByNameOrSiglas(names, siglasList) {
@@ -1310,7 +1337,7 @@
     return { form, btn };
   }
 
-  async function openInsertModalForTE() {
+  async function openInsertModalForItem() {
     await openConfiguracao();
 
     const addBtn =
@@ -1328,61 +1355,31 @@
     const form = document.querySelector('#modal_item_inserir form');
 
     if (!form) {
-      throw new Error('找不到 TE 新增 form');
+      throw new Error('找不到 item 新增 form');
     }
 
     return form;
   }
 
-  async function saveEntryDirect(t) {
-    log(`开始保存 Entry：${t.name}`);
-
-    const { form } = await openEditModalByItemNames(
-      ['Entry'],
-      ['En'],
-      'Entry'
-    );
-
-    const res = await postForm(form, buildEntryData(t), 'Entry');
-    closeModals();
-    return res;
-  }
-
-  async function saveReEntryDirect(t) {
-    log(`开始保存 Re Entry：${t.name}`);
-
-    const { form } = await openEditModalByItemNames(
-      ['Re Entry', 'ReEntry'],
-      ['Re'],
-      'Re Entry'
-    );
-
-    const res = await postForm(form, buildReEntryData(t), 'Re Entry');
-    closeModals();
-    return res;
-  }
-
-  async function saveTEDirectSmart(t) {
-    if (!t.ticketEntry) {
-      log(`TE 跳过：${t.name} / Ticket为空`);
+  async function saveItemDirectSmart(t, item) {
+    if (!item || !item.nome || !item.valor) {
       return {
-        action: 'SKIP_TE',
+        action: 'SKIP_ITEM',
         status: 'SKIP',
-        message: 'Ticket列为空'
+        message: 'item empty'
       };
     }
 
-    log(`开始保存 Ticket / TE：${t.name}`);
-
+    log(`开始保存项目：${t.name} / ${getItemLabel(item)}`);
     await openConfiguracao();
 
     const btn = findItemEditButtonByNameOrSiglas(
-      ['Ticket Entry', 'Ticket', 'TE'],
-      ['TE', 'Ti']
+      [item.nome],
+      [item.siglas].filter(Boolean)
     );
 
     if (btn) {
-      log('找到既存 Ticket / TE，准备编辑保存');
+      log(`找到既存项目，准备编辑保存：${getItemLabel(item)}`);
 
       btn.click();
       await sleep(CONFIG.afterModalOpenMs);
@@ -1390,30 +1387,30 @@
       const form = document.querySelector('#modal_item_editar form');
 
       if (!form) {
-        throw new Error('找到 Ticket / TE 铅笔，但找不到编辑 form');
+        throw new Error(`找到 ${getItemLabel(item)} 铅笔，但找不到编辑 form`);
       }
 
-      const res = await postForm(form, buildTicketEntryData(t, btn), 'Ticket / TE 编辑');
+      const res = await postForm(form, buildItemData(item, btn), `${getItemLabel(item)} 编辑`);
       closeModals();
 
       return {
-        action: 'EDIT_TE',
+        action: 'EDIT_ITEM',
         status: res.status,
-        message: '既存 Ticket/Ti 编辑'
+        message: `既存项目编辑: ${getItemLabel(item)}`
       };
     }
 
-    log('当前没有 Ticket / TE，准备新建');
+    log(`当前没有项目，准备新建：${getItemLabel(item)}`);
 
-    const form = await openInsertModalForTE();
+    const form = await openInsertModalForItem();
 
-    const res = await postForm(form, buildTicketEntryData(t, null), 'Ticket / TE 新增');
+    const res = await postForm(form, buildItemData(item, null), `${getItemLabel(item)} 新增`);
     closeModals();
 
     return {
-      action: 'INSERT_TE',
+      action: 'INSERT_ITEM',
       status: res.status,
-      message: '新增 Ticket/Ti'
+      message: `新增项目: ${getItemLabel(item)}`
     };
   }
 
@@ -1439,6 +1436,8 @@
     state.tournamentId = '';
     state.painelUrl = '';
     state.urlSource = '';
+    state.titleVerified = false;
+    state.itemIndex = 0;
     setState(state);
 
     const nextTournament = list[nextIndex];
@@ -1505,63 +1504,40 @@
         const res = await enableVirtualCurrencySales(state);
         appendReportToState(state, 'USDT_OK', `${t.name} / status=${res.status}`);
 
-        state.step = 'ENTRY';
+        state.step = 'ITEMS';
+        state.itemIndex = 0;
         setState(state);
 
-        log('USDT販売許可完成，刷新后继续 Entry');
+        log('USDT販売許可完成，刷新后继续 items');
         await sleep(800);
         location.reload();
         return;
       }
 
-      if (state.step === 'ENTRY') {
-        const res = await saveEntryDirect(t);
-        appendReportToState(
-          state,
-          'ENTRY_OK',
-          `${t.name} / EN=${feeText(t.entry.valor, t.entry.taxa)} / Chips=${t.entry.fichas} / status=${res.status}`
-        );
+      if (state.step === 'ITEMS') {
+        const items = t.items || [];
+        const itemIndex = Number(state.itemIndex || 0);
 
-        state.step = 'RE';
-        setState(state);
-
-        log('Entry 完成，刷新后继续 RE');
-        await sleep(800);
-        location.reload();
-        return;
-      }
-
-      if (state.step === 'RE') {
-        const res = await saveReEntryDirect(t);
-        appendReportToState(
-          state,
-          'RE_OK',
-          `${t.name} / RE=${feeText(t.reEntry.valor, t.reEntry.taxa)} / Chips=${t.reEntry.fichas} / status=${res.status}`
-        );
-
-        state.step = 'TE';
-        setState(state);
-
-        log('RE 完成，刷新后继续 TE');
-        await sleep(800);
-        location.reload();
-        return;
-      }
-
-      if (state.step === 'TE') {
-        const result = await saveTEDirectSmart(t);
-
-        if (result.action === 'SKIP_TE') {
-          appendReportToState(state, 'SKIP_TE', `${t.name} / Ticket列为空`);
-        } else {
-          appendReportToState(
-            state,
-            'TE_OK',
-            `${t.name} / ${result.message} / TE=${feeText(t.ticketEntry.valor, t.ticketEntry.taxa)} / Chips=${t.ticketEntry.fichas} / status=${result.status}`
-          );
+        if (itemIndex >= items.length) {
+          await moveToNextTournamentOrDone(state);
+          return;
         }
 
-        await moveToNextTournamentOrDone(state);
+        const item = items[itemIndex];
+        const result = await saveItemDirectSmart(t, item);
+
+        appendReportToState(
+          state,
+          'ITEM_OK',
+          `${t.name} / ${itemIndex + 1}/${items.length} / ${result.message} / ${itemFeeText(item)} / Chips=${item.fichas || '0'} / status=${result.status}`
+        );
+
+        state.itemIndex = itemIndex + 1;
+        setState(state);
+
+        log(`项目完成，刷新后继续下一个：${itemIndex + 1}/${items.length}`);
+        await sleep(800);
+        location.reload();
         return;
       }
 
@@ -1623,22 +1599,6 @@
     const iStatus = idx('判定', 'Status');
     const iReason = idx('理由', 'Reason');
 
-    const iEN = idx('EN', 'Entry');
-    const iENTax = idx('EN_Tax', 'EN Tax');
-    const iENChips = idx('EN_Chips', 'EN Chips');
-    const iRE = idx('RE', 'ReEntry', 'Re Entry');
-    const iRETax = idx('RE_Tax', 'RE Tax');
-    const iREChips = idx('RE_Chips', 'RE Chips');
-    const iTicket = idx('Ticket', 'TE');
-    const iTicketTax = idx('Ticket_Tax', 'TE_Tax');
-    const iTicketChips = idx('Ticket_Chips', 'TE_Chips');
-    const iENLimit = idx('EN_Limit');
-    const iRELimit = idx('RE_Limit');
-    const iTicketLimit = idx('Ticket_Limit', 'TE_Limit');
-    const iENRepo = idx('EN_Reposicionar');
-    const iRERepo = idx('RE_Reposicionar');
-    const iTicketRepo = idx('Ticket_Reposicionar');
-
     if (iName < 0) throw new Error('候補表里找不到 大会名 列');
 
     return lines.slice(1).map((line, lineIndex) => {
@@ -1647,9 +1607,12 @@
       const name = get(iName);
       if (!name) return null;
 
-      const ticketValor = get(iTicket);
       const tournamentId = get(iTournamentId);
       const url = normalizeUrl(get(iUrl) || tournamentId);
+      const items = buildItemListFromColumns(idx, get, { header, includeLegacy: true });
+      const entry = items.find(item => normalizeText(item.siglas) === DEFAULTS.entrySiglas) || {};
+      const reEntry = items.find(item => normalizeText(item.siglas) === DEFAULTS.reSiglas) || {};
+      const ticketEntry = items.find(item => ['Ti', 'TE', 'TIX'].includes(normalizeText(item.siglas))) || null;
 
       return {
         name,
@@ -1658,34 +1621,10 @@
         use: get(iUse),
         urlStatus: get(iStatus) || 'URL未解決',
         statusReason: get(iReason),
-
-        entry: {
-          valor: normalizeMoneyForPW(get(iEN)),
-          taxa: normalizeMoneyForPW(get(iENTax) || '0'),
-          fichas: normalizeMoneyForPW(get(iENChips)),
-          limite: normalizePlainNumber(get(iENLimit), DEFAULTS.enLimit),
-          reposicionar: normalizePlainNumber(get(iENRepo), DEFAULTS.enReposicionar)
-        },
-
-        reEntry: {
-          valor: normalizeMoneyForPW(get(iRE)),
-          taxa: normalizeMoneyForPW(get(iRETax) || '0'),
-          fichas: normalizeMoneyForPW(get(iREChips)),
-          limite: normalizePlainNumber(get(iRELimit), DEFAULTS.reLimit),
-          reposicionar: normalizePlainNumber(get(iRERepo), DEFAULTS.reReposicionar)
-        },
-
-        ticketEntry: ticketValor
-          ? {
-              nome: DEFAULTS.ticketNome,
-              siglas: DEFAULTS.ticketSiglas,
-              valor: normalizeMoneyForPW(ticketValor),
-              taxa: normalizeMoneyForPW(get(iTicketTax) || '0'),
-              fichas: normalizeMoneyForPW(get(iTicketChips) || '0'),
-              limite: normalizePlainNumber(get(iTicketLimit), DEFAULTS.ticketLimit),
-              reposicionar: normalizePlainNumber(get(iTicketRepo), DEFAULTS.ticketReposicionar)
-            }
-          : null,
+        items,
+        entry,
+        reEntry,
+        ticketEntry,
 
         _line: lineIndex + 1
       };
@@ -1758,12 +1697,11 @@
     }
 
     const summary = tournaments.map((t, i) => {
-      const teText = t.ticketEntry ? `TE=${t.ticketEntry.valor}+${t.ticketEntry.taxa}` : 'TE=SKIP';
-      return `${i + 1}. ${t.name}\n   URL=${t.urlStatus} ${t.url}\n   EN=${t.entry.valor}+${t.entry.taxa} / RE=${t.reEntry.valor}+${t.reEntry.taxa} / ${teText}`;
+      return `${i + 1}. ${t.name}\n   URL=${t.urlStatus} ${t.url}\n   Items=${itemListText(t.items)}`;
     }).join('\n\n');
 
     const ok = confirm(
-      `确认开始更新既存比赛 EN/RE/TE？\n\n` +
+      `确认开始更新既存比赛项目？\n\n` +
       `这版不会创建比赛、不会改时间、不会设置盲注、不会 link ticket。\n` +
       `会开启「USDT販売許可 / 仮想通貨販売許可」。\n\n` +
       `Shared URL Cache: ${sharedCacheCount()} 件\n` +
@@ -1779,8 +1717,7 @@
     report.push(makeReportLine('START', `开始更新：${tournaments.length} 件 / Cache=${sharedCacheCount()}`));
 
     tournaments.forEach((t, i) => {
-      const te = t.ticketEntry ? `TE=${feeText(t.ticketEntry.valor, t.ticketEntry.taxa)}` : 'TE=SKIP';
-      report.push(`${i + 1}. ${t.name} / ${t.urlStatus}=${t.url} / EN=${feeText(t.entry.valor, t.entry.taxa)} / RE=${feeText(t.reEntry.valor, t.reEntry.taxa)} / ${te}`);
+      report.push(`${i + 1}. ${t.name} / ${t.urlStatus}=${t.url} / Items=${itemListText(t.items)}`);
     });
 
     const state = {
@@ -1791,6 +1728,7 @@
       painelUrl: '',
       urlSource: '',
       titleVerified: false,
+      itemIndex: 0,
       tournaments,
       report
     };
@@ -1936,15 +1874,15 @@
     `;
 
     const saved = localStorage.getItem(CONFIG.inputKey) || [
-      'Name\tTournamentId\tURL\tEN\tEN_Tax\tEN_Chips\tRE\tRE_Tax\tRE_Chips\tTicket\tTicket_Tax\tTicket_Chips\tEN_Limit\tRE_Limit\tTicket_Limit',
-      '【SPADIE season 41st】#02 NLH Emotional Heart\t4484\t/cb/torneio/painel/4484\t5,000\t1,000\t30,000\t5,000\t0\t30,000\t\t\t\t1\t3\t',
-      '【SPADIE season 41st】#01 NLH Main Event Day 1A\t4485\t/cb/torneio/painel/4485\t80,000\t1,000\t50,000\t80,000\t0\t50,000\t-55,000\t0\t0\t1\t3\t4'
+      'Name\tTournamentId\tURL\tItem1_Name\tItem1_Siglas\tItem1_Value\tItem1_Tax\tItem1_Chips\tItem1_Limit\tItem1_Reposicionar\tItem2_Name\tItem2_Siglas\tItem2_Value\tItem2_Tax\tItem2_Chips\tItem2_Limit\tItem2_Reposicionar\tItem3_Name\tItem3_Siglas\tItem3_Value\tItem3_Tax\tItem3_Chips\tItem3_Limit\tItem3_Reposicionar',
+      '【SPADIE season 41st】#02 NLH Emotional Heart\t4484\t/cb/torneio/painel/4484\tEntry\tEn\t5,000\t1,000\t30,000\t1\t0\tRe Entry\tRe\t5,000\t0\t30,000\t3\t1',
+      '【物販 SAMPLE】#01 Goods Booth\t9999\t/cb/torneio/painel/9999\tT-Shirt\tTS\t3,000\t0\t0\t0\t0\tHoodie\tHD\t8,000\t0\t0\t0\t0\tSticker\tST\t500\t0\t0\t0\t0'
     ].join('\n');
 
 panel.innerHTML = `
   <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
     <div style="font-weight:bold;">
-      PW 既存大会 EN/RE/TE 更新 人工確認版 v0.5
+      PW 既存大会 Item 更新 人工確認版 v0.6
     </div>
     <div style="display:flex;gap:4px;">
       <button id="pw-item-update-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
@@ -1957,7 +1895,7 @@ panel.innerHTML = `
       <div style="font-size:11px;color:#ccc;line-height:1.35;">
         URL取得順：Preview → URL Resolve → 人工確認 → START<br>
         Shared Cache key: <code>${SHARED_URL_CACHE_KEY}</code><br>
-        作成・時間変更・盲注設定・Ticket Linkなし
+        作成・時間変更・盲注設定・Ticket Linkなし / Item列は Item1, Item2... 無制限
       </div>
 
       <textarea id="pw-item-update-input"
@@ -1979,7 +1917,7 @@ panel.innerHTML = `
 
       <button id="pw-item-update-start"
         style="width:100%;padding:7px;cursor:pointer;background:#ffe08a;border:1px solid #c99;">
-        START 更新既存大会
+        START 更新既存大会 Item
       </button>
 
       <button id="pw-item-update-stop"
@@ -2000,9 +1938,9 @@ panel.innerHTML = `
       </div>
 
       <div style="font-size:11px;color:#f6d365;line-height:1.35;">
-        ※ Ticket列为空 = 跳过TE<br>
-        ※ Ticket列有值 = 编辑既存 Ticket/Ti；没有则新增<br>
-        ※ reposicionar默认：EN=0, RE=1, Ticket=0<br>
+        ※ Item列は Item1_Name / Item1_Value ... Item2_Name ... の形式<br>
+        ※ 同名/同Siglasの既存項目があれば編集、なければ新增<br>
+        ※ 旧 EN/RE/Ticket 表頭もまだ読み込み可能<br>
         ※ URL未解決 / AMBIGUOUS / bad cache が残る場合 START禁止<br>
         ※ 手動URLは TournamentId/URL を入れて判定=OK_MANUAL
       </div>
@@ -2072,9 +2010,8 @@ document.querySelector('#pw-item-update-close').onclick = () => {
       resolveTournamentUrl,
       findExistingTournament,
       enableVirtualCurrencySales,
-      saveEntryDirect,
-      saveReEntryDirect,
-      saveTEDirectSmart,
+      saveItemDirectSmart,
+      buildItemData,
       getState,
       clearState,
       appendReport,

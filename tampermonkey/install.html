@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JOPT PokerWeb Tampermonkey Installer</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Arial, "Yu Gothic", "Meiryo", sans-serif;
+      background: #f6f7f9;
+      color: #1f2933;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+    }
+
+    main {
+      max-width: 980px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 24px;
+      margin: 0 0 8px;
+    }
+
+    .note {
+      color: #52616f;
+      margin: 0 0 20px;
+      line-height: 1.55;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin: 0 0 16px;
+    }
+
+    button,
+    a.button {
+      appearance: none;
+      border: 1px solid #9aa5b1;
+      background: #ffffff;
+      color: #1f2933;
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      text-decoration: none;
+      font-size: 14px;
+      line-height: 1.2;
+    }
+
+    button.primary,
+    a.primary {
+      background: #1769aa;
+      border-color: #1769aa;
+      color: #ffffff;
+    }
+
+    button:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+    }
+
+    .status {
+      font-size: 13px;
+      color: #52616f;
+      min-height: 18px;
+    }
+
+    .list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .item {
+      background: #ffffff;
+      border: 1px solid #d9e2ec;
+      border-radius: 8px;
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .item-head {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: baseline;
+      justify-content: space-between;
+    }
+
+    .name {
+      font-weight: 700;
+      font-size: 15px;
+    }
+
+    .version {
+      font-family: Consolas, monospace;
+      font-size: 13px;
+      color: #334e68;
+      background: #edf2f7;
+      border-radius: 999px;
+      padding: 2px 8px;
+    }
+
+    .desc {
+      color: #52616f;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    code {
+      font-family: Consolas, monospace;
+      background: #edf2f7;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+
+    .error {
+      background: #fff5f5;
+      border: 1px solid #feb2b2;
+      color: #9b2c2c;
+      padding: 12px;
+      border-radius: 8px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>JOPT PokerWeb Tampermonkey Installer</h1>
+    <p class="note">
+      <code>scripts.json</code> から自動で一覧を作ります。新增 <code>.user.js</code> 后，运行
+      <code>tools/update-tampermonkey-manifest.ps1</code> 再 push，就会出现在这里。
+    </p>
+
+    <div class="toolbar">
+      <button id="open-all" class="primary" type="button" disabled>依次打开全部 raw</button>
+      <button id="reload" type="button">重新读取清单</button>
+      <span id="status" class="status">loading...</span>
+    </div>
+
+    <div id="list" class="list"></div>
+  </main>
+
+  <script>
+    const MANIFEST_URL = "scripts.json";
+    const DEFAULT_OWNER = "shashasha-00000";
+    const DEFAULT_REPO = "jopt-pokerweb-tools";
+    const DEFAULT_BRANCH = "main";
+    const OPEN_DELAY_MS = 1200;
+
+    let scripts = [];
+
+    function rawUrlFor(file) {
+      return `https://raw.githubusercontent.com/${DEFAULT_OWNER}/${DEFAULT_REPO}/${DEFAULT_BRANCH}/tampermonkey/${encodeURIComponent(file)}`;
+    }
+
+    function setStatus(text) {
+      document.querySelector("#status").textContent = text;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function render(items) {
+      const list = document.querySelector("#list");
+      list.innerHTML = "";
+
+      if (!items.length) {
+        list.innerHTML = '<div class="error">No scripts found in scripts.json.</div>';
+        document.querySelector("#open-all").disabled = true;
+        return;
+      }
+
+      for (const item of items) {
+        const rawUrl = item.rawURL || item.downloadURL || rawUrlFor(item.file);
+        const div = document.createElement("div");
+        div.className = "item";
+        div.innerHTML = `
+          <div class="item-head">
+            <div class="name">${escapeHtml(item.name || item.file)}</div>
+            <div class="version">v${escapeHtml(item.version || "?")}</div>
+          </div>
+          <div class="desc">${escapeHtml(item.description || item.file)}</div>
+          <div class="actions">
+            <a class="button primary" href="${escapeHtml(rawUrl)}" target="_blank" rel="noopener">Raw 更新/安装</a>
+            <button type="button" data-copy="${escapeHtml(rawUrl)}">复制 raw URL</button>
+            <span><code>${escapeHtml(item.file)}</code></span>
+          </div>
+        `;
+        list.appendChild(div);
+      }
+
+      document.querySelector("#open-all").disabled = false;
+    }
+
+    async function loadManifest() {
+      setStatus("loading scripts.json...");
+      document.querySelector("#open-all").disabled = true;
+
+      try {
+        const res = await fetch(`${MANIFEST_URL}?t=${Date.now()}`, { cache: "no-store" });
+        if (!res.ok) throw new Error(`scripts.json HTTP ${res.status}`);
+        scripts = await res.json();
+        render(scripts);
+        setStatus(`${scripts.length} scripts loaded`);
+      } catch (error) {
+        scripts = [];
+        document.querySelector("#list").innerHTML =
+          `<div class="error">scripts.json を読めませんでした。GitHub Pages 或本地服务器上打开这个页面。<br>${escapeHtml(error.message || error)}</div>`;
+        setStatus("manifest load failed");
+      }
+    }
+
+    async function openAll() {
+      if (!scripts.length) return;
+      setStatus(`opening ${scripts.length} raw URLs...`);
+
+      for (let i = 0; i < scripts.length; i++) {
+        const item = scripts[i];
+        const rawUrl = item.rawURL || item.downloadURL || rawUrlFor(item.file);
+        setStatus(`opening ${i + 1}/${scripts.length}: ${item.file}`);
+        window.open(rawUrl, "_blank", "noopener");
+        await new Promise(resolve => setTimeout(resolve, OPEN_DELAY_MS));
+      }
+
+      setStatus("done");
+    }
+
+    document.querySelector("#reload").addEventListener("click", loadManifest);
+    document.querySelector("#open-all").addEventListener("click", openAll);
+    document.addEventListener("click", async event => {
+      const btn = event.target.closest("button[data-copy]");
+      if (!btn) return;
+
+      const value = btn.getAttribute("data-copy");
+      try {
+        await navigator.clipboard.writeText(value);
+        setStatus("raw URL copied");
+      } catch (_) {
+        prompt("Copy raw URL", value);
+      }
+    });
+
+    loadManifest();
+  </script>
+</body>
+</html>
