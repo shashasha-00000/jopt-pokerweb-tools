@@ -825,7 +825,23 @@
     if (unique.length > 1) return { error: "AMBIGUOUS", candidates: unique };
     return null;
   }
+  async function waitForWindowLoad(win, timeoutMs = 25000) {
+    const start = Date.now();
 
+    while (Date.now() - start < timeoutMs) {
+      if (!win || win.closed) throw new Error("WINDOW_CLOSED");
+
+      try {
+        if (win.document && win.document.readyState === "complete") {
+          return true;
+        }
+      } catch (_) {}
+
+      await sleep(300);
+    }
+
+    throw new Error("window load timeout");
+  }
   async function openTournamentListWindow(path, label) {
     const win = window.open(path, `pw_manual_url_${label}_${Date.now()}`, "width=1280,height=900");
     if (!win) throw new Error(`${label}: popup blocked`);
@@ -844,11 +860,11 @@
 
     let lastFound = null;
 
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
       if (stopRequested) return null;
 
       try {
-        setStatus(`URL検索 retry ${attempt}/3: ${name}`);
+        setStatus(`URL検索 retry ${attempt}/2: ${name}`);
 
         await dataTableSearchAndWait(win, dt, name);
 
@@ -860,14 +876,10 @@
 
         await sleep(300);
       } catch (e) {
-        warn(`URL search retry ${attempt}/3 failed`, e);
+        warn(`URL search retry ${attempt}/2 failed`, e);
         await sleep(500);
       }
     }
-
-    try {
-      await dataTableSearchAndWait(win, dt, "");
-    } catch (_) {}
 
     return lastFound;
   }

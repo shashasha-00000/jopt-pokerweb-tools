@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW URL Cache Manager v0.6
 // @namespace    pw-shared-url-cache-manager
-// @version      0.6.0
+// @version      0.6.1
 // @description  PW大会URL共用缓存管理工具。大会名リスト検索 / イベントPrefix全ページ収集 / 汚染チェック・修復 / Sheet用TSV出力。
 // @author       xhpc007 + ChatGPT
 // @match        https://japanopt.pokerweb.com.br/cb/*
@@ -25,7 +25,7 @@
     stablePollCount: 3,
     betweenSearchMs: 900,
     pageLength: 100,
-    nameSearchRetry: 3,
+    nameSearchRetry: 2,
     eventScanRounds: 2,
     rowStableAttempts: 3,
     rowStableDelayMs: 220,
@@ -1364,8 +1364,6 @@
           appendReport("SEARCH_RETRY", `${item.label}: ${name} / ${attempt}/${CONFIG.nameSearchRetry}`);
         }
 
-        await clearDataTableSearch(win, dt);
-
         await runDataTableActionAndWait(win, dt, () => {
           dt.search(name);
           dt.page.len(CONFIG.pageLength);
@@ -1383,9 +1381,6 @@
 
         await sleep(CONFIG.betweenSearchMs);
       }
-
-      await clearDataTableSearch(win, dt);
-      await sleep(CONFIG.betweenSearchMs);
 
       return lastFound;
     }
