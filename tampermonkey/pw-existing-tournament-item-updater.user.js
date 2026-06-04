@@ -458,7 +458,7 @@
       return { ok: false, code: 'URL_CACHE_BAD_ROW', reason: `${key}: name mismatch cache=${name}` };
     }
 
-    if (actualName && expectedName && !isSameTournamentExactSafe(expectedName, actualName)) {
+    if (actualName && expectedName && !isTournamentRowNameMatch(expectedName, actualName, actualName)) {
       return { ok: false, code: 'CACHE_NAME_ACTUAL_MISMATCH', reason: `${key}: actualName=${actualName}` };
     }
 
@@ -706,7 +706,10 @@
   function extractTournamentTitleFromRow(rowText) {
     const s = normalizeText(rowText);
 
-    const m = s.match(/(【[^】]+】\s*(?:#\d+|\(s\d+\)|s\d+)\s+.+?)(?:\s+\d{1,2}\/\d{1,2}\/\d{4}|\s+Aberto|\s+Fechado|\s+オープン|\s+クローズ|$)/i);
+    const mShort = s.match(/(【[^】]+】\s*.+?)(?:\s+\d{1,2}\/\d{1,2}\/\d{4}(?:\s+\d{1,2}:\d{2})?|\s+Aberto|\s+Fechado|\s+オープン|\s+クローズ|$)/i);
+    if (mShort) return normalizeText(mShort[1]);
+
+    const m = s.match(/(【[^】]+】\s*(?:#\d+|\(s\d+\)|s\d+)\s+.+?)(?:\s+\d{1,2}\/\d{1,2}\/\d{4}(?:\s+\d{1,2}:\d{2})?|\s+Aberto|\s+Fechado|\s+オープン|\s+クローズ|$)/i);
     if (m) return normalizeText(m[1]);
 
     const m2 = s.match(/(【[^】]+】.+)/);
