@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW 既存大会 Item 更新 人工確認版
 // @namespace    pw-existing-tournament-item-updater-ui
-// @version      0.6.0
+// @version      0.6.2
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js
 // @description  既存大会URLをPreview/Resolveで人工確認してから、USDT販売許可ON、任意数の販売項目を更新する。作成・時間変更・Ticket Linkなし。
@@ -610,6 +610,7 @@
 
     const iTournamentId = idx('TournamentId', 'tournamentId', 'ID');
     const iUrl = idx('URL', 'Url');
+    const iItemUpdateMode = idx('Item_Update_Mode', 'Item Update Mode', 'Update_Mode', '更新模式');
 
     if (iName < 0) {
       throw new Error('TSV里找不到 Name 列');
@@ -634,6 +635,7 @@
         name,
         tournamentId,
         url,
+        itemUpdateMode: get(iItemUpdateMode),
         items,
         entry,
         reEntry,
@@ -846,6 +848,7 @@
       'URL',
       '判定',
       '理由',
+      'Item_Update_Mode',
       ...itemFields
     ];
 
@@ -874,6 +877,7 @@
         r.url || '',
         r.urlStatus || '',
         r.statusReason || '',
+        r.itemUpdateMode || '',
         ...itemValues
       ].map(v => String(v ?? '').replace(/\t/g, ' ')).join('\t'));
     });
@@ -1317,7 +1321,7 @@
 
     return {
       nome: item.nome || existingNome,
-      siglas: item.siglas || existingSiglas || item.nome,
+      siglas: item.siglas || existingSiglas || '',
       fichas: item.fichas || '0',
       limite: item.limite || '1',
       reposicionar: item.reposicionar || '0',
@@ -1329,6 +1333,241 @@
       rake: DEFAULTS.rake,
       taxa_extras: DEFAULTS.taxa_extras
     };
+  }
+
+  function getItemUpdateMode(t) {
+    const explicit = normalizeText(t.itemUpdateMode || '').toLowerCase();
+    if (['position', 'pos', '順番', '顺序'].includes(explicit)) return 'position';
+    if (['name', 'nome', '名前', '名称'].includes(explicit)) return 'name';
+    return /物販/.test(normalizeText(t.name)) ? 'position' : 'name';
+  }
+
+  function formFieldsToObject(form) {
+    if (!form) return {};
+    const out = {};
+    const fd = new FormData(form);
+    for (const [k, v] of fd.entries()) out[k] = String(v);
+    return out;
+  }
+
+  function formActionPath(form, fallback) {
+    const raw = normalizeText(form?.getAttribute?.('action') || form?.action || fallback || '');
+    if (!raw) return fallback;
+    try {
+      return new URL(raw, location.origin).pathname;
+    } catch (_) {
+      return raw;
+    }
+  }
+
+  function getElementDataAttrs(el) {
+    const out = {};
+    if (!el) return out;
+    [...el.attributes].forEach(attr => {
+      if (/^data-/i.test(attr.name)) out[attr.name] = attr.value;
+    });
+    return out;
+  }
+
+  function getItemIdFromElement(el) {
+    return getItemIdInfoFromElement(el).id_item;
+  }
+
+  function getItemIdInfoFromElement(el) {
+    if (!el) return { id_item: '', source: '' };
+
+    const candidates = [
+      ['data-id_item', el.getAttribute('data-id_item')],
+      ['data-id-item', el.getAttribute('data-id-item')],
+      ['data-iditem', el.getAttribute('data-iditem')],
+      ['data-id', el.getAttribute('data-id')],
+      ['data-item-id', el.getAttribute('data-item-id')],
+      ['dataset.id_item', el.dataset?.id_item],
+      ['dataset.idItem', el.dataset?.idItem],
+      ['dataset.iditem', el.dataset?.iditem],
+      ['dataset.id', el.dataset?.id],
+      ['dataset.itemId', el.dataset?.itemId]
+    ];
+
+    for (const [source, raw] of candidates) {
+      const v = normalizeText(raw);
+      if (/^\d+$/.test(v)) return { id_item: v, source };
+    }
+
+    const html = String(el.outerHTML || '');
+    const patterns = [
+      ['html:id_item', /id_item["'\s:=]+(\d+)/i],
+      ['html:data-id-item', /data-id-item=["']?(\d+)/i],
+      ['html:data-id_item', /data-id_item=["']?(\d+)/i],
+      ['html:item_editar', /item_editar[^"'<>]*?(\d+)/i]
+    ];
+
+    for (const [source, pattern] of patterns) {
+      const m = html.match(pattern);
+      if (m) return { id_item: m[1], source };
+    }
+
+    return { id_item: '', source: '' };
+  }
+
+  function getExistingItemElements() {
+    return [...document.querySelectorAll([
+      'a[href="#modal_item_editar"]',
+      'button[href="#modal_item_editar"]',
+      '[data-target="#modal_item_editar"]',
+      '[data-id_item][data-nome]',
+      '[data-id-item][data-nome]',
+      '[data-id][data-nome][data-siglas]'
+    ].join(','))]
+      .filter(el => normalizeText(el.getAttribute('data-nome') || el.getAttribute('data-siglas') || el.innerText || el.textContent || ''));
+  }
+
+  function collectExistingItemsForApi() {
+    return getExistingItemElements().map((el, index) => {
+      const idInfo = getItemIdInfoFromElement(el);
+
+      return {
+        index: index + 1,
+        id_item: idInfo.id_item,
+        id_item_source: idInfo.source,
+        nome: normalizeText(el.getAttribute('data-nome') || ''),
+        siglas: normalizeText(el.getAttribute('data-siglas') || ''),
+        data: getElementDataAttrs(el)
+      };
+    });
+  }
+
+  function collectItemApiInfo() {
+    const editForm = document.querySelector('#modal_item_editar form');
+    const insertForm = document.querySelector('#modal_item_inserir form');
+    const existingItems = collectExistingItemsForApi();
+
+    return {
+      editEndpoint: '/cb/torneio/abas/configuracao/item_editar',
+      insertEndpoint: '/cb/torneio/abas/configuracao/item_criar',
+      editFormAction: formActionPath(editForm, '/cb/torneio/abas/configuracao/item_editar'),
+      insertFormAction: formActionPath(insertForm, '/cb/torneio/abas/configuracao/item_criar'),
+      editFormFields: formFieldsToObject(editForm),
+      insertFormFields: formFieldsToObject(insertForm),
+      existingItems
+    };
+  }
+
+  function makeApiFormData(templateFields, item, extra = {}) {
+    const fd = new FormData();
+
+    Object.entries(templateFields || {}).forEach(([k, v]) => fd.set(k, v));
+    applyDataToFormData(fd, buildItemData(item, null));
+    applyDataToFormData(fd, extra);
+
+    return fd;
+  }
+
+  function findExistingItemForApi(existingItems, item, mode, itemIndex) {
+    if (mode === 'position') return existingItems[itemIndex] || null;
+
+    const wantedName = normalizeText(item.nome);
+    const wantedSiglas = normalizeText(item.siglas);
+
+    return existingItems.find(x =>
+      (wantedName && normalizeText(x.nome) === wantedName) ||
+      (wantedSiglas && normalizeText(x.siglas) === wantedSiglas)
+    ) || null;
+  }
+
+  async function postItemApi(endpoint, fd, label) {
+    debugFormData(label, fd);
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      body: fd,
+      credentials: 'same-origin',
+      redirect: 'follow'
+    });
+
+    log(`${label} POST 完成 status=${res.status}`);
+    return res;
+  }
+
+  async function saveItemsByApiBatch(t, state) {
+    await openConfiguracao();
+
+    const info = collectItemApiInfo();
+    const missingIds = info.existingItems.filter(x => !x.id_item);
+
+    if (missingIds.length) {
+      appendReportToState(
+        state,
+        'ITEM_API_DIAG_FAIL',
+        `existing item id_item 取得不可: ${missingIds.map(x => `${x.index}:${x.nome || x.siglas || '(unknown)'}`).join(', ')}`
+      );
+      throw new Error('ITEM_API_DIAG_FAIL: existing item id_item 取得不可');
+    }
+
+    const idTorneio = state.tournamentId || getTournamentIdFromUrl();
+    if (!idTorneio) throw new Error('ITEM_API_DIAG_FAIL: id_torneio 取得不可');
+
+    const mode = getItemUpdateMode(t);
+    const results = [];
+
+    for (let i = 0; i < (t.items || []).length; i++) {
+      const item = t.items[i];
+      const existing = findExistingItemForApi(info.existingItems, item, mode, i);
+      const extra = { id_torneio: idTorneio };
+      let endpoint = info.insertEndpoint;
+      let action = 'INSERT_ITEM';
+      let fields = info.insertFormFields;
+
+      if (existing) {
+        endpoint = info.editEndpoint;
+        action = 'EDIT_ITEM';
+        fields = info.editFormFields;
+        extra.id_item = existing.id_item;
+      }
+
+      const fd = makeApiFormData(fields, item, extra);
+      const res = await postItemApi(endpoint, fd, `${action} ${i + 1}/${t.items.length} ${getItemLabel(item)}`);
+
+      results.push({
+        action,
+        status: res.status,
+        item,
+        existing
+      });
+    }
+
+    return { mode, results, existingItems: info.existingItems };
+  }
+
+  async function diagnoseItemApiFromUi() {
+    try {
+      await openConfiguracao();
+      const info = collectItemApiInfo();
+      const lines = [
+        makeReportLine('ITEM_API_DIAG', `edit=${info.editEndpoint} / insert=${info.insertEndpoint}`),
+        `editFormAction=${info.editFormAction}`,
+        `insertFormAction=${info.insertFormAction}`,
+        `editFormFields=${Object.keys(info.editFormFields).join(', ') || '(none)'}`,
+        `insertFormFields=${Object.keys(info.insertFormFields).join(', ') || '(none)'}`,
+        'existingItems:',
+        ...info.existingItems.map(x =>
+          `${x.index}. id_item=${x.id_item || '(missing)'} / source=${x.id_item_source || '(missing)'} / nome=${x.nome || '(empty)'} / siglas=${x.siglas || '(empty)'} / data=${JSON.stringify(x.data)}`
+        )
+      ];
+
+      if (info.existingItems.some(x => !x.id_item)) {
+        lines.push(makeReportLine('ITEM_API_DIAG_FAIL', 'existing item の id_item が取得できない行があります'));
+      }
+
+      renderReport(lines);
+      localStorage.setItem(CONFIG.lastReportKey, lines.join('\n'));
+      alert('Item API 診断完成。Report を確認してください。');
+    } catch (e) {
+      const lines = [makeReportLine('ITEM_API_DIAG_FAIL', e.message || String(e))];
+      renderReport(lines);
+      localStorage.setItem(CONFIG.lastReportKey, lines.join('\n'));
+      alert(`Item API 診断失败：${e.message || e}`);
+    }
   }
 
   // ============================================================
@@ -1549,28 +1788,34 @@
 
       if (state.step === 'ITEMS') {
         const items = t.items || [];
-        const itemIndex = Number(state.itemIndex || 0);
 
-        if (itemIndex >= items.length) {
+        if (!items.length) {
+          appendReportToState(state, 'SKIP_ITEMS', `${t.name} / item empty`);
           await moveToNextTournamentOrDone(state);
           return;
         }
 
-        const item = items[itemIndex];
-        const result = await saveItemDirectSmart(t, item);
+        const batch = await saveItemsByApiBatch(t, state);
 
-        appendReportToState(
-          state,
-          'ITEM_OK',
-          `${t.name} / ${itemIndex + 1}/${items.length} / ${result.message} / ${itemFeeText(item)} / Chips=${item.fichas || '0'} / status=${result.status}`
-        );
+        batch.results.forEach((result, i) => {
+          appendReportToState(
+            state,
+            'ITEM_OK',
+            `${t.name} / mode=${batch.mode} / ${i + 1}/${items.length} / ${result.action} / ${getItemLabel(result.item)} / ${itemFeeText(result.item)} / Chips=${result.item.fichas || '0'} / status=${result.status}`
+          );
+        });
 
-        state.itemIndex = itemIndex + 1;
+        state.step = 'ITEMS_RELOAD';
         setState(state);
 
-        log(`项目完成，刷新后继续下一个：${itemIndex + 1}/${items.length}`);
+        log(`项目批量保存完成，刷新后进入下一场：${items.length} 件`);
         await sleep(800);
         location.reload();
+        return;
+      }
+
+      if (state.step === 'ITEMS_RELOAD') {
+        await moveToNextTournamentOrDone(state);
         return;
       }
 
@@ -1631,6 +1876,7 @@
     const iUrl = idx('URL');
     const iStatus = idx('判定', 'Status');
     const iReason = idx('理由', 'Reason');
+    const iItemUpdateMode = idx('Item_Update_Mode', 'Item Update Mode', 'Update_Mode', '更新模式');
 
     if (iName < 0) throw new Error('候補表里找不到 大会名 列');
 
@@ -1654,6 +1900,7 @@
         use: get(iUse),
         urlStatus: get(iStatus) || 'URL未解決',
         statusReason: get(iReason),
+        itemUpdateMode: get(iItemUpdateMode),
         items,
         entry,
         reEntry,
@@ -1738,7 +1985,7 @@
     }
 
     const summary = tournaments.map((t, i) => {
-      return `${i + 1}. ${t.name}\n   URL=${t.urlStatus} ${t.url}\n   Items=${itemListText(t.items)}`;
+      return `${i + 1}. ${t.name}\n   URL=${t.urlStatus} ${t.url}\n   Mode=${getItemUpdateMode(t)}\n   Items=${itemListText(t.items)}`;
     }).join('\n\n');
 
     const ok = confirm(
@@ -1758,7 +2005,7 @@
     report.push(makeReportLine('START', `开始更新：${tournaments.length} 件 / Cache=${sharedCacheCount()}`));
 
     tournaments.forEach((t, i) => {
-      report.push(`${i + 1}. ${t.name} / ${t.urlStatus}=${t.url} / Items=${itemListText(t.items)}`);
+      report.push(`${i + 1}. ${t.name} / ${t.urlStatus}=${t.url} / Mode=${getItemUpdateMode(t)} / Items=${itemListText(t.items)}`);
     });
 
     const state = {
@@ -1915,9 +2162,9 @@
     `;
 
     const saved = localStorage.getItem(CONFIG.inputKey) || [
-      'Name\tTournamentId\tURL\tItem1_Name\tItem1_Siglas\tItem1_Value\tItem1_Tax\tItem1_Chips\tItem1_Limit\tItem1_Reposicionar\tItem2_Name\tItem2_Siglas\tItem2_Value\tItem2_Tax\tItem2_Chips\tItem2_Limit\tItem2_Reposicionar\tItem3_Name\tItem3_Siglas\tItem3_Value\tItem3_Tax\tItem3_Chips\tItem3_Limit\tItem3_Reposicionar',
-      '【SPADIE season 41st】#02 NLH Emotional Heart\t4484\t/cb/torneio/painel/4484\tEntry\tEn\t5,000\t1,000\t30,000\t1\t0\tRe Entry\tRe\t5,000\t0\t30,000\t3\t1',
-      '【物販 SAMPLE】#01 Goods Booth\t9999\t/cb/torneio/painel/9999\tT-Shirt\tTS\t3,000\t0\t0\t0\t0\tHoodie\tHD\t8,000\t0\t0\t0\t0\tSticker\tST\t500\t0\t0\t0\t0'
+      'Name\tTournamentId\tURL\tItem_Update_Mode\tItem1_Name\tItem1_Siglas\tItem1_Value\tItem1_Tax\tItem1_Chips\tItem1_Limit\tItem1_Reposicionar\tItem2_Name\tItem2_Siglas\tItem2_Value\tItem2_Tax\tItem2_Chips\tItem2_Limit\tItem2_Reposicionar\tItem3_Name\tItem3_Siglas\tItem3_Value\tItem3_Tax\tItem3_Chips\tItem3_Limit\tItem3_Reposicionar',
+      '【SPADIE season 41st】#02 NLH Emotional Heart\t4484\t/cb/torneio/painel/4484\tname\tEntry\tEn\t5,000\t1,000\t30,000\t1\t0\tRe Entry\tRe\t5,000\t0\t30,000\t3\t1',
+      '【物販 SAMPLE】#01 Goods Booth\t9999\t/cb/torneio/painel/9999\tposition\tT-Shirt\tTS\t3,000\t0\t0\t0\t0\tHoodie\tHD\t8,000\t0\t0\t0\t0\tSticker\tST\t500\t0\t0\t0\t0'
     ].join('\n');
 
 panel.innerHTML = `
@@ -1956,6 +2203,11 @@ panel.innerHTML = `
         URL Resolve / URL未解決検索
       </button>
 
+      <button id="pw-item-update-diag-api"
+        style="width:100%;padding:7px;cursor:pointer;background:#efe0ff;border:1px solid #a8a;">
+        Diagnose Item API
+      </button>
+
       <button id="pw-item-update-start"
         style="width:100%;padding:7px;cursor:pointer;background:#ffe08a;border:1px solid #c99;">
         START 更新既存大会 Item
@@ -1980,6 +2232,7 @@ panel.innerHTML = `
 
       <div style="font-size:11px;color:#f6d365;line-height:1.35;">
         ※ Item列は Item1_Name / Item1_Value ... Item2_Name ... の形式<br>
+        ※ Item_Update_Mode: name=名前/Siglas一致、position=既存項目順に上書き<br>
         ※ 同名/同Siglasの既存項目があれば編集、なければ新增<br>
         ※ 旧 EN/RE/Ticket 表頭もまだ読み込み可能<br>
         ※ URL未解決 / AMBIGUOUS / bad cache が残る場合 START禁止<br>
@@ -2012,6 +2265,7 @@ panel.innerHTML = `
 
     document.querySelector('#pw-item-update-preview').onclick = () => previewParsedInput();
     document.querySelector('#pw-item-update-resolve').onclick = () => resolveCandidateUrlsFromUi();
+    document.querySelector('#pw-item-update-diag-api').onclick = () => diagnoseItemApiFromUi();
     document.querySelector('#pw-item-update-start').onclick = () => startFlow();
     document.querySelector('#pw-item-update-stop').onclick = () => stopFlow();
     document.querySelector('#pw-item-update-copy-report').onclick = () => copyReport();
@@ -2052,6 +2306,9 @@ document.querySelector('#pw-item-update-close').onclick = () => {
       findExistingTournament,
       enableVirtualCurrencySales,
       saveItemDirectSmart,
+      saveItemsByApiBatch,
+      diagnoseItemApiFromUi,
+      collectItemApiInfo,
       buildItemData,
       getState,
       clearState,

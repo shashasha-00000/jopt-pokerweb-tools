@@ -2,7 +2,7 @@
     {
         "file":  "pw-existing-tournament-item-updater.user.js",
         "name":  "PW 既存大会 Item 更新 人工確認版",
-        "version":  "0.6.0",
+        "version":  "0.6.2",
         "description":  "既存大会URLをPreview/Resolveで人工確認してから、USDT販売許可ON、任意数の販売項目を更新する。作成・時間変更・Ticket Linkなし。",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js",
         "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js",
