@@ -64,17 +64,6 @@ function setupReceiptSemiAutoAppend() {
   RSA_ensureOwnedSheet_(ss, RSA_CONFIG.CHECK_SHEET_NAME, RSA_CONFIG.CHECK_HEADERS);
   RSA_ensureOwnedSheet_(ss, RSA_CONFIG.RUN_LOG_SHEET_NAME, RSA_CONFIG.RUN_LOG_HEADERS);
 
-  const exists = ScriptApp.getProjectTriggers().some(trigger => {
-    return trigger.getHandlerFunction() === 'receiptSemiAutoOnOpen';
-  });
-
-  if (!exists) {
-    ScriptApp.newTrigger('receiptSemiAutoOnOpen')
-      .forSpreadsheet(ss)
-      .onOpen()
-      .create();
-  }
-
   RSA_addMenu_();
   RSA_alert_(
     '初期設定が完了しました。\n\n' +
