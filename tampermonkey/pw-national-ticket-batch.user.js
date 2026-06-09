@@ -1,10 +1,10 @@
 // ==UserScript==
-// @name         PW ナショナルチケット批量付与 安全確認版 v1.0
+// @name         PW ナショナルチケット批量付与 正式版 v1.1
 // @namespace    pw-national-ticket-batch-safe
-// @version      1.0.2
+// @version      1.1.0
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
-// @description  GameID・チケット名TSVを厳密検証し、DRY RUN・1件テスト後にナショナルチケットを一件ずつ付与する安全確認版
+// @description  任意のPokerWeb后台页からGameID・チケット名TSVを厳密検証し、ナショナルチケットを安全に一件ずつ付与する正式版
 // @author       xhpc007 + Codex
 // @match        https://japanopt.pokerweb.com.br/cb/*
 // @grant        GM_setClipboard
@@ -19,9 +19,11 @@
     previewKey: 'PW_NATIONAL_TICKET_BATCH_V10_PREVIEW',
     logKey: 'PW_NATIONAL_TICKET_BATCH_V10_LOG',
     ledgerKey: 'PW_NATIONAL_TICKET_BATCH_V10_LEDGER',
+    ticketListUrlKey: 'PW_NATIONAL_TICKET_BATCH_TICKET_LIST_URL',
     emitUrl: '/cb/vagas/emitir_ticket',
     playerSearchUrl: '/cb/jogadores/search',
     groupPathPattern: /\/painel_grupo_tickets\/(\d+)/,
+    ticketListTextPattern: /ナショナル\s*チケット|national\s*ticket/i,
     minDelayMs: 800,
     maxDelayMs: 1500,
     verifyAttempts: 3,
@@ -39,6 +41,7 @@
   ];
 
   let state = freshState();
+  let verifiedTicketListCodbloq = '';
 
   function freshState() {
     const ledger = loadLedger();
@@ -236,8 +239,8 @@
     return tasks;
   }
 
-  function getGroupLinksFromListPage() {
-    const links = [...document.querySelectorAll('a[href]')];
+  function getGroupLinksFromDocument(doc) {
+    const links = [...doc.querySelectorAll('a[href]')];
     const groups = [];
 
     for (const link of links) {
@@ -264,11 +267,65 @@
     return [...unique.values()];
   }
 
-  function resolveRequestedGroups(tasks) {
-    const groups = getGroupLinksFromListPage();
-    if (!groups.length) {
-      throw new Error('このページから painel_grupo_tickets/{grupo} リンクを取得できません。ナショナルチケット一覧ページで実行してください。');
+  function findTicketListUrlFromCurrentPage() {
+    const candidates = [...document.querySelectorAll('a[href]')]
+      .map(link => ({
+        href: link.getAttribute('href') || '',
+        text: norm(link.textContent),
+        title: norm(link.getAttribute('title'))
+      }))
+      .filter(item => item.href && APP.ticketListTextPattern.test(`${item.text} ${item.title}`))
+      .filter(item => !APP.groupPathPattern.test(item.href))
+      .map(item => absoluteUrl(item.href));
+
+    const unique = [...new Set(candidates)];
+    if (unique.length === 1) return unique[0];
+    if (unique.length > 1) {
+      throw new Error(`ナショナルチケット一覧リンクが複数あります: ${unique.join(' / ')}`);
     }
+    return '';
+  }
+
+  async function loadTicketListDocument() {
+    const currentGroups = getGroupLinksFromDocument(document);
+    if (currentGroups.length) {
+      localStorage.setItem(APP.ticketListUrlKey, location.href);
+      verifiedTicketListCodbloq = extractCodbloq(document, document.documentElement?.outerHTML || '');
+      return { doc: document, url: location.href, groups: currentGroups, source: 'current-page' };
+    }
+
+    const cachedUrl = localStorage.getItem(APP.ticketListUrlKey) || '';
+    let listUrl = cachedUrl || findTicketListUrlFromCurrentPage();
+    if (!listUrl) {
+      throw new Error('現在のページメニューからナショナルチケット一覧リンクを一意に取得できません。');
+    }
+
+    let { text } = await requestText(listUrl, { method: 'GET', cache: 'no-store' });
+    let doc = parseHtml(text);
+    let groups = getGroupLinksFromDocument(doc);
+
+    if (!groups.length && cachedUrl) {
+      localStorage.removeItem(APP.ticketListUrlKey);
+      listUrl = findTicketListUrlFromCurrentPage();
+      if (listUrl) {
+        ({ text } = await requestText(listUrl, { method: 'GET', cache: 'no-store' }));
+        doc = parseHtml(text);
+        groups = getGroupLinksFromDocument(doc);
+      }
+    }
+
+    if (!groups.length) {
+      throw new Error(`取得したページに ticket group リンクがありません: ${listUrl}`);
+    }
+
+    localStorage.setItem(APP.ticketListUrlKey, listUrl);
+    verifiedTicketListCodbloq = extractCodbloq(doc, text);
+    return { doc, url: listUrl, groups, source: cachedUrl ? 'cached-background-list-page' : 'background-list-page' };
+  }
+
+  async function resolveRequestedGroups(tasks) {
+    const listPage = await loadTicketListDocument();
+    const groups = listPage.groups;
 
     const resolved = new Map();
     const requestedNames = [...new Set(tasks.map(task => task.ticketName))];
@@ -286,7 +343,7 @@
       resolved.set(ticketName, uniqueByGrupo[0]);
     });
 
-    return resolved;
+    return { resolved, listPage };
   }
 
   function parseGroupPage(html, expectedGrupo) {
@@ -357,10 +414,10 @@
   async function fetchGroupPage(group, requireCodbloq = true) {
     const { text } = await requestText(group.groupURL, { method: 'GET', cache: 'no-store' });
     const parsed = parseGroupPage(text, group.grupo);
-    if (!parsed.codbloq) {
-      parsed.codbloq = extractCodbloq(document, document.documentElement?.outerHTML || '');
-      if (parsed.codbloq) parsed.diagnostics.codbloqSource = 'current-list-page';
-    } else {
+    if (!parsed.codbloq && verifiedTicketListCodbloq) {
+      parsed.codbloq = verifiedTicketListCodbloq;
+      parsed.diagnostics.codbloqSource = 'verified-ticket-list-page';
+    } else if (parsed.codbloq) {
       parsed.diagnostics.codbloqSource = 'group-page';
     }
     if (requireCodbloq && !parsed.codbloq) {
@@ -410,7 +467,9 @@
       localStorage.setItem(APP.inputKey, input);
       const tasks = parseInput(input);
       state.tasks = tasks;
-      const groupMap = resolveRequestedGroups(tasks);
+      setStatus('DRY RUN: ナショナルチケット一覧を確認中');
+      const { resolved: groupMap, listPage } = await resolveRequestedGroups(tasks);
+      setStatus(`DRY RUN: 一覧取得成功 (${listPage.source})`);
       const inventoryMap = new Map();
 
       const neededNames = [...new Set(tasks.map(task => task.ticketName))];
@@ -765,12 +824,12 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <strong>PW ナショナルチケット批量付与 安全確認版 v1.0</strong>
+        <strong>PW ナショナルチケット批量付与 正式版 v1.1</strong>
         <div><button id="pwnt-min">Min</button> <button id="pwnt-close">x</button></div>
       </div>
       <div id="pwnt-body" style="overflow:auto;margin-top:8px;">
         <div style="font-size:11px;color:#f6d365;line-height:1.45;margin-bottom:8px;">
-          ナショナルチケット一覧ページで使用。正式付与は DRY RUN 成功 + 1件テスト成功後だけ解锁されます。
+          任意のPokerWeb后台页で使用可能。一覧ページは后台取得。正式付与は DRY RUN 成功 + 1件テスト成功後だけ解锁されます。
         </div>
         <div style="font-weight:bold;">输入 TSV: GameID[TAB]チケット名</div>
         <textarea id="pwnt-input" style="width:100%;box-sizing:border-box;height:115px;background:#111;color:#fff;border:1px solid #555;padding:8px;font-family:Consolas,monospace;"></textarea>
@@ -812,7 +871,9 @@
     addPanel();
     window.PWNationalTicketBatch = {
       parseInput,
-      getGroupLinksFromListPage,
+      getGroupLinksFromDocument,
+      findTicketListUrlFromCurrentPage,
+      loadTicketListDocument,
       parseGroupPage,
       searchInternalId,
       dryRun,
