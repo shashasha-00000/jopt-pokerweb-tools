@@ -9,6 +9,15 @@
         "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js"
     },
     {
+        "file":  "pw-national-ticket-batch.user.js",
+        "name":  "PW ナショナルチケット批量付与 安全確認版 v1.0",
+        "version":  "1.0.0",
+        "description":  "GameID・チケット名TSVを厳密検証し、DRY RUN・1件テスト後にナショナルチケットを一件ずつ付与する安全確認版",
+        "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js",
+        "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js",
+        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js"
+    },
+    {
         "file":  "pw-receipt-full-auto.user.js",
         "name":  "PW Receipt Full Auto v6.0",
         "version":  "6.0.1",

@@ -1,8 +1,10 @@
 /*******************************************************
  * ReceiptSemiAutoAppend.gs
  *
- * PW TSVショウ用 + 領収書申請入力 から、既存の
- * AI_CSV_EXPORT / メール送信 の末尾へ今回分だけ追加する。
+ * PW TSVショウ用 + 領収書申請入力 から、
+ * トナメ抜き出しへ今回分を追加して既存番号体系に乗せ、
+ * CSV書き出しシートから領収書Noだけ読み、
+ * 書き出しデータ / メール送信 の末尾へ今回分だけ追加する。
  *
  * 重要:
  * - 既存行、表頭、数式、書式、列幅を変更しない
@@ -14,17 +16,15 @@
 const RSA_CONFIG = {
   PW_SHEET_NAME: 'PW TSVショウ用',
   APPLICATION_SHEET_NAME: '領収書申請入力',
-  AI_CSV_SHEET_NAME: 'AI_CSV_EXPORT',
+  NUKIDASHI_SHEET_NAME: 'トナメ抜き出し',
+  CSV_FORMULA_SHEET_NAME: 'CSV書き出しシート（緑以外いじらない',
+  AI_CSV_SHEET_NAME: '書き出しデータ',
   MAIL_SHEET_NAME: 'メール送信',
   CHECK_SHEET_NAME: 'CHECK_REPORT',
   RUN_LOG_SHEET_NAME: '領収書半自動_RUN_LOG',
 
   HEADER_ROW: 1,
   DATA_START_ROW: 2,
-
-  // 空白の場合、スプレッドシートと同じフォルダへCSVを出力する。
-  CSV_OUTPUT_FOLDER_URL_OR_ID: '',
-  CSV_FILE_PREFIX: 'AI_CSV_EXPORT_',
 
   PW_HEADERS: [
     'Game ID', '購入時間', '年', '月', '日', '大会名',
@@ -41,6 +41,23 @@ const RSA_CONFIG = {
     '税抜き', 'トーナメント名', '画像タイトルA', '画像タイトルB'
   ],
 
+  NUKIDASHI_HEADER_ROW: 1,
+  NUKIDASHI_COLUMNS: {
+    gameId: 3,
+    name: 4,
+    email: 5,
+    receiptName: 6,
+    year: 8,
+    month: 9,
+    day: 10,
+    tournament: 11,
+    type: 12,
+    cash: 14,
+    creditCard: 15,
+    points: 16,
+    usdt: 17
+  },
+
   MAIL_HEADERS: [
     '', '氏名', '氏名 様', '件数', 'ファイル名フィルター',
     '添付照合用氏名', 'メールアドレス', '下書きステータス',
@@ -54,21 +71,22 @@ const RSA_CONFIG = {
 
 /**
  * 初回だけ実行する。
- * 入力表・チェック表・実行履歴表を準備し、専用onOpenトリガーを登録する。
- * AI_CSV_EXPORT / メール送信 は保護のため自動作成しない。
+ * 入力表・書き出し表・チェック表・実行履歴表を準備する。
+ * メール送信 は既存表を使うため自動作成しない。
  */
 function setupReceiptSemiAutoAppend() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
   RSA_ensureOwnedSheet_(ss, RSA_CONFIG.APPLICATION_SHEET_NAME, RSA_CONFIG.APPLICATION_HEADERS);
+  RSA_ensureOwnedSheet_(ss, RSA_CONFIG.AI_CSV_SHEET_NAME, RSA_CONFIG.AI_CSV_HEADERS);
   RSA_ensureOwnedSheet_(ss, RSA_CONFIG.CHECK_SHEET_NAME, RSA_CONFIG.CHECK_HEADERS);
   RSA_ensureOwnedSheet_(ss, RSA_CONFIG.RUN_LOG_SHEET_NAME, RSA_CONFIG.RUN_LOG_HEADERS);
 
   RSA_addMenu_();
   RSA_alert_(
     '初期設定が完了しました。\n\n' +
-    'AI_CSV_EXPORT と メール送信 は既存表を使用します。\n' +
-    'この2表は自動作成・変更していません。'
+    '書き出しデータ / 領収書申請入力 / CHECK_REPORT を準備しました。\n' +
+    'メール送信 は既存表を使用します。'
   );
 }
 
@@ -76,12 +94,18 @@ function receiptSemiAutoOnOpen() {
   RSA_addMenu_();
 }
 
+function onOpen() {
+  RSA_addMenu_();
+}
+
 function RSA_addMenu_() {
   SpreadsheetApp.getUi()
     .createMenu('領収書半自動')
     .addItem('生成前チェック（書き込みなし）', 'previewReceiptCsvAndMailList')
-    .addItem('CSV・メール送信生成', 'buildReceiptCsvAndMailList')
-    .addItem('AI CSV をDrive出力', 'exportLatestReceiptAiCsvToDrive')
+    .addItem('書き出しデータ・メール送信生成', 'buildReceiptCsvAndMailList')
+    .addItem('書き出しデータを開く', 'openReceiptAiOutputSheet')
+    .addSeparator()
+    .addItem('メール送信の表頭だけ修正', 'fixReceiptMailHeaders')
     .addItem('CHECK_REPORTを開く', 'openReceiptCheckReport')
     .addToUi();
 }
@@ -106,11 +130,13 @@ function RSA_runBuild_(previewOnly) {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const pwSheet = RSA_requiredSheet_(ss, RSA_CONFIG.PW_SHEET_NAME);
     const applicationSheet = RSA_requiredSheet_(ss, RSA_CONFIG.APPLICATION_SHEET_NAME);
+    const nukidashiSheet = RSA_requiredSheet_(ss, RSA_CONFIG.NUKIDASHI_SHEET_NAME);
+    const csvFormulaSheet = RSA_requiredSheet_(ss, RSA_CONFIG.CSV_FORMULA_SHEET_NAME);
     const aiSheet = RSA_requiredSheet_(ss, RSA_CONFIG.AI_CSV_SHEET_NAME);
     const mailSheet = RSA_requiredSheet_(ss, RSA_CONFIG.MAIL_SHEET_NAME);
 
     RSA_assertExactHeaders_(aiSheet, RSA_CONFIG.AI_CSV_HEADERS);
-    RSA_assertExactHeaders_(mailSheet, RSA_CONFIG.MAIL_HEADERS);
+    RSA_assertMailHeaders_(mailSheet);
 
     const checkRows = [];
     const pwRows = RSA_readPwRows_(pwSheet);
@@ -162,13 +188,13 @@ function RSA_runBuild_(previewOnly) {
     const runKey = RSA_buildRunKey_(matched);
     RSA_assertRunNotProcessed_(ss, runKey);
 
-    const currentMaxReceiptNo = RSA_findMaxReceiptNo_(aiSheet);
     const personCounts = {};
     const groupedMail = {};
     const mailOrder = [];
-    const aiRows = [];
+    const nukidashiRows = [];
+    const aiItems = [];
 
-    matched.forEach((item, index) => {
+    matched.forEach(item => {
       const app = item.app;
       const pw = item.pw;
       const personKey = RSA_personKey_(app.name, app.email);
@@ -177,25 +203,41 @@ function RSA_runBuild_(previewOnly) {
       const imageNo = personCounts[personKey];
       const tax = Math.floor(item.total / 11);
 
-      aiRows.push([
-        currentMaxReceiptNo + index + 1,
-        RSA_isNoAddressee_(app.receiptName) ? '' : app.receiptName,
-        pw.year,
-        pw.month,
-        pw.day,
-        RSA_formatYen_(item.total),
-        RSA_formatYen_(pw.cash),
-        RSA_formatYen_(pw.creditCard),
-        RSA_formatYen_(pw.points),
-        RSA_formatYen_(tax),
-        RSA_formatYen_(item.total - tax),
-        pw.tournament,
-        app.name ? app.name + ' 様' : '',
-        imageNo
-      ]);
+      nukidashiRows.push({
+        gameId: pw.gameId,
+        name: app.name,
+        email: app.email,
+        receiptName: app.receiptName,
+        year: pw.year,
+        month: pw.month,
+        day: pw.day,
+        tournament: pw.tournament,
+        type: pw.type,
+        cash: pw.cash,
+        creditCard: pw.creditCard,
+        points: pw.points,
+        usdt: pw.usdt
+      });
+
+      aiItems.push({
+        receiptName: RSA_isNoAddressee_(app.receiptName) ? '' : app.receiptName,
+        year: pw.year,
+        month: pw.month,
+        day: pw.day,
+        total: item.total,
+        cash: pw.cash,
+        creditCard: pw.creditCard,
+        points: pw.points,
+        tax: tax,
+        taxExcluded: item.total - tax,
+        tournament: pw.tournament,
+        titleA: app.name ? app.name + ' 様' : '',
+        imageNo: imageNo
+      });
 
       if (!groupedMail[personKey]) {
         groupedMail[personKey] = {
+          gameId: pw.gameId,
           name: app.name,
           email: app.email,
           count: 0
@@ -219,8 +261,8 @@ function RSA_runBuild_(previewOnly) {
         item.name,
         item.name ? item.name + ' 様' : '',
         item.count,
-        '',
-        '',
+        '', // E: ファイル名フィルター。必要時に手動で 2,3,4,5 等を入力する
+        '', // F: 添付照合用氏名
         item.email,
         '',
         '',
@@ -234,8 +276,9 @@ function RSA_runBuild_(previewOnly) {
 
     RSA_addExistingMailWarnings_(mailSheet, mailRows, checkRows);
 
-    // 両方の出力先を先に検査し、片方だけ書き込まれる状態を防ぐ。
-    const aiAppend = RSA_prepareAppend_(aiSheet, aiRows, RSA_CONFIG.AI_CSV_HEADERS.length);
+    const nukidashiAppend = RSA_prepareNukidashiAppend_(nukidashiSheet, nukidashiRows);
+    const placeholderAiRows = aiItems.map(() => new Array(RSA_CONFIG.AI_CSV_HEADERS.length).fill(''));
+    const aiAppend = RSA_prepareAppend_(aiSheet, placeholderAiRows, RSA_CONFIG.AI_CSV_HEADERS.length);
     const mailAppend = RSA_prepareAppend_(mailSheet, mailRows, RSA_CONFIG.MAIL_HEADERS.length);
 
     RSA_writeCheckReport_(ss, checkRows);
@@ -243,13 +286,20 @@ function RSA_runBuild_(previewOnly) {
     if (previewOnly) {
       RSA_alert_(
         '生成前チェックが完了しました。表への追加はしていません。\n\n' +
-        'AI CSV予定: ' + aiRows.length + '行（' + aiAppend.startRow + '行目から）\n' +
+        'トナメ抜き出し予定: ' + nukidashiRows.length + '行（' + nukidashiAppend.startRow + '行目から）\n' +
+        '書き出しデータ予定: ' + aiItems.length + '行（' + aiAppend.startRow + '行目から）\n' +
         'メール送信予定: ' + mailRows.length + '行（' + mailAppend.startRow + '行目から）\n' +
-        '次の領収書No: ' + (currentMaxReceiptNo + 1) + '\n' +
+        '領収書No: 生成時にCSV書き出しシートから読み取ります\n' +
         'CHECK: ' + checkRows.length + '件'
       );
       return;
     }
+
+    RSA_commitNukidashiAppend_(nukidashiAppend);
+    SpreadsheetApp.flush();
+
+    const receiptNos = RSA_readReceiptNosFromCsvFormula_(csvFormulaSheet, nukidashiAppend.startRow, aiItems.length);
+    aiAppend.rows = RSA_buildAiRowsFromItems_(aiItems, receiptNos);
 
     RSA_commitAppend_(aiAppend);
     RSA_commitAppend_(mailAppend);
@@ -258,18 +308,19 @@ function RSA_runBuild_(previewOnly) {
     const mailStartRow = mailAppend.startRow;
 
     RSA_writeRunLog_(ss, [
-      new Date(), runKey, aiStartRow, aiRows.length, mailStartRow, mailRows.length
+      new Date(), runKey, aiStartRow, aiItems.length, mailStartRow, mailRows.length
     ]);
 
     PropertiesService.getDocumentProperties().setProperties({
       RSA_LAST_AI_START_ROW: String(aiStartRow),
-      RSA_LAST_AI_ROW_COUNT: String(aiRows.length),
+      RSA_LAST_AI_ROW_COUNT: String(aiItems.length),
       RSA_LAST_RUN_KEY: runKey
     });
 
     RSA_alert_(
       '今回分の追加が完了しました。\n\n' +
-      'AI CSV追加: ' + aiRows.length + '行（' + aiStartRow + '行目から）\n' +
+      'トナメ抜き出し追加: ' + nukidashiRows.length + '行（' + nukidashiAppend.startRow + '行目から）\n' +
+      '書き出しデータ追加: ' + aiItems.length + '行（' + aiStartRow + '行目から）\n' +
       'メール送信追加: ' + mailRows.length + '行（' + mailStartRow + '行目から）\n' +
       'CHECK: ' + checkRows.length + '件'
     );
@@ -279,34 +330,24 @@ function RSA_runBuild_(previewOnly) {
 }
 
 /**
- * 最後に生成したAI CSV行だけをCSV化する。
+ * DriveにCSVファイルは作らず、書き出しデータ表を開く。
  */
 function exportLatestReceiptAiCsvToDrive() {
+  openReceiptAiOutputSheet();
+  RSA_alert_('CSVファイルのDrive出力は廃止しました。書き出しデータ表を開きました。');
+}
+
+function openReceiptAiOutputSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = RSA_requiredSheet_(ss, RSA_CONFIG.AI_CSV_SHEET_NAME);
-  RSA_assertExactHeaders_(sheet, RSA_CONFIG.AI_CSV_HEADERS);
+  ss.setActiveSheet(sheet);
+}
 
-  const props = PropertiesService.getDocumentProperties();
-  const startRow = Number(props.getProperty('RSA_LAST_AI_START_ROW') || 0);
-  const rowCount = Number(props.getProperty('RSA_LAST_AI_ROW_COUNT') || 0);
-
-  if (startRow < 2 || rowCount < 1) {
-    throw new Error('このスクリプトで生成した最新AI CSVデータがありません。');
-  }
-
-  const values = [
-    RSA_CONFIG.AI_CSV_HEADERS,
-    ...sheet.getRange(startRow, 1, rowCount, RSA_CONFIG.AI_CSV_HEADERS.length).getDisplayValues()
-  ];
-
-  const csv = values.map(row => row.map(RSA_csvCell_).join(',')).join('\r\n');
-  const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd_HHmmss');
-  const fileName = RSA_CONFIG.CSV_FILE_PREFIX + stamp + '.csv';
-  const blob = Utilities.newBlob('\uFEFF' + csv, 'text/csv', fileName);
-  const folder = RSA_getCsvOutputFolder_(ss);
-  const file = folder.createFile(blob);
-
-  RSA_alert_('AI CSVをDriveへ出力しました。\n\n' + file.getName() + '\n' + file.getUrl());
+function fixReceiptMailHeaders() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = RSA_requiredSheet_(ss, RSA_CONFIG.MAIL_SHEET_NAME);
+  RSA_fixMailHeaders_(sheet);
+  RSA_alert_('メール送信の表頭 A〜N だけを修正しました。既存データ行は変更していません。');
 }
 
 function openReceiptCheckReport() {
@@ -434,12 +475,148 @@ function RSA_commitAppend_(prepared) {
   prepared.target.setValues(prepared.rows);
 }
 
-function RSA_findMaxReceiptNo_(sheet) {
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return 0;
+function RSA_prepareNukidashiAppend_(sheet, rows) {
+  const lastDataRow = RSA_findNukidashiLastDataRow_(sheet);
+  const startRow = Math.max(lastDataRow + 1, 2);
+  const requiredLastRow = startRow + rows.length - 1;
 
-  return sheet.getRange(2, 1, lastRow - 1, 1).getValues()
-    .reduce((max, row) => Math.max(max, RSA_money_(row[0])), 0);
+  if (requiredLastRow > sheet.getMaxRows()) {
+    sheet.insertRowsAfter(sheet.getMaxRows(), requiredLastRow - sheet.getMaxRows());
+  }
+
+  RSA_assertNukidashiInputRangeEmpty_(sheet, startRow, rows.length);
+
+  return {
+    sheet: sheet,
+    rows: rows,
+    startRow: startRow,
+    templateRow: Math.max(lastDataRow, 2),
+    columnCount: sheet.getLastColumn()
+  };
+}
+
+function RSA_commitNukidashiAppend_(prepared) {
+  if (!prepared.rows.length) return;
+
+  const sheet = prepared.sheet;
+  const startRow = prepared.startRow;
+  const rowCount = prepared.rows.length;
+  const columnCount = prepared.columnCount;
+
+  if (prepared.templateRow >= 2 && columnCount > 0) {
+    const target = sheet.getRange(startRow, 1, rowCount, columnCount);
+    sheet.getRange(prepared.templateRow, 1, 1, columnCount)
+      .copyTo(target, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+
+    const formulas = sheet.getRange(prepared.templateRow, 1, 1, columnCount).getFormulasR1C1()[0];
+    if (formulas.some(formula => formula)) {
+      const formulaRows = [];
+      for (let i = 0; i < rowCount; i++) {
+        formulaRows.push(formulas.slice());
+      }
+      target.setFormulasR1C1(formulaRows);
+    }
+  }
+
+  const c = RSA_CONFIG.NUKIDASHI_COLUMNS;
+  RSA_writeNukidashiColumn_(sheet, startRow, c.gameId, prepared.rows.map(row => RSA_numberOrTextGameId_(row.gameId)));
+  RSA_writeNukidashiColumn_(sheet, startRow, c.name, prepared.rows.map(row => row.name));
+  RSA_writeNukidashiColumn_(sheet, startRow, c.email, prepared.rows.map(row => row.email));
+  RSA_writeNukidashiColumn_(sheet, startRow, c.receiptName, prepared.rows.map(row => row.receiptName));
+  RSA_writeNukidashiColumn_(sheet, startRow, c.year, prepared.rows.map(row => row.year));
+  RSA_writeNukidashiColumn_(sheet, startRow, c.month, prepared.rows.map(row => row.month));
+  RSA_writeNukidashiColumn_(sheet, startRow, c.day, prepared.rows.map(row => row.day));
+  RSA_writeNukidashiColumn_(sheet, startRow, c.tournament, prepared.rows.map(row => row.tournament));
+  RSA_writeNukidashiColumn_(sheet, startRow, c.type, prepared.rows.map(row => row.type));
+  RSA_writeNukidashiColumn_(sheet, startRow, c.cash, prepared.rows.map(row => row.cash));
+  RSA_writeNukidashiColumn_(sheet, startRow, c.creditCard, prepared.rows.map(row => row.creditCard));
+  RSA_writeNukidashiColumn_(sheet, startRow, c.points, prepared.rows.map(row => row.points));
+  RSA_writeNukidashiColumn_(sheet, startRow, c.usdt, prepared.rows.map(row => row.usdt));
+}
+
+function RSA_writeNukidashiColumn_(sheet, startRow, column, values) {
+  sheet.getRange(startRow, column, values.length, 1).setValues(values.map(value => [value]));
+}
+
+function RSA_findNukidashiLastDataRow_(sheet) {
+  const headerRow = RSA_CONFIG.NUKIDASHI_HEADER_ROW;
+  const maxRows = sheet.getMaxRows();
+  const keyColumns = [
+    RSA_CONFIG.NUKIDASHI_COLUMNS.gameId,
+    RSA_CONFIG.NUKIDASHI_COLUMNS.tournament
+  ];
+
+  let last = headerRow;
+
+  keyColumns.forEach(column => {
+    const values = sheet.getRange(headerRow + 1, column, maxRows - headerRow, 1).getValues();
+    for (let i = values.length - 1; i >= 0; i--) {
+      if (RSA_text_(values[i][0])) {
+        last = Math.max(last, headerRow + 1 + i);
+        break;
+      }
+    }
+  });
+
+  return last;
+}
+
+function RSA_assertNukidashiInputRangeEmpty_(sheet, startRow, rowCount) {
+  if (!rowCount) return;
+
+  const columns = Object.keys(RSA_CONFIG.NUKIDASHI_COLUMNS)
+    .map(key => RSA_CONFIG.NUKIDASHI_COLUMNS[key]);
+
+  columns.forEach(column => {
+    const values = sheet.getRange(startRow, column, rowCount, 1).getValues();
+    const hasValue = values.some(row => RSA_text_(row[0]) !== '');
+    if (hasValue) {
+      throw new Error('トナメ抜き出し の追加予定入力列に既存内容があります。安全のため停止しました: ' + startRow + '行目以降 / ' + column + '列');
+    }
+  });
+}
+
+function RSA_readReceiptNosFromCsvFormula_(sheet, startRow, rowCount) {
+  if (!rowCount) return [];
+
+  const values = sheet.getRange(startRow, 1, rowCount, 1).getDisplayValues();
+  const receiptNos = values.map(row => RSA_text_(row[0]));
+  const missing = [];
+
+  receiptNos.forEach((receiptNo, index) => {
+    if (!receiptNo) {
+      missing.push(startRow + index);
+    }
+  });
+
+  if (missing.length) {
+    throw new Error(
+      'CSV書き出しシートから領収書Noを取得できませんでした。\n' +
+      '対象行: ' + missing.join(', ') + '\n' +
+      'トナメ抜き出しの公式反映を確認してください。'
+    );
+  }
+
+  return receiptNos;
+}
+
+function RSA_buildAiRowsFromItems_(items, receiptNos) {
+  return items.map((item, index) => [
+    receiptNos[index],
+    item.receiptName,
+    item.year,
+    item.month,
+    item.day,
+    RSA_formatYen_(item.total),
+    RSA_formatYen_(item.cash),
+    RSA_formatYen_(item.creditCard),
+    RSA_formatYen_(item.points),
+    RSA_formatYen_(item.tax),
+    RSA_formatYen_(item.taxExcluded),
+    item.tournament,
+    item.titleA,
+    item.imageNo
+  ]);
 }
 
 function RSA_addExistingMailWarnings_(mailSheet, newRows, checkRows) {
@@ -549,6 +726,47 @@ function RSA_assertExactHeaders_(sheet, expected) {
   }
 }
 
+function RSA_assertMailHeaders_(sheet) {
+  const expected = RSA_CONFIG.MAIL_HEADERS;
+
+  if (sheet.getLastColumn() < expected.length) {
+    throw new Error('表の列数が不足しています。既存表は変更せず停止しました: ' + sheet.getName());
+  }
+
+  const actual = sheet.getRange(1, 1, 1, expected.length).getDisplayValues()[0].map(RSA_text_);
+  const differences = [];
+
+  expected.forEach((header, index) => {
+    // A列、E列、F列は旧表では空白、新表では説明用表頭が入るため、両方を許可する。
+    if (index === 0) return;
+    if (index === 4 && (actual[index] === '' || actual[index] === 'ファイル名フィルター')) return;
+    if (index === 5 && (actual[index] === '' || actual[index] === '添付照合用氏名')) return;
+
+    if (actual[index] !== RSA_text_(header)) {
+      differences.push((index + 1) + '列目: 期待=[' + header + '] 実際=[' + actual[index] + ']');
+    }
+  });
+
+  if (differences.length) {
+    throw new Error(
+      'メール送信の表頭が想定と異なります。既存表は変更せず停止しました。\n' +
+      differences.join('\n')
+    );
+  }
+}
+
+function RSA_fixMailHeaders_(sheet) {
+  if (sheet.getMaxColumns() < RSA_CONFIG.MAIL_HEADERS.length) {
+    sheet.insertColumnsAfter(
+      sheet.getMaxColumns(),
+      RSA_CONFIG.MAIL_HEADERS.length - sheet.getMaxColumns()
+    );
+  }
+
+  sheet.getRange(1, 1, 1, RSA_CONFIG.MAIL_HEADERS.length)
+    .setValues([RSA_CONFIG.MAIL_HEADERS]);
+}
+
 function RSA_requiredSheet_(ss, name) {
   const sheet = ss.getSheetByName(name);
   if (!sheet) {
@@ -566,6 +784,12 @@ function RSA_getAny_(obj, names) {
 
 function RSA_normalizeGameId_(value) {
   return String(value === null || value === undefined ? '' : value).replace(/\D/g, '');
+}
+
+function RSA_numberOrTextGameId_(value) {
+  const key = RSA_normalizeGameId_(value);
+  if (/^\d+$/.test(key)) return Number(key);
+  return RSA_text_(value);
 }
 
 function RSA_personKey_(name, email) {
@@ -599,26 +823,6 @@ function RSA_money_(value) {
 
 function RSA_formatYen_(value) {
   return '¥' + Math.round(Number(value) || 0).toLocaleString('ja-JP') + '-';
-}
-
-function RSA_csvCell_(value) {
-  const text = String(value === null || value === undefined ? '' : value);
-  return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
-}
-
-function RSA_getCsvOutputFolder_(ss) {
-  const configured = RSA_text_(RSA_CONFIG.CSV_OUTPUT_FOLDER_URL_OR_ID);
-  if (configured) {
-    const match = configured.match(/folders\/([a-zA-Z0-9_-]+)/) ||
-      configured.match(/[?&]id=([a-zA-Z0-9_-]+)/) ||
-      configured.match(/^([a-zA-Z0-9_-]{20,})$/);
-    if (!match) throw new Error('CSV_OUTPUT_FOLDER_URL_OR_ID からDriveフォルダIDを取得できません。');
-    return DriveApp.getFolderById(match[1]);
-  }
-
-  const file = DriveApp.getFileById(ss.getId());
-  const parents = file.getParents();
-  return parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
 }
 
 function RSA_alert_(message) {
