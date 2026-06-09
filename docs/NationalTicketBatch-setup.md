@@ -43,8 +43,8 @@
 - DRY RUN 不调用发券 POST。
 - 正式付与必须先成功完成 1 件测试。
 - 每次 POST 前重新读取 group 页面，确认 ticket_id 仍为未発行并取得最新 codbloq。
-- POST response 必须出现可识别的成功信号；无法判断成功时立即停止。
-- 每次 POST 后重新读取 group 页面；只有 ticket_id 已离开未発行库存才判断成功。
+- POST response 会记录为日志；PokerWeb 返回完整 HTML 时不单独据此判断失败。
+- 每次 POST 后重新读取 group 页面；只有该 ticket_id 已离开未発行库存才判断成功，否则立即停止。
 - 任意一件失败立即停止。
 - 防重键为 `ticket_id` 和 `TSV行号 + GameID + チケット名`。
 - POST 一旦开始，即写入当前浏览器标签页的防重账本；即使结果不明也不会自动重试。

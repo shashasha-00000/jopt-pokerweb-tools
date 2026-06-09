@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW ナショナルチケット批量付与 安全確認版 v1.0
 // @namespace    pw-national-ticket-batch-safe
-// @version      1.0.1
+// @version      1.0.2
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
 // @description  GameID・チケット名TSVを厳密検証し、DRY RUN・1件テスト後にナショナルチケットを一件ずつ付与する安全確認版
@@ -497,34 +497,36 @@
     return norm(text).slice(0, 500);
   }
 
-  function assertRecognizedSuccessResponse(text) {
+  function classifyPostResponse(text) {
     const summary = responseSummary(text);
-    if (!summary) throw new Error('POST response が空で、成功判定できません。');
+    if (!summary) return { status: 'UNKNOWN', summary: '(empty response)' };
 
     try {
       const json = JSON.parse(text);
       const status = norm(json.status || json.result || '').toLowerCase();
       if (json.success === true || json.ok === true || ['ok', 'success', 'sucesso'].includes(status)) {
-        return;
+        return { status: 'SUCCESS_SIGNAL', summary };
       }
       if (json.success === false || json.ok === false || status) {
-        throw new Error(`POST response が成功ではありません: ${summary}`);
+        return { status: 'ERROR_SIGNAL', summary };
       }
     } catch (error) {
       if (error instanceof SyntaxError) {
         // Continue with strict text recognition.
       } else {
-        throw error;
+        return { status: 'ERROR_SIGNAL', summary: `${error.message || error} / ${summary}` };
       }
     }
 
     const lower = summary.toLowerCase();
     if (/(erro|error|falha|failed|invalid|não foi|nao foi|失敗|エラー)/i.test(lower)) {
-      throw new Error(`POST response にエラー信号があります: ${summary}`);
+      return { status: 'ERROR_SIGNAL', summary };
     }
-    if (/(sucesso|success|emitido|発行しました|発行完了)/i.test(lower)) return;
+    if (/(sucesso|success|emitido|発行しました|発行完了)/i.test(lower)) {
+      return { status: 'SUCCESS_SIGNAL', summary };
+    }
 
-    throw new Error(`POST response の成功を判断できません: ${summary}`);
+    return { status: 'UNKNOWN_HTML_OR_TEXT', summary };
   }
 
   async function emitOne(task, resultLabel) {
@@ -553,16 +555,23 @@
       grupo: task.grupo
     });
 
-    assertRecognizedSuccessResponse(text);
+    const responseResult = classifyPostResponse(text);
     const confirmed = await verifyTicketEmitted(task);
     if (!confirmed) {
-      throw new Error(`POST後の状態確認に失敗しました。ticket_id が未発行在庫に残っています: ${task.ticketId}`);
+      throw new Error(
+        `POST後も ticket_id が未発行在庫に残っています: ${task.ticketId} / ` +
+        `response=${responseResult.status}: ${responseResult.summary}`
+      );
     }
 
     task.status = resultLabel;
     task.error = '';
 
-    appendLog(task, resultLabel, responseSummary(text));
+    appendLog(
+      task,
+      resultLabel,
+      `${responseResult.status} / POST後に未発行在庫から消失確認 / ${responseResult.summary}`
+    );
     savePreview();
     renderPreview();
   }
