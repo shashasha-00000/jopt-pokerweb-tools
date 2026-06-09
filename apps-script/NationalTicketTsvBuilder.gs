@@ -7,35 +7,77 @@
  * 実行:
  *   buildNationalTicketTsv()
  *
+ * ルール:
+ * - D列「対象プロモ」が A: Millions + PPC
+ * - D列「対象プロモ」が B / C: Millions
+ * - I列「Millons1」と J列「PPC」は付与済み CHECK。未チェック分だけ出力する
+ * - K列「WeChat送信」はチケット付与判定に使用しない
+ *
  * 出力は「GameID」「チケット名」だけ。個人情報列は読み取らず、出力もしない。
  */
 
 const NTB_CONFIG = {
   OUTPUT_SHEET_NAME: 'ナショナルチケット付与TSV',
   HEADER_ROW: 1,
-  GAME_ID_HEADERS: ['Game ID', 'GameID'],
+  REQUIRED_COLUMN_HEADERS: {
+    3: 'Game ID',
+    4: '対象プロモ',
+    9: 'Millons1',
+    10: 'PPC',
+    11: 'WeChat送信'
+  },
   OUTPUT_HEADERS: ['GameID', 'チケット名'],
-  TICKET_COLUMN_MAP: {
-    Millons1: '【JOPT 2026 Tokyo #02】NLH Millions Voucher / -2026.07.31 (海外対応分)',
-    PPC: '【JOPT 2026 Tokyo #02】NLH Poker Players Championship Voucher / -2026.07.31 (海外対応分)'
-  }
+  MILLIONS_TICKET: '【JOPT 2026 Tokyo #02】NLH Millions Voucher / -2026.07.31 (海外対応分)',
+  PPC_TICKET: '【JOPT 2026 Tokyo #02】NLH Poker Players Championship Voucher / -2026.07.31 (海外対応分)'
 };
 
 function installNationalTicketTsvMenu() {
-  SpreadsheetApp.getUi()
-    .createMenu('ナショナルチケットTSV')
-    .addItem('現在のシートからTSV生成', 'buildNationalTicketTsv')
-    .addToUi();
-
-  SpreadsheetApp.getUi().alert(
+  NTB_addMenu_();
+  NTB_alert_(
     'メニュー「ナショナルチケットTSV」を追加しました。\n' +
     'Spreadsheetを再読み込みするとメニューが表示されます。'
   );
 }
 
+function onOpen() {
+  NTB_addMenu_();
+}
+
+function NTB_addMenu_() {
+  try {
+    SpreadsheetApp.getUi()
+    .createMenu('ナショナルチケットTSV')
+    .addItem('現在のシートからTSV生成', 'buildNationalTicketTsv')
+    .addToUi();
+  } catch (error) {
+    throw new Error(
+      'SpreadsheetのUIを取得できません。対象Google Sheetを開き、' +
+      '「拡張機能 > Apps Script」から、このSheetに紐づいたプロジェクトへコードを追加してください。'
+    );
+  }
+}
+
 function buildNationalTicketTsv() {
+  try {
+    NTB_buildNationalTicketTsv_();
+  } catch (error) {
+    const message = error && error.message ? error.message : String(error);
+    console.error(error && error.stack ? error.stack : error);
+    NTB_alert_('TSV生成を停止しました。\n\n' + message);
+    throw error;
+  }
+}
+
+function NTB_buildNationalTicketTsv_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) {
+    throw new Error('Spreadsheetを取得できません。対象Spreadsheetに紐づいた Apps Script から実行してください。');
+  }
+
   const source = ss.getActiveSheet();
+  if (!source) {
+    throw new Error('現在開いているシートを取得できません。');
+  }
 
   if (source.getName() === NTB_CONFIG.OUTPUT_SHEET_NAME) {
     throw new Error('出力シートでは実行できません。元の運用表を開いてから実行してください。');
@@ -47,41 +89,42 @@ function buildNationalTicketTsv() {
   }
 
   const headers = values[NTB_CONFIG.HEADER_ROW - 1].map(NTB_text_);
-  const gameIdColumn = NTB_findHeader_(headers, NTB_CONFIG.GAME_ID_HEADERS);
+  NTB_assertRequiredColumns_(headers);
 
-  if (gameIdColumn < 0) {
-    throw new Error('Game ID 列が見つかりません。対応表頭: ' + NTB_CONFIG.GAME_ID_HEADERS.join(' / '));
-  }
-
-  const ticketColumns = Object.keys(NTB_CONFIG.TICKET_COLUMN_MAP).map(header => {
-    const index = headers.indexOf(header);
-    if (index < 0) {
-      throw new Error('チケット判定列が見つかりません: ' + header);
-    }
-    return {
-      index: index,
-      ticketName: NTB_CONFIG.TICKET_COLUMN_MAP[header]
-    };
-  });
+  const gameIdColumn = 2;
+  const promoColumn = 3;
+  const millionsCheckColumn = 8;
+  const ppcCheckColumn = 9;
 
   const outputRows = [];
   const errors = [];
 
   values.slice(NTB_CONFIG.HEADER_ROW).forEach((row, offset) => {
     const sheetRow = NTB_CONFIG.HEADER_ROW + offset + 1;
-    const checkedTickets = ticketColumns.filter(item => NTB_isChecked_(row[item.index]));
+    const promo = NTB_text_(row[promoColumn]).toUpperCase();
+    const millionsDone = NTB_isChecked_(row[millionsCheckColumn]);
+    const ppcDone = NTB_isChecked_(row[ppcCheckColumn]);
+    const hasRelevantData = promo || NTB_text_(row[gameIdColumn]) || millionsDone || ppcDone;
 
-    if (!checkedTickets.length) return;
-
-    const gameId = NTB_normalizeGameId_(row[gameIdColumn]);
-    if (!gameId) {
-      errors.push(sheetRow + '行目: チェック済みですが Game ID が空白または不正です。');
+    if (!hasRelevantData) return;
+    if (!['A', 'B', 'C'].includes(promo)) {
+      errors.push(sheetRow + '行目: 対象プロモが A / B / C ではありません: [' + promo + ']');
       return;
     }
 
-    checkedTickets.forEach(item => {
-      outputRows.push([gameId, item.ticketName]);
-    });
+    const gameId = NTB_normalizeGameId_(row[gameIdColumn]);
+    if (!gameId) {
+      errors.push(sheetRow + '行目: Game ID が空白または不正です。');
+      return;
+    }
+
+    if (!millionsDone) {
+      outputRows.push([gameId, NTB_CONFIG.MILLIONS_TICKET]);
+    }
+
+    if (promo === 'A' && !ppcDone) {
+      outputRows.push([gameId, NTB_CONFIG.PPC_TICKET]);
+    }
   });
 
   if (errors.length) {
@@ -109,11 +152,12 @@ function buildNationalTicketTsv() {
   output.autoResizeColumns(1, NTB_CONFIG.OUTPUT_HEADERS.length);
   ss.setActiveSheet(output);
 
-  SpreadsheetApp.getUi().alert(
+  NTB_alert_(
     'TSV出力を更新しました。\n\n' +
-    '付与タスク: ' + outputRows.length + ' 件\n' +
-    '出力シート: ' + NTB_CONFIG.OUTPUT_SHEET_NAME + '\n\n' +
-    'A:B列を表頭ごとコピーして PokerWeb のツールへ貼り付けてください。'
+      '未付与タスク: ' + outputRows.length + ' 件\n' +
+      '出力シート: ' + NTB_CONFIG.OUTPUT_SHEET_NAME + '\n\n' +
+      'A:B列を表頭ごとコピーして PokerWeb のツールへ貼り付けてください。\n' +
+      '付与完了後、元表の対応する Millons1 / PPC を手動でCHECKしてください。'
   );
 }
 
@@ -122,12 +166,24 @@ function NTB_getOrCreateOutputSheet_(ss) {
     ss.insertSheet(NTB_CONFIG.OUTPUT_SHEET_NAME);
 }
 
-function NTB_findHeader_(headers, candidates) {
-  for (const candidate of candidates) {
-    const index = headers.indexOf(candidate);
-    if (index >= 0) return index;
+function NTB_assertRequiredColumns_(headers) {
+  const differences = [];
+
+  Object.keys(NTB_CONFIG.REQUIRED_COLUMN_HEADERS).forEach(columnText => {
+    const column = Number(columnText);
+    const expected = NTB_CONFIG.REQUIRED_COLUMN_HEADERS[column];
+    const actual = headers[column - 1] || '';
+    if (actual !== expected) {
+      differences.push(column + '列目: 期待=[' + expected + '] 実際=[' + actual + ']');
+    }
+  });
+
+  if (differences.length) {
+    throw new Error(
+      '運用表の列構造が想定と異なるため、安全のため停止しました。\n' +
+      differences.join('\n')
+    );
   }
-  return -1;
 }
 
 function NTB_normalizeGameId_(value) {
@@ -145,4 +201,12 @@ function NTB_text_(value) {
     .replace(/\u00a0/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function NTB_alert_(message) {
+  try {
+    SpreadsheetApp.getUi().alert(message);
+  } catch (_) {
+    console.log(message);
+  }
 }

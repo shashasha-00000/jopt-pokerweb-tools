@@ -10,9 +10,17 @@
 4. 执行菜单 `ナショナルチケットTSV > 現在のシートからTSV生成`。
 5. 从输出页 `ナショナルチケット付与TSV` 复制 A:B 两列，包括表头。
 
-脚本只输出 `GameID` 和 `チケット名`。每一个 TRUE 勾选生成一行，不按 GameID 或チケット名去重。
+脚本只输出 `GameID` 和 `チケット名`，规则固定为：
 
-需要增加或修改票种时，编辑脚本开头的 `NTB_CONFIG.TICKET_COLUMN_MAP`。
+- `D列 対象プロモ = A`：应付与 Millions 和 PPC。
+- `D列 対象プロモ = B / C`：只应付与 Millions。
+- `I列 Millons1`：Millions 已付与 CHECK。未勾选时才输出 Millions。
+- `J列 PPC`：PPC 已付与 CHECK。仅 A 类且未勾选时输出 PPC。
+- `K列 WeChat送信`：也是 CHECKBOX，但不参与出票判断。
+- `D列` 出现空白或 A/B/C 以外的值时，整批停止，不生成新输出。
+- 为避免读取错误列，脚本会严格检查 `C=Game ID / D=対象プロモ / I=Millons1 / J=PPC / K=WeChat送信`。列结构变化时整批停止。
+
+付与成功后，需要回到原运营表手动勾选对应的 `Millons1 / PPC`。PokerWeb 脚本不会直接读写 Google Sheet。
 
 ## Part 2: PokerWeb 批量付与
 

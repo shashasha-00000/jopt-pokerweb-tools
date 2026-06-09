@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW ナショナルチケット批量付与 安全確認版 v1.0
 // @namespace    pw-national-ticket-batch-safe
-// @version      1.0.0
+// @version      1.0.1
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
 // @description  GameID・チケット名TSVを厳密検証し、DRY RUN・1件テスト後にナショナルチケットを一件ずつ付与する安全確認版
@@ -291,7 +291,7 @@
 
   function parseGroupPage(html, expectedGrupo) {
     const doc = parseHtml(html);
-    const codbloq = doc.querySelector('input[name="codbloq"]')?.value || '';
+    const codbloq = extractCodbloq(doc, html);
     const ticketIds = [];
 
     for (const el of doc.querySelectorAll('[data-ticket_id]')) {
@@ -308,15 +308,66 @@
 
     return {
       codbloq,
-      ticketIds: [...new Set(ticketIds)]
+      ticketIds: [...new Set(ticketIds)],
+      diagnostics: {
+        title: norm(doc.title),
+        forms: doc.querySelectorAll('form').length,
+        codbloqNamedElements: doc.querySelectorAll('[name="codbloq"]').length,
+        emitirButtons: doc.querySelectorAll('[data-ticket_id]').length,
+        htmlLength: String(html || '').length
+      }
     };
+  }
+
+  function extractCodbloq(doc, html) {
+    const named = doc.querySelector('[name="codbloq"]');
+    if (named) {
+      const value = norm(named.value || named.getAttribute('value'));
+      if (value) return value;
+    }
+
+    for (const el of doc.querySelectorAll('[data-codbloq], [data-cod_bloq], [codbloq]')) {
+      const value = norm(
+        el.getAttribute('data-codbloq') ||
+        el.getAttribute('data-cod_bloq') ||
+        el.getAttribute('codbloq')
+      );
+      if (value) return value;
+    }
+
+    const source = String(html || '');
+    const patterns = [
+      /name\s*=\s*["']codbloq["'][^>]*value\s*=\s*["']([^"']+)["']/i,
+      /value\s*=\s*["']([^"']+)["'][^>]*name\s*=\s*["']codbloq["']/i,
+      /["']codbloq["']\s*:\s*["']([^"']+)["']/i,
+      /["']codbloq["']\s*:\s*(\d+)/i,
+      /\bcodbloq\s*=\s*["']([^"']+)["']/i,
+      /\bcodbloq\s*=\s*(\d+)/i,
+      /[?&]codbloq=([^&"'<>\\s]+)/i
+    ];
+
+    for (const pattern of patterns) {
+      const match = source.match(pattern);
+      if (match?.[1]) return decodeURIComponent(match[1]);
+    }
+
+    return '';
   }
 
   async function fetchGroupPage(group, requireCodbloq = true) {
     const { text } = await requestText(group.groupURL, { method: 'GET', cache: 'no-store' });
     const parsed = parseGroupPage(text, group.grupo);
+    if (!parsed.codbloq) {
+      parsed.codbloq = extractCodbloq(document, document.documentElement?.outerHTML || '');
+      if (parsed.codbloq) parsed.diagnostics.codbloqSource = 'current-list-page';
+    } else {
+      parsed.diagnostics.codbloqSource = 'group-page';
+    }
     if (requireCodbloq && !parsed.codbloq) {
-      throw new Error(`codbloq を取得できません: grupo=${group.grupo}`);
+      throw new Error(
+        `codbloq を取得できません: grupo=${group.grupo} / ` +
+        `診断=${JSON.stringify(parsed.diagnostics)}`
+      );
     }
     return parsed;
   }
