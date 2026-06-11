@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW 領収書抜き出し 人工確認版 v1.6
 // @namespace    https://japanopt.pokerweb.com.br/
-// @version      1.6.4
+// @version      1.6.5
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-confirm.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-confirm.user.js
 // @description  Game ID + キーワードで候補大会をAPI検索し、URL Cacheを厳密照合しながら支払い情報を高速取得する版
@@ -753,20 +753,21 @@
   function waitForNextDraw(win, dt, timeoutMs = CONFIG.searchWaitTimeoutMs) {
     return new Promise(resolve => {
       let done = false;
+      const table = dt.table().node();
 
       const finish = value => {
         if (done) return;
         done = true;
         try {
-          win.jQuery(dt.table().node()).off("draw.dt", onDraw);
+          win.jQuery(table).off(".pwManualUrlWait");
         } catch (_) {}
         resolve(value);
       };
 
-      const onDraw = () => finish(true);
+      const onComplete = () => finish(true);
 
       try {
-        win.jQuery(dt.table().node()).one("draw.dt", onDraw);
+        win.jQuery(table).one("draw.dt.pwManualUrlWait", onComplete);
       } catch (_) {
         finish(false);
         return;
@@ -774,6 +775,34 @@
 
       setTimeout(() => finish(false), timeoutMs);
     });
+  }
+
+  async function waitForSearchResultStable(win, dt, timeoutMs = 3000) {
+    const start = Date.now();
+    let lastSignature = "";
+    let stableSince = 0;
+
+    while (Date.now() - start < timeoutMs) {
+      if (!win || win.closed) throw new Error("WINDOW_CLOSED");
+
+      let signature = "";
+      try {
+        const tbody = dt.table().node()?.querySelector("tbody");
+        signature = norm(tbody?.innerText || tbody?.textContent || "");
+      } catch (_) {}
+
+      if (!isDataTableProcessing(win, dt) && signature === lastSignature) {
+        if (!stableSince) stableSince = Date.now();
+        if (Date.now() - stableSince >= 350) return true;
+      } else {
+        lastSignature = signature;
+        stableSince = 0;
+      }
+
+      await sleep(75);
+    }
+
+    return false;
   }
 
   async function dataTableSearchAndWait(win, dt, keyword) {
@@ -801,9 +830,14 @@
       throw new Error("DataTable draw failed: " + (e.message || String(e)));
     }
 
-    await drawPromise;
-    await waitForProcessingGone(win, dt, CONFIG.searchWaitTimeoutMs);
-    await sleep(150);
+    const drawn = await drawPromise;
+    if (!drawn) throw new Error("DataTable draw timeout");
+
+    const processingGone = await waitForProcessingGone(win, dt, CONFIG.searchWaitTimeoutMs);
+    if (!processingGone) throw new Error("DataTable processing timeout");
+
+    const stable = await waitForSearchResultStable(win, dt);
+    if (!stable) throw new Error("DataTable result unstable");
   }
 
   function findTournamentFromCurrentDataTablePage(win, dt, inputName) {
@@ -1879,7 +1913,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.6.4</div>
+        <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.6.5</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-manual-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-manual-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>
