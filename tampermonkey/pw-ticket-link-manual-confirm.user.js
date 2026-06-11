@@ -1,10 +1,10 @@
 ﻿// ==UserScript==
 // @name         PW Ticket Link 人工確認版 v1.0
 // @namespace    pw-ticket-link-manual-confirm
-// @version      1.0.1
+// @version      1.0.2
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-manual-confirm.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-manual-confirm.user.js
-// @description  TicketLink用ルール表から候補作成 → URL厳密確認 → USE候補でTicket Link実行。URL検索はOPEN/CLOSED両方、Ticket optionはtn_のみ。
+// @description  TicketLink用ルール表から候補作成 → URL厳密確認 → 已确认比赛でTicket Link実行。URL検索はOPEN/CLOSED両方、Ticket optionはtn_のみ。
 // @author       xhpc007 + ChatGPT
 // @match        https://japanopt.pokerweb.com.br/*
 // @grant        GM_setClipboard
@@ -38,7 +38,7 @@
   };
 
   const CANDIDATE_HEADERS = [
-    "USE",
+    "本次处理",
     "大会名",
     "Key",
     "Key来源",
@@ -71,14 +71,14 @@
     return norm(value)
       .replace(/[\/／]/g, "")
       .replace(/\s+/g, "")
-      .replace(/監査済み/g, "")
+      .replace(/監査(?:済み|待ち)/g, "")
       .toLowerCase();
   }
 
   function cleanTournamentName(name) {
     return String(name || "")
       .replace(/\s*-\s*PokerWeb\s*$/i, "")
-      .replace(/\s*監査済み\s*$/g, "")
+      .replace(/\s*監査(?:済み|待ち)\s*$/g, "")
       .trim();
   }
 
@@ -930,7 +930,7 @@
       const cache = cacheResult.row || null;
 
       rows.push({
-        "USE": cache ? "1" : "",
+        "本次处理": cache ? "使用" : "不使用",
         "大会名": cleanTournamentName(t.name),
         "Key": t.key || "",
         "Key来源": t.keySource || "",
@@ -947,6 +947,11 @@
   }
 
   function setCandidateRows(rows) {
+    rows.forEach(row => {
+      const old = norm(row["本次处理"] || row["USE"]);
+      row["本次处理"] = old === "使用" || old === "1" || old.toUpperCase() === "TRUE" || old.toUpperCase() === "Y" ? "使用" : "不使用";
+      delete row["USE"];
+    });
     const tsv = toTsv(rows, CANDIDATE_HEADERS);
     const box = document.querySelector("#pw-ticket-link-candidates");
     if (box) box.value = tsv;
@@ -964,8 +969,8 @@
 
   function getUseCandidateRows() {
     return getCandidateRows().filter(row => {
-      const use = norm(row["USE"]);
-      return use === "1" || use.toUpperCase() === "TRUE" || use.toUpperCase() === "Y" || use === "〇" || use === "○";
+      const use = norm(row["本次处理"] || row["USE"]);
+      return use === "使用" || use === "1" || use.toUpperCase() === "TRUE" || use.toUpperCase() === "Y" || use === "〇" || use === "○";
     });
   }
 
@@ -1381,7 +1386,7 @@
         }
 
         if (!found) {
-          row["USE"] = "";
+          row["本次处理"] = "不使用";
           row["判定"] = "URL_NOT_FOUND";
           row["理由"] = "OPEN/CLOSED大会一覧検索で見つかりません";
           ngCount++;
@@ -1389,7 +1394,7 @@
         }
 
         if (found.error === "AMBIGUOUS") {
-          row["USE"] = "";
+          row["本次处理"] = "不使用";
           row["判定"] = "AMBIGUOUS";
           row["理由"] = `${found.candidates.length} candidates`;
           ambiguousCount++;
@@ -1397,7 +1402,7 @@
           continue;
         }
 
-        row["USE"] = "1";
+        row["本次处理"] = "使用";
         row["TournamentId"] = found.tournamentId;
         row["URL"] = found.url;
         row["判定"] = source === "closed" ? "OK_SEARCH_CLOSED" : "OK_SEARCH_OPEN";
@@ -1674,12 +1679,12 @@
     const rows = getUseCandidateRows();
 
     if (!rows.length) {
-      throw new Error("USE=1 の候補行がありません");
+      throw new Error("本次处理设为“使用”的比赛为空");
     }
 
     const unsafe = rows.filter(r => !isSafeUrlStatus(r["判定"]));
     if (unsafe.length) {
-      throw new Error(`URLが安全確定していない候補があります：${unsafe.length}件。URL検索または候補欄修正後に再実行してください。`);
+      throw new Error(`存在尚未安全确认的比赛URL：${unsafe.length}件。请先在URL Manager人工核查。`);
     }
 
     const usable = rows.filter(r => r["大会名"] && r["TournamentId"] && r["URL"] && parseTicketListFromCandidate(r).length > 0);
@@ -1940,7 +1945,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <div style="font-weight:bold;">PW Ticket Link 人工確認版 v1.0</div>
+        <div style="font-weight:bold;">PW Ticket Link 人工確認版 v1.0.2</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-ticket-link-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-ticket-link-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>
@@ -1949,7 +1954,7 @@
 
       <div id="pw-ticket-link-body" style="overflow-y:auto;padding-right:2px;">
         <div style="font-size:11px;color:#ccc;line-height:1.35;margin-bottom:6px;">
-          流れ：候補作成 → URL未解決検索 → USE候補でTicket Link実行<br>
+          流れ：候補作成 → URL未解決検索 → 已确认比赛执行Ticket Link<br>
           URLは完整大会名で厳密照合。Ticket optionは value=tn_ のみ対象。Config/Modalクリックなし。
         </div>
 
@@ -2010,7 +2015,7 @@ Satellite	s01"
         <div style="display:flex;gap:6px;margin-top:8px;">
           <button id="pw-ticket-link-build" style="flex:1;padding:7px;cursor:pointer;background:#ffe08a;border:1px solid #c99;">1. 候補作成</button>
           <button id="pw-ticket-link-resolve" style="flex:1;padding:7px;cursor:pointer;background:#d9ecff;border:1px solid #88a;">2. URL未解決検索</button>
-          <button id="pw-ticket-link-execute" style="flex:1;padding:7px;cursor:pointer;background:#bff0c2;border:1px solid #8a8;">3. USE候補でLink実行</button>
+          <button id="pw-ticket-link-execute" style="flex:1;padding:7px;cursor:pointer;background:#bff0c2;border:1px solid #8a8;">3. 已确认比赛执行Link</button>
         </div>
 
         <div style="display:flex;gap:6px;margin-top:6px;">

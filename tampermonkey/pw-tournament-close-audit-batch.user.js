@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW Tournament CLOSE + AUDIT Batch 私用版 V0.2
 // @namespace    xhpc007-pw-close-audit-batch-private
-// @version      0.2.1
+// @version      0.2.2
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-close-audit-batch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-close-audit-batch.user.js
 // @description  PW比赛批量 CLOSE / 監査 私用版。带URL抓取、URL Cache、队列执行、页面刷新接力。
@@ -273,8 +273,8 @@
   }
 
   function setCacheItem(name, data) {
-    const key = norm(name);
-    if (!key) return;
+    const cleanName = norm(name).replace(/\s*監査(?:済み|待ち)\s*$/g, '');
+    if (!cleanName) return;
 
     const id = String(data.tournamentId || extractIdFromUrlLike(data.url) || '');
     const url = data.url ? String(data.url) : (id ? getRelativePanelUrl(id) : '');
@@ -282,12 +282,13 @@
     if (!id || !url) return;
 
     const cache = loadCache();
+    const key = `${cleanName}||${id}`;
 
     cache[key] = {
-      name: key,
+      name: cleanName,
       tournamentId: id,
       url: url.startsWith('http') ? new URL(url).pathname : url,
-      actualName: String(data.actualName || data.name || key),
+      actualName: norm(data.actualName || data.name || cleanName).replace(/\s*監査(?:済み|待ち)\s*$/g, ''),
       matchedRow: String(data.matchedRow || ''),
       savedAt: nowText(),
       source: String(data.source || 'unknown')
@@ -869,7 +870,26 @@
   }
 
   function getQueueFromCache(prefix) {
-    const rows = cacheToRows(prefix)
+    const rows = cacheToRows(prefix);
+    const nameToIds = new Map();
+
+    for (const row of rows) {
+      const name = norm(row.Name || row.Actual_Name || '');
+      const id = String(row.TournamentId || extractIdFromUrlLike(row.URL) || '');
+      if (!name || !id) continue;
+      if (!nameToIds.has(name)) nameToIds.set(name, new Set());
+      nameToIds.get(name).add(id);
+    }
+
+    const conflicts = Array.from(nameToIds.entries()).filter(([, ids]) => ids.size > 1);
+    if (conflicts.length) {
+      throw new Error(
+        `发现同名比赛存在多个URL，需要先在URL Manager人工确认：${conflicts.length}件\n` +
+        conflicts.slice(0, 10).map(([name, ids]) => `${name}: ${Array.from(ids).join(',')}`).join('\n')
+      );
+    }
+
+    const queue = rows
       .map(r => ({
         name: r.Name || r.Actual_Name || r.URL,
         actualName: r.Actual_Name || r.Name || r.URL,
@@ -880,7 +900,7 @@
       .filter(x => x.tournamentId && x.url);
 
     const seen = new Set();
-    return rows.filter(x => {
+    return queue.filter(x => {
       const key = x.tournamentId;
       if (seen.has(key)) return false;
       seen.add(key);
@@ -904,7 +924,13 @@
 
   function startJob(mode) {
     const prefix = norm(document.querySelector('#pwca-prefix')?.value || '');
-    const queue = getQueueFromCache(prefix);
+    let queue;
+    try {
+      queue = getQueueFromCache(prefix);
+    } catch (e) {
+      alert(e.message || String(e));
+      return;
+    }
 
     if (!queue.length) {
       alert(
@@ -1369,7 +1395,7 @@
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
         <div style="font-weight:700;">
-          PW CLOSE/AUDIT Batch 私用 v0.2
+          PW CLOSE/AUDIT Batch 私用 v0.2.2
         </div>
         <div style="display:flex;gap:4px;">
           <button id="pwca-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>

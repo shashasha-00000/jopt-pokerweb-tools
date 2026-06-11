@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW 既存大会 Item 更新 人工確認版
 // @namespace    pw-existing-tournament-item-updater-ui
-// @version      0.6.3
+// @version      0.6.4
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js
 // @description  既存大会URLをPreview/Resolveで人工確認してから、USDT販売許可ON、任意数の販売項目を更新する。作成・時間変更・Ticket Linkなし。
@@ -181,6 +181,7 @@
     return String(s || '')
       .replace(/\u3000/g, ' ')
       .replace(/\s+/g, ' ')
+      .replace(/\s*監査(?:済み|待ち)\s*$/g, '')
       .trim();
   }
 
@@ -842,7 +843,7 @@
     }
 
     const header = [
-      'USE',
+      '本次处理',
       '大会名',
       'TournamentId',
       'URL',
@@ -871,7 +872,7 @@
       }
 
       lines.push([
-        r.use || '',
+        normalizeText(r.use) === '1' ? '使用' : '不使用',
         r.name || '',
         r.tournamentId || '',
         r.url || '',
@@ -1918,7 +1919,7 @@
       return -1;
     };
 
-    const iUse = idx('USE');
+    const iUse = idx('本次处理', 'USE');
     const iName = idx('大会名', 'Name');
     const iTournamentId = idx('TournamentId', 'ID');
     const iUrl = idx('URL');
@@ -1945,7 +1946,7 @@
         name,
         tournamentId,
         url,
-        use: get(iUse),
+        use: ['使用', '1', 'TRUE', 'Y', '〇', '○'].includes(get(iUse).toUpperCase()) ? '1' : '',
         urlStatus: get(iStatus) || 'URL未解決',
         statusReason: get(iReason),
         itemUpdateMode: get(iItemUpdateMode),
@@ -1970,15 +1971,7 @@
       const urlId = getUrlId(url);
 
       if (!isSafeUrlStatus(status)) {
-        if (url && id && urlId) {
-          r.tournamentId = r.tournamentId || id;
-          r.url = url;
-          r.urlStatus = 'OK_MANUAL';
-          r.statusReason = r.statusReason || 'manual URL accepted at START';
-          return;
-        }
-
-        errors.push(`${prefix} URLが安全確定していない: ${status || '(empty)'}`);
+        errors.push(`${prefix} URL尚未安全确认: ${status || '(empty)'}。请先在URL Manager人工核查。`);
         return;
       }
 
@@ -2015,7 +2008,7 @@
       .filter(t => isSafeUrlStatus(t.urlStatus) || normalizeText(t.url || t.tournamentId));
 
     if (!tournaments.length) {
-      alert('USE=1 かつ URL安全確定済みの候補がありません。');
+      alert('本次处理设为“使用”且URL已确认的比赛为空。');
       return;
     }
 
@@ -2041,7 +2034,7 @@
       `这版不会创建比赛、不会改时间、不会设置盲注、不会 link ticket。\n` +
       `会开启「USDT販売許可 / 仮想通貨販売許可」。\n\n` +
       `Shared URL Cache: ${sharedCacheCount()} 件\n` +
-      `USE=1: ${tournaments.length} 件\n\n` +
+      `本次处理: ${tournaments.length} 件\n\n` +
       `${summary}`
     );
 
@@ -2218,7 +2211,7 @@
 panel.innerHTML = `
   <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
     <div style="font-weight:bold;">
-      PW 既存大会 Item 更新 人工確認版 v0.6
+      PW 既存大会 Item 更新 人工確認版 v0.6.4
     </div>
     <div style="display:flex;gap:4px;">
       <button id="pw-item-update-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
@@ -2284,7 +2277,7 @@ panel.innerHTML = `
         ※ 同名/同Siglasの既存項目があれば編集、なければ新增<br>
         ※ 旧 EN/RE/Ticket 表頭もまだ読み込み可能<br>
         ※ URL未解決 / AMBIGUOUS / bad cache が残る場合 START禁止<br>
-        ※ 手動URLは TournamentId/URL を入れて判定=OK_MANUAL
+        ※ URL冲突请先在 URL Manager 的人工核查中确认
       </div>
 
       <div style="font-size:12px;font-weight:bold;color:#fff;">Report / 実行結果</div>

@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW 領収書抜き出し 人工確認版 v1.6
 // @namespace    https://japanopt.pokerweb.com.br/
-// @version      1.6.12
+// @version      1.6.13
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-confirm.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-confirm.user.js
 // @description  Game ID + キーワードで候補大会をAPI検索し、URL Cacheを厳密照合しながら支払い情報を高速取得する版
@@ -27,7 +27,8 @@
     inputKey: "PW_MANUAL_RECEIPT_V15_INPUT",
     candidateKey: "PW_MANUAL_RECEIPT_V15_CANDIDATES",
     dateRangeKey: "PW_MANUAL_RECEIPT_V15_DATE_RANGE",
-    outputKey: "PW_MANUAL_RECEIPT_V15_OUTPUT"
+    outputKey: "PW_MANUAL_RECEIPT_V15_OUTPUT",
+    copyModeKey: "PW_MANUAL_RECEIPT_V15_COPY_MODE"
   };
 
   const CANDIDATE_HEADERS = [
@@ -2024,7 +2025,6 @@
     return {
       pasteText,
       allText: [
-        "===== PASTE_ROWS =====",
         pasteText,
         "",
         "===== NEED_CHECK =====",
@@ -2037,6 +2037,14 @@
       needCheckCount: sortedNeedCheck.length,
       reportCount: report.length
     };
+  }
+
+  function getOutputCopyText(outputText) {
+    const cleanOutputText = String(outputText || "").replace(/^===== PASTE_ROWS =====\r?\n/, "");
+    const mode = document.querySelector("#pw-manual-copy-mode")?.value || "paste-only";
+    if (mode === "with-report") return cleanOutputText;
+
+    return cleanOutputText.split(/\n===== NEED_CHECK =====\n/, 1)[0].trimEnd();
   }
 
   async function runDiscoverCandidates() {
@@ -2201,14 +2209,14 @@
       if (outBox) outBox.value = output.allText;
 
       localStorage.setItem(CONFIG.outputKey, output.allText);
-      copyText(output.allText);
+      copyText(getOutputCopyText(output.allText));
 
       alert(
         `支払い取得完了\n\n` +
         `PASTE_ROWS：${output.pasteCount}\n` +
         `NEED_CHECK：${output.needCheckCount}\n` +
         `REPORT：${output.reportCount}\n\n` +
-        `結果をコピーしました。`
+        `選択中の形式で結果をコピーしました。`
       );
 
       setStatus("支払い取得完了");
@@ -2236,8 +2244,8 @@
 
   function copyOutput() {
     const text = document.querySelector("#pw-manual-output")?.value || "";
-    copyText(text);
-    alert("出力をコピーしました。");
+    copyText(getOutputCopyText(text));
+    alert("選択中の形式で出力をコピーしました。");
   }
 
   function copySharedCache() {
@@ -2253,6 +2261,7 @@
     const savedCandidate = localStorage.getItem(CONFIG.candidateKey) || CANDIDATE_HEADERS.join("\t");
     const savedDateRange = localStorage.getItem(CONFIG.dateRangeKey) || CONFIG.defaultDateRange;
     const savedOutput = localStorage.getItem(CONFIG.outputKey) || "";
+    const savedCopyMode = localStorage.getItem(CONFIG.copyModeKey) || "paste-only";
 
     const panel = document.createElement("div");
     panel.id = "pw-manual-panel";
@@ -2277,7 +2286,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.6.12</div>
+        <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.6.13</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-manual-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-manual-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>
@@ -2325,13 +2334,17 @@
         <div id="pw-manual-review"
           style="max-height:220px;overflow:auto;background:#181818;border:1px solid #555;padding:6px;font-size:12px;"></div>
 
-        <div style="font-size:12px;font-weight:bold;margin-top:6px;">Output / PASTE_ROWS + NEED_CHECK + REPORT</div>
+        <div style="font-size:12px;font-weight:bold;margin-top:6px;">Output / TSV + NEED_CHECK + REPORT</div>
         <textarea id="pw-manual-output"
           readonly
           style="width:100%;height:145px;background:#111;color:#fff;border:1px solid #555;padding:8px;font-family:Consolas,monospace;font-size:12px;"></textarea>
 
         <div style="display:flex;gap:6px;margin-top:6px;">
-          <button id="pw-manual-copy-output" style="flex:1;padding:7px;cursor:pointer;background:#eee;border:1px solid #aaa;">Copy Output</button>
+          <select id="pw-manual-copy-mode" style="flex:1;padding:7px;background:#fff;border:1px solid #aaa;">
+            <option value="paste-only">只复制可粘贴的领收书结果</option>
+            <option value="with-report">复制结果 + NEED_CHECK + REPORT</option>
+          </select>
+          <button id="pw-manual-copy-output" style="flex:1;padding:7px;cursor:pointer;background:#eee;border:1px solid #aaa;">按所选格式复制</button>
         </div>
 
         <div id="pw-manual-status" style="font-size:11px;color:#9fe;line-height:1.35;white-space:pre-wrap;margin-top:6px;">ready</div>
@@ -2343,6 +2356,10 @@
     document.querySelector("#pw-manual-candidates").value = savedCandidate;
     document.querySelector("#pw-manual-date-range").value = savedDateRange;
     document.querySelector("#pw-manual-output").value = savedOutput;
+    document.querySelector("#pw-manual-copy-mode").value = savedCopyMode;
+    document.querySelector("#pw-manual-copy-mode").addEventListener("change", event => {
+      localStorage.setItem(CONFIG.copyModeKey, event.target.value);
+    });
     renderManualReview(parseTsv(savedCandidate));
     document.querySelector("#pw-manual-candidates").addEventListener("change", () => {
       const text = getCandidateText();

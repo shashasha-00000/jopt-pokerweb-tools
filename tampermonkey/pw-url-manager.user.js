@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW URL Cache Manager v0.6
 // @namespace    pw-shared-url-cache-manager
-// @version      0.6.2
+// @version      0.6.3
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-url-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-url-manager.user.js
 // @description  PW大会URL共用缓存管理工具。大会名リスト検索 / イベントPrefix全ページ収集 / 汚染チェック・修復 / Sheet用TSV出力。
@@ -58,7 +58,7 @@
     return norm(value)
       .replace(/[\/／]/g, "")
       .replace(/\s+/g, "")
-      .replace(/監査済み/g, "")
+      .replace(/監査(?:済み|待ち)/g, "")
       .toLowerCase();
   }
 
@@ -150,8 +150,95 @@
   function cleanTournamentName(name) {
     return String(name || "")
       .replace(/\s*-\s*PokerWeb\s*$/i, "")
-      .replace(/\s*監査済み\s*$/g, "")
+      .replace(/\s*監査(?:済み|待ち)\s*$/g, "")
       .trim();
+  }
+
+  function replaceCacheForName(name, selected) {
+    const cleanName = cleanTournamentName(name);
+    const cache = loadCache();
+
+    for (const [key, item] of Object.entries(cache)) {
+      if (
+        cleanTournamentName(item?.name || "") === cleanName ||
+        cleanTournamentName(item?.actualName || "") === cleanName
+      ) {
+        delete cache[key];
+      }
+    }
+
+    saveCache(cache);
+    setCacheItem(cleanName, {
+      ...selected,
+      actualName: cleanName,
+      source: "url-manager-manual-review"
+    });
+  }
+
+  function renderManualReview() {
+    const box = document.querySelector("#pw-url-cache-review");
+    if (!box) return;
+
+    const prefix = getEventPrefixInput();
+    const groups = new Map();
+    for (const row of cacheToRows(prefix)) {
+      const name = cleanTournamentName(row.Name || row.Actual_Name || "");
+      if (!name) continue;
+      if (!groups.has(name)) groups.set(name, []);
+      groups.get(name).push(row);
+    }
+
+    const conflicts = Array.from(groups.entries()).filter(([, rows]) => {
+      return new Set(rows.map(row => row.TournamentId)).size > 1;
+    });
+
+    box.replaceChildren();
+    if (!conflicts.length) {
+      box.textContent = "需要人工确认的同名URL冲突：0";
+      box.style.color = "#9f9";
+      return;
+    }
+
+    box.style.color = "#fff";
+    for (const [name, rows] of conflicts) {
+      const card = document.createElement("div");
+      card.style.cssText = "border:1px solid #955;background:#2b2020;padding:7px;margin-top:6px;";
+
+      const title = document.createElement("div");
+      title.style.fontWeight = "bold";
+      title.textContent = name;
+      card.appendChild(title);
+
+      for (const row of rows) {
+        const line = document.createElement("div");
+        line.style.cssText = "display:flex;gap:5px;align-items:center;margin-top:5px;";
+
+        const text = document.createElement("span");
+        text.textContent = `比赛编号 ${row.TournamentId}`;
+        line.appendChild(text);
+
+        const open = document.createElement("button");
+        open.textContent = "打开URL";
+        open.onclick = () => window.open(row.URL, "_blank");
+        line.appendChild(open);
+
+        const adopt = document.createElement("button");
+        adopt.textContent = `采用 ${row.TournamentId} 并清除其他记录`;
+        adopt.onclick = () => {
+          if (!confirm(`采用这个URL并清除同名其他记录吗？\n\n${name}\n${row.URL}`)) return;
+          replaceCacheForName(name, {
+            tournamentId: row.TournamentId,
+            url: row.URL,
+            matchedRow: row.Matched_Row || ""
+          });
+          showCache(prefix);
+        };
+        line.appendChild(adopt);
+        card.appendChild(line);
+      }
+
+      box.appendChild(card);
+    }
   }
 
   function setCacheItem(name, data) {
@@ -251,6 +338,7 @@
 
     setStatus(`Cache shown: ${rows.length} / all ${getCacheCount()} 件`);
     appendReport("VIEW_CACHE", `${rows.length} 件`);
+    renderManualReview();
   }
 
   function clearAllCache() {
@@ -1674,7 +1762,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-      <div style="font-weight:bold;">PW URL Cache Manager v0.6</div>
+      <div style="font-weight:bold;">PW URL Cache Manager v0.6.3</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-url-cache-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-url-cache-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>
@@ -1711,6 +1799,10 @@
             Import TSV
           </button>
         </div>
+
+        <div style="font-size:12px;font-weight:bold;margin-top:6px;">人工核查 / 同名比赛URL冲突</div>
+        <div id="pw-url-cache-review"
+          style="max-height:220px;overflow:auto;background:#181818;border:1px solid #555;padding:6px;font-size:12px;"></div>
 
         <div style="display:flex;gap:6px;margin-top:6px;">
           <button id="pw-url-cache-view-current"
@@ -1871,6 +1963,7 @@
     };
 
     showCache(getEventPrefixInput());
+    renderManualReview();
   }
 
   function boot() {
@@ -1890,6 +1983,8 @@
       auditCache,
       auditCurrentEventCache,
       repairCurrentEventCache,
+      renderManualReview,
+      replaceCacheForName,
       clearCurrentEventCache,
       clearAllCache
     };

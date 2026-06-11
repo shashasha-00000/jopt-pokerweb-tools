@@ -1,6 +1,6 @@
 ﻿// ==UserScript==
 // @name         PW Receipt Full Auto v6.0
-// @version      6.0.1
+// @version      6.0.2
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-full-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-full-auto.user.js
 // @description  申請管理から申請キー単位で読み、PDF管理庫で重複防止する統合版
@@ -67,14 +67,14 @@
     return norm(value)
       .replace(/[\/／]/g, "")
       .replace(/\s+/g, "")
-      .replace(/監査済み/g, "")
+      .replace(/監査(?:済み|待ち)/g, "")
       .toLowerCase();
   }
 
   function cleanTournamentName(name) {
     return String(name || "")
       .replace(/\s*-\s*PokerWeb\s*$/i, "")
-      .replace(/\s*監査済み\s*$/g, "")
+      .replace(/\s*監査(?:済み|待ち)\s*$/g, "")
       .trim();
   }
 
