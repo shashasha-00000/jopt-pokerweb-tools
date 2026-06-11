@@ -508,14 +508,7 @@ function RSA_commitNukidashiAppend_(prepared) {
     sheet.getRange(prepared.templateRow, 1, 1, columnCount)
       .copyTo(target, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
 
-    const formulas = sheet.getRange(prepared.templateRow, 1, 1, columnCount).getFormulasR1C1()[0];
-    if (formulas.some(formula => formula)) {
-      const formulaRows = [];
-      for (let i = 0; i < rowCount; i++) {
-        formulaRows.push(formulas.slice());
-      }
-      target.setFormulasR1C1(formulaRows);
-    }
+    RSA_fillMissingNukidashiFormulas_(sheet, prepared.templateRow, startRow, rowCount, columnCount);
   }
 
   const c = RSA_CONFIG.NUKIDASHI_COLUMNS;
@@ -532,6 +525,27 @@ function RSA_commitNukidashiAppend_(prepared) {
   RSA_writeNukidashiColumn_(sheet, startRow, c.creditCard, prepared.rows.map(row => row.creditCard));
   RSA_writeNukidashiColumn_(sheet, startRow, c.points, prepared.rows.map(row => row.points));
   RSA_writeNukidashiColumn_(sheet, startRow, c.usdt, prepared.rows.map(row => row.usdt));
+}
+
+function RSA_fillMissingNukidashiFormulas_(sheet, templateRow, startRow, rowCount, columnCount) {
+  const templateFormulas = sheet.getRange(templateRow, 1, 1, columnCount).getFormulasR1C1()[0];
+  const targetRange = sheet.getRange(startRow, 1, rowCount, columnCount);
+  const targetFormulas = targetRange.getFormulasR1C1();
+  const inputColumns = new Set(
+    Object.keys(RSA_CONFIG.NUKIDASHI_COLUMNS)
+      .map(key => RSA_CONFIG.NUKIDASHI_COLUMNS[key] - 1)
+  );
+
+  for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
+    for (let colIndex = 0; colIndex < columnCount; colIndex++) {
+      if (inputColumns.has(colIndex)) continue;
+      if (targetFormulas[rowIndex][colIndex]) continue;
+      if (!templateFormulas[colIndex]) continue;
+
+      sheet.getRange(startRow + rowIndex, colIndex + 1)
+        .setFormulaR1C1(templateFormulas[colIndex]);
+    }
+  }
 }
 
 function RSA_writeNukidashiColumn_(sheet, startRow, column, values) {
@@ -564,14 +578,30 @@ function RSA_findNukidashiLastDataRow_(sheet) {
 function RSA_assertNukidashiInputRangeEmpty_(sheet, startRow, rowCount) {
   if (!rowCount) return;
 
-  const columns = Object.keys(RSA_CONFIG.NUKIDASHI_COLUMNS)
-    .map(key => RSA_CONFIG.NUKIDASHI_COLUMNS[key]);
+  // トナメ抜き出しは下方に数式が事前展開されており、
+  // 空き行でも En / ¥0 / 様 / 画像番号などの表示値が存在する。
+  // データ行の実占有判定は、旧処理と同じく C列Game ID と K列大会名だけで行う。
+  const columns = [
+    RSA_CONFIG.NUKIDASHI_COLUMNS.gameId,
+    RSA_CONFIG.NUKIDASHI_COLUMNS.tournament
+  ];
 
   columns.forEach(column => {
-    const values = sheet.getRange(startRow, column, rowCount, 1).getValues();
-    const hasValue = values.some(row => RSA_text_(row[0]) !== '');
-    if (hasValue) {
-      throw new Error('トナメ抜き出し の追加予定入力列に既存内容があります。安全のため停止しました: ' + startRow + '行目以降 / ' + column + '列');
+    const range = sheet.getRange(startRow, column, rowCount, 1);
+    const values = range.getValues();
+    const occupiedRows = [];
+
+    values.forEach((row, index) => {
+      if (RSA_text_(row[0]) !== '') {
+        occupiedRows.push(startRow + index);
+      }
+    });
+
+    if (occupiedRows.length) {
+      throw new Error(
+        'トナメ抜き出し の追加予定行に既存データがあります。安全のため停止しました: ' +
+        occupiedRows.join(', ') + '行 / ' + column + '列'
+      );
     }
   });
 }
@@ -607,12 +637,12 @@ function RSA_buildAiRowsFromItems_(items, receiptNos) {
     item.year,
     item.month,
     item.day,
-    RSA_formatYen_(item.total),
-    RSA_formatYen_(item.cash),
-    RSA_formatYen_(item.creditCard),
-    RSA_formatYen_(item.points),
-    RSA_formatYen_(item.tax),
-    RSA_formatYen_(item.taxExcluded),
+    item.total,
+    item.cash,
+    item.creditCard,
+    item.points,
+    item.tax,
+    item.taxExcluded,
     item.tournament,
     item.titleA,
     item.imageNo
