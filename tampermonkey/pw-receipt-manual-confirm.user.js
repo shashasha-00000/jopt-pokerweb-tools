@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW 領収書抜き出し 人工確認版 v1.6
 // @namespace    https://japanopt.pokerweb.com.br/
-// @version      1.6.8
+// @version      1.6.12
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-confirm.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-confirm.user.js
 // @description  Game ID + キーワードで候補大会をAPI検索し、URL Cacheを厳密照合しながら支払い情報を高速取得する版
@@ -31,7 +31,7 @@
   };
 
   const CANDIDATE_HEADERS = [
-    "USE", "Game ID", "internalId", "参加日", "対象キーワード", "大会名",
+    "本次处理", "Game ID", "internalId", "参加日", "対象キーワード", "大会名",
     "TournamentId", "URL", "判定", "理由"
   ];
 
@@ -299,6 +299,43 @@
     saveSharedCache(cache);
   }
 
+  function getSharedCacheMatchesByName(name) {
+    const cleanName = cleanTournamentName(name);
+    const seen = new Set();
+
+    return Object.values(loadSharedCache())
+      .map(item => validateUrlCacheItem(item))
+      .filter(item => item.ok)
+      .filter(item =>
+        isSameTournamentExactSafe(cleanName, item.name) ||
+        isSameTournamentExactSafe(cleanName, item.actualName)
+      )
+      .filter(item => {
+        if (seen.has(item.tournamentId)) return false;
+        seen.add(item.tournamentId);
+        return true;
+      });
+  }
+
+  function replaceSharedCacheForName(name, data) {
+    const cleanName = cleanTournamentName(name);
+    const cache = loadSharedCache();
+
+    for (const [key, item] of Object.entries(cache)) {
+      const itemName = cleanTournamentName(item?.name || "");
+      const actualName = cleanTournamentName(item?.actualName || "");
+      if (
+        isSameTournamentExactSafe(cleanName, itemName) ||
+        isSameTournamentExactSafe(cleanName, actualName)
+      ) {
+        delete cache[key];
+      }
+    }
+
+    saveSharedCache(cache);
+    setSharedCacheItem(cleanName, data);
+  }
+
   function findSharedCacheByName(name) {
     const cleanName = cleanTournamentName(name);
     const matches = [];
@@ -536,12 +573,23 @@
       }
 
       for (const tr of trs.slice(1)) {
-        const tds = Array.from(tr.querySelectorAll("td"))
-          .map(td => norm(td.innerText || td.textContent || ""));
+        const tdNodes = Array.from(tr.querySelectorAll("td"));
+        const tds = tdNodes.map(td => norm(td.innerText || td.textContent || ""));
 
         const date = tds[dateIndex] || "";
         const name = cleanTournamentName(tds[nameIndex] || "");
         const rowText = norm(tr.innerText || tr.textContent || "");
+        const tournamentIds = new Set();
+
+        for (const m of String(tr.innerHTML || "").matchAll(/\/cb\/torneio\/painel\/(\d+)/g)) {
+          tournamentIds.add(m[1]);
+        }
+
+        for (const m of String(tr.innerHTML || "").matchAll(/(?:id_torneio|idTorneio)\D{0,30}(\d+)/gi)) {
+          tournamentIds.add(m[1]);
+        }
+
+        const tournamentId = tournamentIds.size === 1 ? Array.from(tournamentIds)[0] : "";
 
         if (!/^\d{2}\/\d{2}\/\d{4}$/.test(date)) continue;
         if (!name) continue;
@@ -550,6 +598,8 @@
           index: out.length,
           date,
           name,
+          tournamentId,
+          url: tournamentId ? getTournamentUrl(tournamentId) : "",
           rowText
         });
       }
@@ -575,7 +625,7 @@
 
         if (!rows.length) {
           candidates.push({
-            USE: "", "Game ID": task.gameId, internalId: search.internalId, 参加日: "",
+            本次处理: "不使用", "Game ID": task.gameId, internalId: search.internalId, 参加日: "",
             対象キーワード: task.keyword, 大会名: "", TournamentId: "", URL: "",
             判定: "NO_MATCH", 理由: "指定キーワードに一致する参加大会なし"
           });
@@ -583,11 +633,52 @@
         }
 
         for (const row of rows) {
-          const cacheResult = findSharedCacheByName(row.name);
+          const sharedCacheResult = findSharedCacheByName(row.name);
+          let cacheResult = sharedCacheResult;
+
+          if (row.tournamentId && sharedCacheResult.status === "OK_CACHE") {
+            if (sharedCacheResult.row.tournamentId === row.tournamentId) {
+              cacheResult = {
+                status: "OK_PLAYER_PAGE_CACHE_MATCH",
+                row: { tournamentId: row.tournamentId, url: row.url },
+                reason: "player page TournamentId matches Shared Cache"
+              };
+            } else {
+              cacheResult = {
+                status: "URL_CACHE_POLLUTION_SUSPECT",
+                row: { tournamentId: row.tournamentId, url: row.url },
+                reason: `Shared Cache污染疑い: player page=${row.tournamentId} / cache=${sharedCacheResult.row.tournamentId}`
+              };
+            }
+          } else if (row.tournamentId && sharedCacheResult.status === "URL_AMBIGUOUS") {
+            cacheResult = {
+              status: "URL_CACHE_POLLUTION_SUSPECT",
+              row: { tournamentId: row.tournamentId, url: row.url },
+              reason: `Shared Cache污染疑い: player page=${row.tournamentId} / ${sharedCacheResult.reason}`
+            };
+          } else if (row.tournamentId) {
+            cacheResult = {
+              status: "OK_PLAYER_PAGE",
+              row: { tournamentId: row.tournamentId, url: row.url },
+              reason: "TournamentId extracted from player page"
+            };
+          }
+
           const cache = cacheResult.row || null;
+          const autoUse = ["OK_CACHE", "OK_PLAYER_PAGE_CACHE_MATCH", "OK_PLAYER_PAGE"].includes(cacheResult.status);
+
+          if (row.tournamentId && cacheResult.status === "OK_PLAYER_PAGE") {
+            setSharedCacheItem(row.name, {
+              tournamentId: row.tournamentId,
+              url: row.url,
+              actualName: row.name,
+              matchedRow: row.rowText,
+              source: "manual-v1.11-player-page"
+            });
+          }
 
           candidates.push({
-            USE: cache ? "1" : "",
+            本次处理: autoUse ? "使用" : "不使用",
             "Game ID": task.gameId,
             internalId: search.internalId,
             参加日: row.date,
@@ -602,7 +693,7 @@
 
       } catch (e) {
         candidates.push({
-          USE: "", "Game ID": task.gameId, internalId: "", 参加日: "",
+          本次处理: "不使用", "Game ID": task.gameId, internalId: "", 参加日: "",
           対象キーワード: task.keyword, 大会名: "", TournamentId: "", URL: "",
           判定: "ERROR", 理由: e.message || String(e)
         });
@@ -994,18 +1085,199 @@
     return document.querySelector("#pw-manual-candidates")?.value || "";
   }
 
+  function normalizeCandidateProcessing(rows) {
+    return rows.map(row => {
+      const oldValue = norm(row["本次处理"] || row["USE"]);
+      const use = oldValue === "使用" || oldValue === "1" || oldValue.toUpperCase() === "TRUE" ||
+        oldValue.toUpperCase() === "Y" || oldValue === "〇" || oldValue === "○";
+      row["本次处理"] = use ? "使用" : "不使用";
+      delete row["USE"];
+      return row;
+    });
+  }
+
   function setCandidateRows(rows) {
-    const tsv = toTsv(rows, CANDIDATE_HEADERS);
+    const normalizedRows = normalizeCandidateProcessing(rows);
+    const tsv = toTsv(normalizedRows, CANDIDATE_HEADERS);
     const box = document.querySelector("#pw-manual-candidates");
     if (box) box.value = tsv;
     localStorage.setItem(CONFIG.candidateKey, tsv);
+    renderManualReview(normalizedRows);
     return tsv;
+  }
+
+  const MANUAL_REVIEW_STATUSES = new Set([
+    "URL_CACHE_POLLUTION_SUSPECT",
+    "URL_AMBIGUOUS",
+    "URL_CACHE_BAD_ROW",
+    "URL未解決",
+    "URL_NOT_FOUND",
+    "AMBIGUOUS",
+    "ERROR"
+  ]);
+
+  function getManualReviewRows(rows = parseTsv(getCandidateText())) {
+    return rows.filter(row => row["大会名"] && MANUAL_REVIEW_STATUSES.has(row["判定"]));
+  }
+
+  function applyConfirmedUrlToCandidates(name, tournamentId, url, status, reason) {
+    const rows = parseTsv(getCandidateText());
+    for (const row of rows) {
+      if (!isSameTournamentExactSafe(name, row["大会名"])) continue;
+      row["本次处理"] = "使用";
+      delete row["USE"];
+      row["TournamentId"] = tournamentId;
+      row["URL"] = url;
+      row["判定"] = status;
+      row["理由"] = reason || "";
+    }
+    setCandidateRows(rows);
+  }
+
+  function confirmAndRepairCache(name, tournamentId, url, sourceLabel) {
+    const id = norm(tournamentId);
+    const finalUrl = normalizeCacheUrl(id, url);
+    if (!id || !finalUrl || extractTournamentIdFromUrl(finalUrl) !== id) {
+      alert("TournamentId / URL が不正です。");
+      return;
+    }
+
+    if (!confirm(
+      `このURLを正しい大会URLとして採用し、同名の旧Cacheを削除します。\n\n` +
+      `${name}\n\nTournamentId: ${id}\nURL: ${finalUrl}\n\n続行しますか？`
+    )) return;
+
+    replaceSharedCacheForName(name, {
+      tournamentId: id,
+      url: finalUrl,
+      actualName: name,
+      matchedRow: `manual repair: ${sourceLabel}`,
+      source: `manual-v1.11-repair-${sourceLabel}`
+    });
+
+    applyConfirmedUrlToCandidates(name, id, finalUrl, "OK_MANUAL_REPAIRED", `人工確認済み: ${sourceLabel}`);
+    setStatus(`Cache修復完了: ${name} → ${id}`);
+  }
+
+  function skipCandidateForThisRun(name) {
+    if (!confirm(`本次处理暂时排除这场比赛吗？\n\n${name}`)) return;
+
+    const rows = parseTsv(getCandidateText());
+    for (const row of rows) {
+      if (!isSameTournamentExactSafe(name, row["大会名"])) continue;
+      row["本次处理"] = "不使用";
+      row["判定"] = "SKIPPED_THIS_RUN";
+      row["理由"] = "本次人工排除";
+      delete row["USE"];
+    }
+    setCandidateRows(rows);
+  }
+
+  function userFacingReviewStatus(status) {
+    const labels = {
+      URL_CACHE_POLLUTION_SUSPECT: "发现历史URL冲突，需要确认",
+      URL_AMBIGUOUS: "同名比赛存在多个历史URL",
+      URL_CACHE_BAD_ROW: "历史URL记录异常",
+      URL未解決: "尚未取得比赛URL",
+      URL_NOT_FOUND: "未找到比赛URL",
+      AMBIGUOUS: "搜索结果存在多个同名比赛",
+      ERROR: "读取时发生错误"
+    };
+    return labels[status] || status;
+  }
+
+  function renderManualReview(rows = parseTsv(getCandidateText())) {
+    const box = document.querySelector("#pw-manual-review");
+    const summary = document.querySelector("#pw-manual-summary");
+    if (!box || !summary) return;
+
+    const reviewRows = getManualReviewRows(rows);
+    const existing = rows.filter(row => row["判定"] === "OK_PLAYER_PAGE_CACHE_MATCH" || row["判定"] === "OK_CACHE").length;
+    const added = rows.filter(row => row["判定"] === "OK_PLAYER_PAGE").length;
+    const pollution = rows.filter(row => row["判定"] === "URL_CACHE_POLLUTION_SUSPECT").length;
+    const conflicts = rows.filter(row => ["URL_AMBIGUOUS", "AMBIGUOUS"].includes(row["判定"])).length;
+    const unresolved = reviewRows.length - pollution - conflicts;
+
+    summary.textContent =
+      `符合比赛 ${rows.filter(row => row["大会名"]).length} / 已有一致 ${existing} / 新增 ${added} / ` +
+      `疑似污染 ${pollution} / 重名冲突 ${conflicts} / 其他待确认 ${Math.max(0, unresolved)}`;
+
+    box.replaceChildren();
+    if (!reviewRows.length) {
+      const ok = document.createElement("div");
+      ok.textContent = "需要人工确认的项目：0";
+      ok.style.color = "#9f9";
+      box.appendChild(ok);
+      return;
+    }
+
+    const unique = new Map();
+    for (const row of reviewRows) {
+      const key = compact(row["大会名"]);
+      if (!unique.has(key)) unique.set(key, row);
+    }
+
+    for (const row of unique.values()) {
+      const name = cleanTournamentName(row["大会名"]);
+      const card = document.createElement("div");
+      card.style.cssText = "border:1px solid #955;background:#2b2020;padding:7px;margin-top:6px;line-height:1.45;";
+
+      const title = document.createElement("div");
+      title.style.fontWeight = "bold";
+      title.textContent = name;
+      card.appendChild(title);
+
+      const detail = document.createElement("div");
+      detail.style.cssText = "font-size:11px;color:#fbb;white-space:pre-wrap;";
+      detail.textContent = `${userFacingReviewStatus(row["判定"])}\n${row["理由"] || ""}`;
+      card.appendChild(detail);
+
+      const actions = document.createElement("div");
+      actions.style.cssText = "display:flex;flex-wrap:wrap;gap:5px;margin-top:5px;";
+
+      const playerId = norm(row["TournamentId"]);
+      const playerUrl = normalizeCacheUrl(playerId, row["URL"]);
+      if (playerId && playerUrl) {
+        const open = document.createElement("button");
+        open.textContent = `打开玩家页面URL ${playerId}`;
+        open.onclick = () => window.open(playerUrl, "_blank");
+        actions.appendChild(open);
+
+        const adopt = document.createElement("button");
+        adopt.textContent = `采用 ${playerId} 并清除旧记录`;
+        adopt.style.background = "#bff0c2";
+        adopt.onclick = () => confirmAndRepairCache(name, playerId, playerUrl, "player-page");
+        actions.appendChild(adopt);
+      }
+
+      for (const cached of getSharedCacheMatchesByName(name)) {
+        if (cached.tournamentId === playerId) continue;
+
+        const open = document.createElement("button");
+        open.textContent = `打开Cache URL ${cached.tournamentId}`;
+        open.onclick = () => window.open(cached.url, "_blank");
+        actions.appendChild(open);
+
+        const adopt = document.createElement("button");
+        adopt.textContent = `采用Cache ${cached.tournamentId}`;
+        adopt.onclick = () => confirmAndRepairCache(name, cached.tournamentId, cached.url, "shared-cache");
+        actions.appendChild(adopt);
+      }
+
+      const skip = document.createElement("button");
+      skip.textContent = "本次暂不处理";
+      skip.onclick = () => skipCandidateForThisRun(name);
+      actions.appendChild(skip);
+
+      card.appendChild(actions);
+      box.appendChild(card);
+    }
   }
 
   function getUseCandidateRows() {
     return parseTsv(getCandidateText()).filter(row => {
-      const use = norm(row["USE"]);
-      return use === "1" || use.toUpperCase() === "TRUE" || use.toUpperCase() === "Y" || use === "〇" || use === "○";
+      const use = norm(row["本次处理"] || row["USE"]);
+      return use === "使用" || use === "1" || use.toUpperCase() === "TRUE" || use.toUpperCase() === "Y" || use === "〇" || use === "○";
     });
   }
 
@@ -1105,7 +1377,8 @@
           }
 
           for (const row of group.rows) {
-            row["USE"] = "1";
+            row["本次处理"] = "使用";
+            delete row["USE"];
             row["TournamentId"] = found.tournamentId;
             row["URL"] = found.url;
             row["判定"] = found.source === "closed" ? "OK_SEARCH_CLOSED" : "OK_SEARCH_OPEN";
@@ -1793,21 +2066,20 @@
       const candidates = await discoverCandidatesFromTasks(tasks, dateRange);
       setCandidateRows(candidates);
 
-      const okCount = candidates.filter(r => r["判定"] === "OK_CACHE").length;
-      const unresolved = candidates.filter(r => r["判定"] === "URL未解決").length;
-      const ambiguousCount = candidates.filter(r => r["判定"] === "URL_AMBIGUOUS").length;
-      const badCount = candidates.filter(r => r["判定"] === "URL_CACHE_BAD_ROW").length;
-      const errorCount = candidates.filter(r => r["判定"] === "ERROR").length;
+      const existingCount = candidates.filter(r => ["OK_CACHE", "OK_PLAYER_PAGE_CACHE_MATCH"].includes(r["判定"])).length;
+      const addedCount = candidates.filter(r => r["判定"] === "OK_PLAYER_PAGE").length;
+      const pollutionCount = candidates.filter(r => r["判定"] === "URL_CACHE_POLLUTION_SUSPECT").length;
+      const conflictCount = candidates.filter(r => ["URL_AMBIGUOUS", "AMBIGUOUS"].includes(r["判定"])).length;
+      const reviewCount = getManualReviewRows(candidates).length;
 
       alert(
         `候補検索完了\n\n` +
-        `候補行：${candidates.length}\n` +
-        `URL解決済み：${okCount}\n` +
-        `URL未解決：${unresolved}\n` +
-        `URL同名複数：${ambiguousCount}\n` +
-        `URL疑似汚染：${badCount}\n` +
-        `ERROR：${errorCount}\n\n` +
-        `不要な大会は候補欄から行ごと削除、またはUSEを空にしてください。`
+        `符合条件比赛：${candidates.filter(r => r["大会名"]).length}\n` +
+        `已有URL且一致：${existingCount}\n` +
+        `新增URL：${addedCount}\n` +
+        `疑似污染：${pollutionCount}\n` +
+        `重名冲突：${conflictCount}\n` +
+        `需要人工确认：${reviewCount}`
       );
 
       setStatus("候補検索完了");
@@ -1829,13 +2101,20 @@
       return;
     }
 
-    const rows = getUseCandidateRows();
-    if (!rows.length) {
-      alert("USE=1 の候補行がありません。");
+    const allRows = parseTsv(getCandidateText());
+    const pendingReview = getManualReviewRows(allRows);
+    if (pendingReview.length) {
+      alert(`人工確認が未完了の候補があります。\n\n対象：${pendingReview.length}件\n\n人工核查欄で確認・修復してください。`);
       return;
     }
 
-    const unsafe = rows.filter(r => ["URL_AMBIGUOUS", "URL_CACHE_BAD_ROW", "AMBIGUOUS"].includes(r["判定"]));
+    const rows = getUseCandidateRows();
+    if (!rows.length) {
+      alert("本次处理设为“使用”的比赛为空。");
+      return;
+    }
+
+    const unsafe = rows.filter(r => MANUAL_REVIEW_STATUSES.has(r["判定"]));
     if (unsafe.length) {
       alert(`URLが安全確定していない候補があります。\n\n対象：${unsafe.length}件\n\nURL未解決検索または候補欄の修正後に再実行してください。`);
       return;
@@ -1847,7 +2126,7 @@
       return;
     }
 
-    if (!confirm(`USE候補から支払い情報を高速取得します。\n\nUSE候補：${usable.length}行\n\n続行しますか？`)) return;
+    if (!confirm(`从已确认使用的比赛取得支付信息。\n\n本次处理：${usable.length}行\n\n继续吗？`)) return;
 
     running = true;
     stopRequested = false;
@@ -1998,7 +2277,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.6.8</div>
+        <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.6.12</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-manual-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-manual-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>
@@ -2009,7 +2288,12 @@
         <div style="font-size:11px;color:#ccc;line-height:1.35;margin-bottom:6px;">
           入力例：<code>51763548 【JOPT 2026 Grand Final】</code><br>
           候補検索も支払い取得もAPIで取得します。URL Cacheは完整大会名で厳密照合します。<br>
-          流れ：候補検索 → 不要行を削除/USE空白 → URL未解決検索 → 支払い取得
+          流れ：候補検索 → 必要な大会を確認 → 人工核查 → 支払い取得
+        </div>
+
+        <div id="pw-manual-summary"
+          style="background:#17324a;border:1px solid #477;padding:7px;color:#cff;font-weight:bold;margin-bottom:6px;">
+          尚未搜索
         </div>
 
         <div style="font-size:12px;font-weight:bold;">検索期間 / dateRange</div>
@@ -2024,7 +2308,7 @@
         <div style="display:flex;gap:6px;margin-top:6px;">
           <button id="pw-manual-discover" style="flex:1;padding:7px;cursor:pointer;background:#ffe08a;border:1px solid #c99;">1. 候補大会をAPI検索</button>
           <button id="pw-manual-resolve-url" style="flex:1;padding:7px;cursor:pointer;background:#d9ecff;border:1px solid #88a;">2. URL未解決/疑似汚染を検索</button>
-          <button id="pw-manual-run-payment" style="flex:1;padding:7px;cursor:pointer;background:#bff0c2;border:1px solid #8a8;">3. USE候補で高速支払い取得</button>
+          <button id="pw-manual-run-payment" style="flex:1;padding:7px;cursor:pointer;background:#bff0c2;border:1px solid #8a8;">3. 已确认比赛的支付信息</button>
         </div>
 
         <div style="display:flex;gap:6px;margin-top:6px;">
@@ -2036,6 +2320,10 @@
         <div style="font-size:12px;font-weight:bold;margin-top:6px;">Candidates / 候補確認欄</div>
         <textarea id="pw-manual-candidates"
           style="width:100%;height:165px;background:#111;color:#fff;border:1px solid #555;padding:8px;font-family:Consolas,monospace;font-size:12px;"></textarea>
+
+        <div style="font-size:12px;font-weight:bold;margin-top:6px;">人工核查 / 仅显示需要确认的比赛</div>
+        <div id="pw-manual-review"
+          style="max-height:220px;overflow:auto;background:#181818;border:1px solid #555;padding:6px;font-size:12px;"></div>
 
         <div style="font-size:12px;font-weight:bold;margin-top:6px;">Output / PASTE_ROWS + NEED_CHECK + REPORT</div>
         <textarea id="pw-manual-output"
@@ -2055,6 +2343,12 @@
     document.querySelector("#pw-manual-candidates").value = savedCandidate;
     document.querySelector("#pw-manual-date-range").value = savedDateRange;
     document.querySelector("#pw-manual-output").value = savedOutput;
+    renderManualReview(parseTsv(savedCandidate));
+    document.querySelector("#pw-manual-candidates").addEventListener("change", () => {
+      const text = getCandidateText();
+      localStorage.setItem(CONFIG.candidateKey, text);
+      renderManualReview(parseTsv(text));
+    });
 
     document.querySelector("#pw-manual-discover").onclick = () => runDiscoverCandidates();
     document.querySelector("#pw-manual-resolve-url").onclick = () => resolveUrlForCandidates();
@@ -2088,7 +2382,9 @@
       loadSharedCache,
       saveSharedCache,
       setSharedCacheItem,
+      replaceSharedCacheForName,
       cacheToTsv,
+      renderManualReview,
       runDiscoverCandidates,
       resolveUrlForCandidates,
       runPaymentFromCandidates
