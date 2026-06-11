@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW 領収書抜き出し 人工確認版 v1.6
 // @namespace    https://japanopt.pokerweb.com.br/
-// @version      1.6.3
+// @version      1.6.4
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-confirm.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-confirm.user.js
 // @description  Game ID + キーワードで候補大会をAPI検索し、URL Cacheを厳密照合しながら支払い情報を高速取得する版
@@ -713,8 +713,7 @@
         : win.document.querySelector(".dataTables_processing");
 
       if (!processing) return false;
-      const text = norm(processing.innerText || processing.textContent || "");
-      return isVisibleInWindow(win, processing) || !!text;
+      return isVisibleInWindow(win, processing);
     } catch (_) {
       const processing = win.document.querySelector(".dataTables_processing");
       return processing ? isVisibleInWindow(win, processing) : false;
@@ -1880,7 +1879,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.6.3</div>
+        <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.6.4</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-manual-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-manual-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>
