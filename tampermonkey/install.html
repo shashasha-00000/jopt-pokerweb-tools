@@ -161,6 +161,8 @@
     const DEFAULT_REPO = "jopt-pokerweb-tools";
     const DEFAULT_BRANCH = "main";
     const OPEN_DELAY_MS = 1200;
+    const RAW_MANIFEST_URL =
+      `https://raw.githubusercontent.com/${DEFAULT_OWNER}/${DEFAULT_REPO}/${DEFAULT_BRANCH}/tampermonkey/scripts.json`;
 
     let scripts = [];
 
@@ -217,8 +219,14 @@
       document.querySelector("#open-all").disabled = true;
 
       try {
-        const res = await fetch(`${MANIFEST_URL}?t=${Date.now()}`, { cache: "no-store" });
-        if (!res.ok) throw new Error(`scripts.json HTTP ${res.status}`);
+        let res;
+        try {
+          res = await fetch(`${MANIFEST_URL}?t=${Date.now()}`, { cache: "no-store" });
+          if (!res.ok) throw new Error(`scripts.json HTTP ${res.status}`);
+        } catch {
+          res = await fetch(`${RAW_MANIFEST_URL}?t=${Date.now()}`, { cache: "no-store" });
+          if (!res.ok) throw new Error(`raw scripts.json HTTP ${res.status}`);
+        }
         scripts = await res.json();
         render(scripts);
         setStatus(`${scripts.length} scripts loaded`);
