@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW 領収書抜き出し 人工確認版 v1.6
 // @namespace    https://japanopt.pokerweb.com.br/
-// @version      1.6.2
+// @version      1.6.3
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-confirm.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-confirm.user.js
 // @description  Game ID + キーワードで候補大会をAPI検索し、URL Cacheを厳密照合しながら支払い情報を高速取得する版
@@ -860,30 +860,21 @@
     const dt = await waitForDataTableReadyInWindow(win, 15000);
     if (!dt) throw new Error("DataTable not found");
 
-    let lastFound = null;
-
     for (let attempt = 1; attempt <= 2; attempt++) {
       if (stopRequested) return null;
 
       try {
-        setStatus(`URL検索 retry ${attempt}/2: ${name}`);
+        if (attempt > 1) setStatus(`URL検索 retry ${attempt}/2: ${name}`);
 
         await dataTableSearchAndWait(win, dt, name);
-
-        const found = findTournamentFromCurrentDataTablePage(win, dt, name);
-        if (found) {
-          lastFound = found;
-          break;
-        }
-
-        await sleep(300);
+        return findTournamentFromCurrentDataTablePage(win, dt, name);
       } catch (e) {
         warn(`URL search retry ${attempt}/2 failed`, e);
-        await sleep(500);
+        if (attempt < 2) await sleep(500);
       }
     }
 
-    return lastFound;
+    return null;
   }
 
   function getCandidateText() {
@@ -912,9 +903,10 @@
     }
 
     const candidates = parseTsv(getCandidateText());
+    const unresolvedStatuses = ["URL未解決", "URL_NOT_FOUND", "URL_CACHE_BAD_ROW", "URL_AMBIGUOUS", "AMBIGUOUS"];
     const targets = candidates.filter(row =>
       row["大会名"] &&
-      (!row["TournamentId"] || !row["URL"] || row["判定"] === "URL未解決" || row["判定"] === "URL_NOT_FOUND" || row["判定"] === "URL_CACHE_BAD_ROW" || row["判定"] === "URL_AMBIGUOUS")
+      (!row["TournamentId"] || !row["URL"] || unresolvedStatuses.includes(row["判定"]))
     );
 
     if (!targets.length) {
@@ -934,24 +926,28 @@
     let ambiguousCount = 0;
 
     try {
-      setStatus("CLOSED大会一覧を開いています...");
-      closedWin = await openTournamentListWindow("/cb/torneio/fechados", "closed");
+      setStatus("OPEN / CLOSED大会一覧を開いています...");
+      await Promise.all([
+        openTournamentListWindow("/cb/torneio/fechados", "closed").then(win => { closedWin = win; }),
+        openTournamentListWindow("/cb/torneio/abertos", "open").then(win => { openWin = win; })
+      ]);
 
-      setStatus("OPEN大会一覧を開いています...");
-      openWin = await openTournamentListWindow("/cb/torneio/abertos", "open");
+      const targetGroups = new Map();
+      for (const row of targets) {
+        const name = cleanTournamentName(row["大会名"]);
+        if (!name) continue;
+        const key = compact(name);
+        if (!targetGroups.has(key)) targetGroups.set(key, { name, rows: [] });
+        targetGroups.get(key).rows.push(row);
+      }
 
-      for (let i = 0; i < candidates.length; i++) {
+      const groups = Array.from(targetGroups.values());
+      for (let i = 0; i < groups.length; i++) {
         if (stopRequested) break;
 
-        const row = candidates[i];
-        if (!row["大会名"]) continue;
-
-        if (row["TournamentId"] && row["URL"] && !["URL未解決", "URL_NOT_FOUND", "URL_CACHE_BAD_ROW", "URL_AMBIGUOUS"].includes(row["判定"])) {
-          continue;
-        }
-
-        const name = cleanTournamentName(row["大会名"]);
-        setStatus(`URL検索 ${i + 1}/${candidates.length}: ${name}`);
+        const group = groups[i];
+        const name = group.name;
+        setStatus(`URL検索 ${i + 1}/${groups.length}: ${name} (${group.rows.length}件)`);
 
         let found = null;
         let source = "";
@@ -973,25 +969,31 @@
         }
 
         if (!found) {
-          row["判定"] = "URL_NOT_FOUND";
-          row["理由"] = "OPEN/CLOSED大会一覧検索で見つかりません";
-          ngCount++;
+          for (const row of group.rows) {
+            row["判定"] = "URL_NOT_FOUND";
+            row["理由"] = "OPEN/CLOSED大会一覧検索で見つかりません";
+          }
+          ngCount += group.rows.length;
           continue;
         }
 
         if (found.error === "AMBIGUOUS") {
-          row["判定"] = "AMBIGUOUS";
-          row["理由"] = `${found.candidates.length} candidates`;
-          ambiguousCount++;
+          for (const row of group.rows) {
+            row["判定"] = "AMBIGUOUS";
+            row["理由"] = `${found.candidates.length} candidates`;
+          }
+          ambiguousCount += group.rows.length;
           console.table(found.candidates);
           continue;
         }
 
-        row["USE"] = "1";
-        row["TournamentId"] = found.tournamentId;
-        row["URL"] = found.url;
-        row["判定"] = source === "closed" ? "OK_SEARCH_CLOSED" : "OK_SEARCH_OPEN";
-        row["理由"] = "";
+        for (const row of group.rows) {
+          row["USE"] = "1";
+          row["TournamentId"] = found.tournamentId;
+          row["URL"] = found.url;
+          row["判定"] = source === "closed" ? "OK_SEARCH_CLOSED" : "OK_SEARCH_OPEN";
+          row["理由"] = "";
+        }
 
         setSharedCacheItem(name, {
           tournamentId: found.tournamentId,
@@ -1001,7 +1003,7 @@
           source: `manual-v1.5-${source}`
         });
 
-        okCount++;
+        okCount += group.rows.length;
       }
 
       setCandidateRows(candidates);
@@ -1878,7 +1880,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.5</div>
+        <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.6.3</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-manual-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-manual-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>
