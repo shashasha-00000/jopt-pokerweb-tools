@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW 領収書抜き出し 人工確認版 v1.6
 // @namespace    https://japanopt.pokerweb.com.br/
-// @version      1.6.5
+// @version      1.6.8
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-confirm.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-confirm.user.js
 // @description  Game ID + キーワードで候補大会をAPI検索し、URL Cacheを厳密照合しながら支払い情報を高速取得する版
@@ -52,14 +52,14 @@
     return norm(value)
       .replace(/[\/／]/g, "")
       .replace(/\s+/g, "")
-      .replace(/監査済み/g, "")
+      .replace(/監査(?:済み|待ち)/g, "")
       .toLowerCase();
   }
 
   function cleanTournamentName(name) {
     return String(name || "")
       .replace(/\s*-\s*PokerWeb\s*$/i, "")
-      .replace(/\s*監査済み\s*$/g, "")
+      .replace(/\s*監査(?:済み|待ち)\s*$/g, "")
       .trim();
   }
 
@@ -690,19 +690,31 @@
   }
 
   function getDataTableTbodyRows(win, dt) {
+    const rows = [];
+    const seen = new Set();
+
+    const add = row => {
+      if (!row || !rowHasPanelLink(row)) return;
+      const key = row.outerHTML || row.innerHTML || row.innerText || row;
+      if (seen.has(key)) return;
+      seen.add(key);
+      rows.push(row);
+    };
+
     try {
-      const node = dt.table().node();
-      const tbody = node ? node.querySelector("tbody") : null;
-      if (tbody) {
-        return Array.from(tbody.querySelectorAll("tr"))
-          .filter(row => isVisibleInWindow(win, row))
-          .filter(rowHasPanelLink);
-      }
+      dt.rows({ search: "applied" }).nodes().each(add);
     } catch (_) {}
 
-    return Array.from(win.document.querySelectorAll("table tbody tr, tr"))
-      .filter(row => isVisibleInWindow(win, row))
-      .filter(rowHasPanelLink);
+    try {
+      const node = dt.table().node();
+      Array.from(node?.querySelectorAll("tbody tr") || []).forEach(add);
+    } catch (_) {}
+
+    if (!rows.length) {
+      Array.from(win.document.querySelectorAll("table tbody tr, tr")).forEach(add);
+    }
+
+    return rows;
   }
 
   function isDataTableProcessing(win, dt) {
@@ -785,11 +797,9 @@
     while (Date.now() - start < timeoutMs) {
       if (!win || win.closed) throw new Error("WINDOW_CLOSED");
 
-      let signature = "";
-      try {
-        const tbody = dt.table().node()?.querySelector("tbody");
-        signature = norm(tbody?.innerText || tbody?.textContent || "");
-      } catch (_) {}
+      const signature = getDataTableTbodyRows(win, dt)
+        .map(row => String(row.outerHTML || row.innerText || "").slice(0, 500))
+        .join("||");
 
       if (!isDataTableProcessing(win, dt) && signature === lastSignature) {
         if (!stableSince) stableSince = Date.now();
@@ -853,6 +863,76 @@
     const unique = matches.filter(x => {
       if (seen.has(x.url)) return false;
       seen.add(x.url);
+      return true;
+    });
+
+    log(`URL search result: query=${inputName} / rows=${rows.length} / exact=${unique.length}`);
+
+    if (unique.length === 1) return unique[0];
+    if (unique.length > 1) return { error: "AMBIGUOUS", candidates: unique };
+    return null;
+  }
+
+  function extractTournamentFromListRow(row) {
+    const rowText = norm(row?.innerText || row?.textContent || "");
+    const rowHtml = row?.innerHTML || "";
+    const m = String(rowHtml).match(/\/cb\/torneio\/painel\/(\d+)/);
+    if (!m) return null;
+
+    return {
+      tournamentId: m[1],
+      url: getTournamentUrl(m[1]),
+      actualName: extractTournamentTitleFromRow(rowText),
+      matchedRow: rowText
+    };
+  }
+
+  async function collectEventPrefixRowsAllPages(win, prefix, source) {
+    const dt = await waitForDataTableReadyInWindow(win, 15000);
+    if (!dt) throw new Error(`${source}: DataTable not found`);
+
+    await dataTableSearchAndWait(win, dt, prefix);
+
+    let pages = 1;
+    try {
+      pages = Math.max(1, Number(dt.page.info()?.pages || 1));
+    } catch (_) {}
+
+    const found = [];
+    const seen = new Set();
+
+    for (let page = 0; page < pages; page++) {
+      if (stopRequested) break;
+
+      if (page > 0) {
+        const drawPromise = waitForNextDraw(win, dt, CONFIG.searchWaitTimeoutMs);
+        dt.page(page).draw("page");
+        if (!await drawPromise) throw new Error(`${source}: page ${page + 1} draw timeout`);
+        await waitForSearchResultStable(win, dt);
+      }
+
+      for (const row of getDataTableTbodyRows(win, dt)) {
+        const item = extractTournamentFromListRow(row);
+        if (!item || seen.has(item.url)) continue;
+
+        const all = `${item.actualName} ${item.matchedRow}`;
+        if (!compact(all).includes(compact(prefix))) continue;
+
+        seen.add(item.url);
+        found.push({ ...item, source });
+      }
+    }
+
+    log(`Event Prefix result: ${source} / ${prefix} / pages=${pages} / rows=${found.length}`);
+    return found;
+  }
+
+  function findExactTournamentFromCollected(rows, inputName) {
+    const matches = rows.filter(row => isSameTournamentExactSafe(inputName, row.actualName));
+    const seen = new Set();
+    const unique = matches.filter(row => {
+      if (seen.has(row.url)) return false;
+      seen.add(row.url);
       return true;
     });
 
@@ -975,68 +1055,73 @@
       }
 
       const groups = Array.from(targetGroups.values());
-      for (let i = 0; i < groups.length; i++) {
+      const prefixGroups = new Map();
+      for (const group of groups) {
+        const prefix = getEventPrefixFromTournamentName(group.name);
+        if (!prefixGroups.has(prefix)) prefixGroups.set(prefix, []);
+        prefixGroups.get(prefix).push(group);
+      }
+
+      const prefixEntries = Array.from(prefixGroups.entries());
+      for (let i = 0; i < prefixEntries.length; i++) {
         if (stopRequested) break;
 
-        const group = groups[i];
-        const name = group.name;
-        setStatus(`URL検索 ${i + 1}/${groups.length}: ${name} (${group.rows.length}件)`);
+        const [prefix, prefixTargets] = prefixEntries[i];
+        setStatus(`URL一括検索 ${i + 1}/${prefixEntries.length}: ${prefix} (${prefixTargets.length}大会名)`);
 
-        let found = null;
-        let source = "";
-
+        const collected = [];
         try {
-          found = await searchTournamentInListWindow(closedWin, name);
-          source = "closed";
+          collected.push(...await collectEventPrefixRowsAllPages(closedWin, prefix, "closed"));
         } catch (e) {
-          warn("closed search error", e);
+          warn("closed prefix search error", e);
+        }
+        try {
+          collected.push(...await collectEventPrefixRowsAllPages(openWin, prefix, "open"));
+        } catch (e) {
+          warn("open prefix search error", e);
         }
 
-        if (!found) {
-          try {
-            found = await searchTournamentInListWindow(openWin, name);
-            source = "open";
-          } catch (e) {
-            warn("open search error", e);
+        for (const group of prefixTargets) {
+          const name = group.name;
+          const found = findExactTournamentFromCollected(collected, name);
+
+          if (!found) {
+            for (const row of group.rows) {
+              row["判定"] = "URL_NOT_FOUND";
+              row["理由"] = `${prefix} 一括検索で完全一致なし`;
+            }
+            ngCount += group.rows.length;
+            continue;
           }
-        }
 
-        if (!found) {
+          if (found.error === "AMBIGUOUS") {
+            for (const row of group.rows) {
+              row["判定"] = "AMBIGUOUS";
+              row["理由"] = `${found.candidates.length} exact candidates`;
+            }
+            ambiguousCount += group.rows.length;
+            console.table(found.candidates);
+            continue;
+          }
+
           for (const row of group.rows) {
-            row["判定"] = "URL_NOT_FOUND";
-            row["理由"] = "OPEN/CLOSED大会一覧検索で見つかりません";
+            row["USE"] = "1";
+            row["TournamentId"] = found.tournamentId;
+            row["URL"] = found.url;
+            row["判定"] = found.source === "closed" ? "OK_SEARCH_CLOSED" : "OK_SEARCH_OPEN";
+            row["理由"] = "";
           }
-          ngCount += group.rows.length;
-          continue;
+
+          setSharedCacheItem(name, {
+            tournamentId: found.tournamentId,
+            url: found.url,
+            actualName: found.actualName || name,
+            matchedRow: found.matchedRow || "",
+            source: `manual-v1.7-prefix-${found.source}`
+          });
+
+          okCount += group.rows.length;
         }
-
-        if (found.error === "AMBIGUOUS") {
-          for (const row of group.rows) {
-            row["判定"] = "AMBIGUOUS";
-            row["理由"] = `${found.candidates.length} candidates`;
-          }
-          ambiguousCount += group.rows.length;
-          console.table(found.candidates);
-          continue;
-        }
-
-        for (const row of group.rows) {
-          row["USE"] = "1";
-          row["TournamentId"] = found.tournamentId;
-          row["URL"] = found.url;
-          row["判定"] = source === "closed" ? "OK_SEARCH_CLOSED" : "OK_SEARCH_OPEN";
-          row["理由"] = "";
-        }
-
-        setSharedCacheItem(name, {
-          tournamentId: found.tournamentId,
-          url: found.url,
-          actualName: found.actualName || name,
-          matchedRow: found.matchedRow || "",
-          source: `manual-v1.5-${source}`
-        });
-
-        okCount += group.rows.length;
       }
 
       setCandidateRows(candidates);
@@ -1913,7 +1998,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.6.5</div>
+        <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.6.8</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-manual-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-manual-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>
