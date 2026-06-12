@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         PW ナショナルチケット批量付与 正式版 v1.1
+// @name         PW ナショナルチケット批量付与 正式版 v1.2
 // @namespace    pw-national-ticket-batch-safe
-// @version      1.1.0
+// @version      1.2.0
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
 // @description  任意のPokerWeb后台页からGameID・チケット名TSVを厳密検証し、ナショナルチケットを安全に一件ずつ付与する正式版
@@ -21,11 +21,12 @@
     ledgerKey: 'PW_NATIONAL_TICKET_BATCH_V10_LEDGER',
     ticketListUrlKey: 'PW_NATIONAL_TICKET_BATCH_TICKET_LIST_URL',
     emitUrl: '/cb/vagas/emitir_ticket',
+    ticketHistoryUrl: '/cb/vagas/historico_ticket',
     playerSearchUrl: '/cb/jogadores/search',
     groupPathPattern: /\/painel_grupo_tickets\/(\d+)/,
     ticketListTextPattern: /ナショナル\s*チケット|national\s*ticket/i,
-    minDelayMs: 800,
-    maxDelayMs: 1500,
+    minDelayMs: 250,
+    maxDelayMs: 500,
     verifyAttempts: 3,
     verifyDelayMs: 650
   };
@@ -48,7 +49,6 @@
     return {
       running: false,
       dryRunOk: false,
-      testOk: false,
       tasks: [],
       logs: loadStoredLogs(),
       emittedTicketIds: new Set(ledger.emittedTicketIds),
@@ -544,12 +544,50 @@
   }
 
   async function verifyTicketEmitted(task) {
+    let successfulReads = 0;
+    let lastError = '';
+
     for (let attempt = 1; attempt <= APP.verifyAttempts; attempt++) {
       await sleep(APP.verifyDelayMs);
-      const current = await fetchGroupPage({ grupo: task.grupo, groupURL: task.groupURL }, false);
-      if (!current.ticketIds.includes(task.ticketId)) return true;
+      try {
+        const current = await fetchGroupPage({ grupo: task.grupo, groupURL: task.groupURL }, false);
+        successfulReads++;
+        if (!current.ticketIds.includes(task.ticketId)) {
+          return { status: 'EMITTED', attempts: attempt, error: '' };
+        }
+      } catch (error) {
+        lastError = error.message || String(error);
+      }
     }
-    return false;
+
+    if (successfulReads > 0) {
+      return { status: 'STILL_UNISSUED', attempts: APP.verifyAttempts, error: '' };
+    }
+    return { status: 'UNKNOWN', attempts: APP.verifyAttempts, error: lastError || 'groupページを確認できません' };
+  }
+
+  async function verifyTicketRecipient(task) {
+    const { text } = await postForm(APP.ticketHistoryUrl, {
+      ticket_id: task.ticketId
+    });
+    const doc = parseHtml(text);
+    const historyText = norm(doc.body?.textContent || text);
+    const formattedGameId = rawToSearchGameId(task.gameId);
+
+    if (!historyText.includes(formattedGameId) && !historyText.includes(task.gameId)) {
+      throw new Error(
+        `ticket_id は発行済みですが、履歴で対象GameIDを確認できません: ` +
+        `ticket_id=${task.ticketId} / expected=${formattedGameId}`
+      );
+    }
+
+    if (!/発行済み|排出票|排出量|emitido/i.test(historyText)) {
+      throw new Error(
+        `ticket_id 履歴に発行済み信号がありません: ticket_id=${task.ticketId}`
+      );
+    }
+
+    return historyText.slice(0, 500);
   }
 
   function responseSummary(text) {
@@ -607,29 +645,48 @@
     state.completedTaskKeys.add(key);
     saveLedger();
 
-    const { text } = await postForm(APP.emitUrl, {
-      id_jogador: task.idJogador,
-      codbloq: fresh.codbloq,
-      ticket_id: task.ticketId,
-      grupo: task.grupo
-    });
+    let responseResult;
+    try {
+      const { text } = await postForm(APP.emitUrl, {
+        id_jogador: task.idJogador,
+        codbloq: fresh.codbloq,
+        ticket_id: task.ticketId,
+        grupo: task.grupo
+      });
+      responseResult = classifyPostResponse(text);
+    } catch (error) {
+      responseResult = {
+        status: 'POST_EXCEPTION',
+        summary: error.message || String(error)
+      };
+    }
 
-    const responseResult = classifyPostResponse(text);
-    const confirmed = await verifyTicketEmitted(task);
-    if (!confirmed) {
+    const verification = await verifyTicketEmitted(task);
+    if (verification.status === 'STILL_UNISSUED') {
       throw new Error(
         `POST後も ticket_id が未発行在庫に残っています: ${task.ticketId} / ` +
         `response=${responseResult.status}: ${responseResult.summary}`
       );
     }
+    if (verification.status === 'UNKNOWN') {
+      throw new Error(
+        `POST後の ticket_id 状態を確認できません。自動再試行禁止: ${task.ticketId} / ` +
+        `確認エラー=${verification.error} / response=${responseResult.status}: ${responseResult.summary}`
+      );
+    }
 
-    task.status = resultLabel;
+    const recipientHistory = await verifyTicketRecipient(task);
+    const finalResult = responseResult.status === 'POST_EXCEPTION'
+      ? 'OK_TICKET_ID_CONFIRMED_AFTER_POST_ERROR'
+      : resultLabel;
+    task.status = finalResult;
     task.error = '';
 
     appendLog(
       task,
-      resultLabel,
-      `${responseResult.status} / POST後に未発行在庫から消失確認 / ${responseResult.summary}`
+      finalResult,
+      `${responseResult.status} / ticket_id消失+受取GameID履歴確認 attempts=${verification.attempts} / ` +
+      `${responseResult.summary} / history=${recipientHistory}`
     );
     savePreview();
     renderPreview();
@@ -651,46 +708,8 @@
     renderLog();
   }
 
-  async function runTestOne() {
-    if (state.running || !state.dryRunOk) return;
-    if (state.testOk) {
-      alert('1件テストはすでに成功しています。');
-      return;
-    }
-
-    const task = state.tasks.find(item => item.status === 'OK');
-    if (!task) return;
-
-    if (!confirm(
-      `1件だけ実際に付与します。\n\n` +
-      `行号: ${task.lineNo}\nGameID: ${task.gameId}\n` +
-      `チケット名: ${task.ticketName}\nticket_id: ${task.ticketId}\n\n実行しますか？`
-    )) return;
-
-    state.running = true;
-    updateButtons();
-    try {
-      setStatus(`1件テスト付与中: 行号 ${task.lineNo}`);
-      await emitOne(task, 'TEST_OK');
-      state.testOk = true;
-      setStatus('1件テスト成功。正式付与を実行できます。');
-      alert('1件テストが成功しました。ログと PokerWeb の状態を確認してください。');
-    } catch (error) {
-      task.status = 'ERROR';
-      task.error = error.message || String(error);
-      appendLog(task, 'TEST_ERROR_STOP', task.error);
-      setStatus(`1件テスト失敗・停止: ${task.error}`, true);
-      alert(`1件テスト失敗。処理を停止しました。\n\n${task.error}`);
-    } finally {
-      state.running = false;
-      savePreview();
-      renderPreview();
-      updateButtons();
-    }
-  }
-
   async function runAll() {
-    if (state.running || !state.dryRunOk || !state.testOk) return;
+    if (state.running || !state.dryRunOk) return;
     const remaining = state.tasks.filter(task => task.status === 'OK');
 
     if (!remaining.length) {
@@ -700,8 +719,8 @@
 
     if (!confirm(
       `正式付与を開始します。\n\n` +
-      `1件テスト成功済み: 1件\n残り: ${remaining.length}件\n\n` +
-      `一件でも失敗したら即時停止します。実行しますか？`
+      `付与予定: ${remaining.length}件\n間隔: ${APP.minDelayMs}-${APP.maxDelayMs}ms\n\n` +
+      `ticket_id を一件ずつ確認し、不明または未発行のままなら即時停止します。実行しますか？`
     )) return;
 
     state.running = true;
@@ -769,11 +788,9 @@
 
   function updateButtons() {
     const dry = document.querySelector('#pwnt-dry-run');
-    const test = document.querySelector('#pwnt-test-one');
     const all = document.querySelector('#pwnt-run-all');
     if (dry) dry.disabled = state.running;
-    if (test) test.disabled = state.running || !state.dryRunOk || state.testOk;
-    if (all) all.disabled = state.running || !state.dryRunOk || !state.testOk;
+    if (all) all.disabled = state.running || !state.dryRunOk;
   }
 
   function readTsv() {
@@ -794,7 +811,7 @@
   }
 
   function invalidatePreparedState() {
-    if (!state.dryRunOk && !state.testOk) return;
+    if (!state.dryRunOk) return;
     state = freshState();
     renderPreview();
     renderLog();
@@ -829,14 +846,13 @@
       </div>
       <div id="pwnt-body" style="overflow:auto;margin-top:8px;">
         <div style="font-size:11px;color:#f6d365;line-height:1.45;margin-bottom:8px;">
-          任意のPokerWeb后台页で使用可能。一覧ページは后台取得。正式付与は DRY RUN 成功 + 1件テスト成功後だけ解锁されます。
+          任意のPokerWeb后台页で使用可能。一覧ページは后台取得。正式付与は DRY RUN 成功後に解锁されます。
         </div>
         <div style="font-weight:bold;">输入 TSV: GameID[TAB]チケット名</div>
         <textarea id="pwnt-input" style="width:100%;box-sizing:border-box;height:115px;background:#111;color:#fff;border:1px solid #555;padding:8px;font-family:Consolas,monospace;"></textarea>
         <div style="display:flex;gap:6px;margin-top:8px;">
           <button id="pwnt-read" style="flex:1;padding:8px;background:#eee;">读取TSV</button>
           <button id="pwnt-dry-run" style="flex:1;padding:8px;background:#ffe08a;">验证・预览 / DRY RUN</button>
-          <button id="pwnt-test-one" style="flex:1;padding:8px;background:#74b9ff;">只测试1件</button>
           <button id="pwnt-run-all" style="flex:1;padding:8px;background:#ff7675;color:#fff;font-weight:bold;">正式付与</button>
           <button id="pwnt-output-log" style="flex:1;padding:8px;background:#bff0c2;">ログ出力</button>
         </div>
@@ -856,7 +872,6 @@
     document.querySelector('#pwnt-read').onclick = readTsv;
     document.querySelector('#pwnt-input').addEventListener('input', invalidatePreparedState);
     document.querySelector('#pwnt-dry-run').onclick = dryRun;
-    document.querySelector('#pwnt-test-one').onclick = runTestOne;
     document.querySelector('#pwnt-run-all').onclick = runAll;
     document.querySelector('#pwnt-output-log').onclick = outputLog;
     document.querySelector('#pwnt-min').onclick = () => {
@@ -877,7 +892,6 @@
       parseGroupPage,
       searchInternalId,
       dryRun,
-      runTestOne,
       runAll
     };
   }

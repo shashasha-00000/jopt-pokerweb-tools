@@ -105,6 +105,11 @@ function RSA_addMenu_() {
     .addItem('書き出しデータ・メール送信生成', 'buildReceiptCsvAndMailList')
     .addItem('書き出しデータを開く', 'openReceiptAiOutputSheet')
     .addSeparator()
+    .addItem('最新分のGmail下書きを作成', 'createReceiptDraftsAllRows')
+    .addItem('最新分のエラー行を再下書き', 'retryReceiptErrorRows')
+    .addItem('最新分のOK下書きを送信', 'sendApprovedReceiptDraftsAllRows')
+    .addItem('選択行を今回のメール範囲に設定', 'setSelectedRowsAsLatestReceiptMailRange')
+    .addSeparator()
     .addItem('メール送信の表頭だけ修正', 'fixReceiptMailHeaders')
     .addItem('CHECK_REPORTを開く', 'openReceiptCheckReport')
     .addToUi();
@@ -314,6 +319,8 @@ function RSA_runBuild_(previewOnly) {
     PropertiesService.getDocumentProperties().setProperties({
       RSA_LAST_AI_START_ROW: String(aiStartRow),
       RSA_LAST_AI_ROW_COUNT: String(aiItems.length),
+      RSA_LAST_MAIL_START_ROW: String(mailStartRow),
+      RSA_LAST_MAIL_ROW_COUNT: String(mailRows.length),
       RSA_LAST_RUN_KEY: runKey
     });
 
@@ -354,6 +361,44 @@ function openReceiptCheckReport() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = RSA_ensureOwnedSheet_(ss, RSA_CONFIG.CHECK_SHEET_NAME, RSA_CONFIG.CHECK_HEADERS);
   ss.setActiveSheet(sheet);
+}
+
+function setSelectedRowsAsLatestReceiptMailRange() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getActiveSheet();
+
+  if (sheet.getName() !== RSA_CONFIG.MAIL_SHEET_NAME) {
+    throw new Error('メール送信 表で、今回処理する行を選択してから実行してください。');
+  }
+
+  const range = sheet.getActiveRange();
+  if (!range || range.getRow() < 2) {
+    throw new Error('第2行以降の今回処理する行を選択してください。');
+  }
+
+  const startRow = range.getRow();
+  const rowCount = range.getNumRows();
+  const names = sheet.getRange(startRow, 2, rowCount, 1).getDisplayValues();
+  const emptyRows = [];
+
+  names.forEach((row, index) => {
+    if (!RSA_text_(row[0])) emptyRows.push(startRow + index);
+  });
+
+  if (emptyRows.length) {
+    throw new Error('選択範囲に氏名が空白の行があります: ' + emptyRows.join(', '));
+  }
+
+  PropertiesService.getDocumentProperties().setProperties({
+    RSA_LAST_MAIL_START_ROW: String(startRow),
+    RSA_LAST_MAIL_ROW_COUNT: String(rowCount)
+  });
+
+  RSA_alert_(
+    '今回のメール処理範囲を設定しました。\n\n' +
+    '対象行: ' + startRow + '〜' + (startRow + rowCount - 1) + '\n' +
+    '次に「最新分のGmail下書きを作成」を実行してください。'
+  );
 }
 
 function RSA_readPwRows_(sheet) {
