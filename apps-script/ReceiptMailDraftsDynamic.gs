@@ -66,13 +66,13 @@
  ************************************/
 
 const RECEIPT_MAIL_CONFIG = {
-  SHEET_NAME: 'メール送信',
+  SHEET_NAME: 'メール送信一覧',
 
   // 対象行は ReceiptSemiAutoAppend.gs が保存した最新生成範囲を自動使用する。
 
   // ★ここにDriveフォルダURLを入れる
   RECEIPT_FOLDER_URLS: [
-    'https://drive.google.com/drive/u/0/folders/1dpd9yrFXU3-5fYdTWGl-5MYK69UiG2Nd'
+    'https://drive.google.com/drive/u/0/folders/10CxC__9YxLTG1-K_ufcK7Ioh5lIU2fAH'
   ],
 
   FROM: 'customer@japanopenpoker.com',
@@ -81,7 +81,7 @@ const RECEIPT_MAIL_CONFIG = {
 
   SUBJECT: '電子領収書の送付について',
 
-  EVENT_LABEL: '',
+  EVENT_LABEL: '【SPADIE Osaka 1st】',
 
   // 元データ列
   COL_GAME_ID: 1,             // A列
@@ -1193,14 +1193,22 @@ function receipt_setupHeaders_(sheet) {
  */
 function receipt_getLatestBatchRange_(sheet) {
   const props = PropertiesService.getDocumentProperties();
-  const startRow = Number(props.getProperty('RSA_LAST_MAIL_START_ROW') || 0);
-  const rowCount = Number(props.getProperty('RSA_LAST_MAIL_ROW_COUNT') || 0);
+  const startRow = Number(
+    props.getProperty('RFP_LAST_MAIL_START_ROW') ||
+    props.getProperty('RSA_LAST_MAIL_START_ROW') ||
+    0
+  );
+  const rowCount = Number(
+    props.getProperty('RFP_LAST_MAIL_ROW_COUNT') ||
+    props.getProperty('RSA_LAST_MAIL_ROW_COUNT') ||
+    0
+  );
   const lastRow = sheet.getLastRow();
 
   if (!Number.isInteger(startRow) || startRow < 2 ||
       !Number.isInteger(rowCount) || rowCount < 1) {
     throw new Error(
-      '最新のメール送信対象行を取得できません。先に「書き出しデータ・メール送信生成」を実行してください。'
+      '最新のメール送信対象行を取得できません。先に「2. 最新トナメ行→メール送信一覧」を実行してください。'
     );
   }
 
@@ -1209,7 +1217,7 @@ function receipt_getLatestBatchRange_(sheet) {
   if (endRow > lastRow) {
     throw new Error(
       '保存された最新処理範囲がメール送信表の最終行を超えています。' +
-      '先に「書き出しデータ・メール送信生成」を再実行してください。'
+      '先に「2. 最新トナメ行→メール送信一覧」を再実行してください。'
     );
   }
 

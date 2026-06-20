@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW 領収書抜き出し 人工確認版 v1.6
 // @namespace    https://japanopt.pokerweb.com.br/
-// @version      1.6.13
+// @version      1.6.14
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-confirm.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-confirm.user.js
 // @description  Game ID + キーワードで候補大会をAPI検索し、URL Cacheを厳密照合しながら支払い情報を高速取得する版
@@ -1032,6 +1032,32 @@
     if (unique.length > 1) return { error: "AMBIGUOUS", candidates: unique };
     return null;
   }
+
+  function findReviewCandidatesFromCollected(rows, inputName) {
+    const prefix = getEventPrefixFromTournamentName(inputName);
+    const tail = compact(cleanTournamentName(inputName).replace(prefix, ""));
+    const seen = new Set();
+
+    const scored = rows
+      .map(row => {
+        const actual = compact(row.actualName);
+        let score = 0;
+        if (tail && actual.includes(tail)) score += 100;
+        if (tail && tail.includes(actual)) score += 60;
+        if (actual.includes("物販") && tail.includes("物販")) score += 50;
+        if (isSameTournamentExactSafe(inputName, row.actualName)) score += 1000;
+        return { ...row, score };
+      })
+      .filter(row => row.score > 0 || !tail)
+      .sort((a, b) => b.score - a.score || String(a.actualName || "").localeCompare(String(b.actualName || ""), "ja"));
+
+    return scored.filter(row => {
+      if (seen.has(row.url)) return false;
+      seen.add(row.url);
+      return true;
+    }).slice(0, 8);
+  }
+
   async function waitForWindowLoad(win, timeoutMs = 25000) {
     const start = Date.now();
 
@@ -1113,6 +1139,7 @@
     "URL_CACHE_BAD_ROW",
     "URL未解決",
     "URL_NOT_FOUND",
+    "URL_CANDIDATES_REVIEW",
     "AMBIGUOUS",
     "ERROR"
   ]);
@@ -1160,6 +1187,25 @@
     setStatus(`Cache修復完了: ${name} → ${id}`);
   }
 
+  function promptAndApplyManualUrl(name) {
+    const raw = prompt(
+      `この大会名の候補すべてに手入力URLを一括採用します。\n\n${name}\n\nTournamentId または URL を入力してください。`,
+      ""
+    );
+    if (raw === null) return;
+
+    const value = norm(raw);
+    const id = extractTournamentIdFromUrl(value) || (value.match(/^\d+$/) ? value : "");
+    const finalUrl = normalizeCacheUrl(id, value);
+
+    if (!id || !finalUrl || extractTournamentIdFromUrl(finalUrl) !== id) {
+      alert("TournamentId / URL が不正です。例: 4773 または /cb/torneio/painel/4773");
+      return;
+    }
+
+    confirmAndRepairCache(name, id, finalUrl, "manual-input");
+  }
+
   function skipCandidateForThisRun(name) {
     if (!confirm(`本次处理暂时排除这场比赛吗？\n\n${name}`)) return;
 
@@ -1181,10 +1227,36 @@
       URL_CACHE_BAD_ROW: "历史URL记录异常",
       URL未解決: "尚未取得比赛URL",
       URL_NOT_FOUND: "未找到比赛URL",
+      URL_CANDIDATES_REVIEW: "找到候補URL，需要手动选择",
       AMBIGUOUS: "搜索结果存在多个同名比赛",
       ERROR: "读取时发生错误"
     };
     return labels[status] || status;
+  }
+
+  function encodeReviewCandidates(candidates) {
+    return candidates
+      .filter(item => item && item.tournamentId && item.url)
+      .slice(0, 12)
+      .map(item => `CANDIDATE_URL\t${item.tournamentId}\t${item.url}\t${cleanTournamentName(item.actualName || "")}`)
+      .join("\n");
+  }
+
+  function parseReviewCandidates(reason) {
+    return String(reason || "")
+      .split(/\r?\n/)
+      .map(line => {
+        const cols = line.split("\t");
+        if (cols[0] !== "CANDIDATE_URL") return null;
+        const tournamentId = norm(cols[1]);
+        const url = normalizeCacheUrl(tournamentId, cols[2]);
+        return {
+          tournamentId,
+          url,
+          actualName: cleanTournamentName(cols.slice(3).join("\t"))
+        };
+      })
+      .filter(item => item && item.tournamentId && item.url);
   }
 
   function renderManualReview(rows = parseTsv(getCandidateText())) {
@@ -1264,6 +1336,25 @@
         adopt.onclick = () => confirmAndRepairCache(name, cached.tournamentId, cached.url, "shared-cache");
         actions.appendChild(adopt);
       }
+
+      for (const candidate of parseReviewCandidates(row["理由"])) {
+        const open = document.createElement("button");
+        open.textContent = `打开候補URL ${candidate.tournamentId}`;
+        open.onclick = () => window.open(candidate.url, "_blank");
+        actions.appendChild(open);
+
+        const adopt = document.createElement("button");
+        adopt.textContent = `采用候補 ${candidate.tournamentId}`;
+        adopt.style.background = "#d9ecff";
+        adopt.onclick = () => confirmAndRepairCache(name, candidate.tournamentId, candidate.url, "search-candidate");
+        actions.appendChild(adopt);
+      }
+
+      const manual = document.createElement("button");
+      manual.textContent = "手入力URLを一括採用";
+      manual.style.background = "#ffe08a";
+      manual.onclick = () => promptAndApplyManualUrl(name);
+      actions.appendChild(manual);
 
       const skip = document.createElement("button");
       skip.textContent = "本次暂不处理";
@@ -1359,6 +1450,18 @@
           const found = findExactTournamentFromCollected(collected, name);
 
           if (!found) {
+            const reviewCandidates = findReviewCandidatesFromCollected(collected, name);
+            if (reviewCandidates.length) {
+              for (const row of group.rows) {
+                row["判定"] = "URL_CANDIDATES_REVIEW";
+                row["理由"] = `${prefix} 一括検索で完全一致なし。候補から選択してください。\n` +
+                  encodeReviewCandidates(reviewCandidates);
+              }
+              ambiguousCount += group.rows.length;
+              console.table(reviewCandidates);
+              continue;
+            }
+
             for (const row of group.rows) {
               row["判定"] = "URL_NOT_FOUND";
               row["理由"] = `${prefix} 一括検索で完全一致なし`;
@@ -1368,9 +1471,10 @@
           }
 
           if (found.error === "AMBIGUOUS") {
+            const reviewCandidates = findReviewCandidatesFromCollected(found.candidates || collected, name);
             for (const row of group.rows) {
               row["判定"] = "AMBIGUOUS";
-              row["理由"] = `${found.candidates.length} exact candidates`;
+              row["理由"] = `${found.candidates.length} exact candidates\n` + encodeReviewCandidates(reviewCandidates);
             }
             ambiguousCount += group.rows.length;
             console.table(found.candidates);

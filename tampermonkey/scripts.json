@@ -9,6 +9,15 @@
         "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js"
     },
     {
+        "file":  "pw-main-event-ticket-checker.user.js",
+        "name":  "PW Main Event Ticket Checker v1.1",
+        "version":  "1.1.0",
+        "description":  "单个GameID按票名自动解析Main Event ticket group，并区分当前持有与已使用记录。",
+        "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-main-event-ticket-checker.user.js",
+        "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-main-event-ticket-checker.user.js",
+        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-main-event-ticket-checker.user.js"
+    },
+    {
         "file":  "pw-national-ticket-batch.user.js",
         "name":  "PW ナショナルチケット批量付与 正式版 v1.2",
         "version":  "1.2.0",
@@ -29,7 +38,7 @@
     {
         "file":  "pw-receipt-manual-confirm.user.js",
         "name":  "PW 領収書抜き出し 人工確認版 v1.6",
-        "version":  "1.6.13",
+        "version":  "1.6.14",
         "description":  "Game ID + キーワードで候補大会をAPI検索し、URL Cacheを厳密照合しながら支払い情報を高速取得する版",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-confirm.user.js",
         "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-confirm.user.js",
