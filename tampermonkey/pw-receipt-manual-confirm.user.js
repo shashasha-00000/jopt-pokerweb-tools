@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW 領収書抜き出し 人工確認版 v1.6
 // @namespace    https://japanopt.pokerweb.com.br/
-// @version      1.6.14
+// @version      1.6.15
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-confirm.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-confirm.user.js
 // @description  Game ID + キーワードで候補大会をAPI検索し、URL Cacheを厳密照合しながら支払い情報を高速取得する版
@@ -1815,9 +1815,7 @@
       return { kind: "NEED_CHECK", reason: "支払い方法確認", message: `支払い方法が自動分類できません：${cols.__unknown_payment.join("|")}`, row: base };
     }
 
-    if (knownPaymentTotal <= 0) {
-      return { kind: "NEED_CHECK", reason: "支払い金額確認", message: "購入金額はありますが、現金・クレジットカード・ポイント・USDTの金額が取得できませんでした。", row: base };
-    }
+    if (knownPaymentTotal <= 0) return { kind: "IGNORE", reason: "領収書対象支払いなし", row: base };
 
     return { kind: "PASTE", reason: "OK", row: base };
   }
@@ -1953,6 +1951,23 @@
       const hitPlayers = players.filter(player => targetSet.has(player.raw_game_id));
       result.hitPlayers = hitPlayers.length;
 
+      const playerGameIds = new Set(players.map(player => player.raw_game_id));
+      for (const gameId of targetSet) {
+        if (playerGameIds.has(gameId)) continue;
+        result.needCheckRows.push({
+          "Game ID": gameId,
+          "購入時間": "",
+          "大会名": cleanTournamentName(tournament.fullName),
+          "確認区分": "大会URL不一致",
+          "確認内容": "玩家ページでは参加大会として検出されましたが、選択した大会URLの参加者一覧にGame IDがありません。①/②などの枝番とURL Cacheを確認してください。",
+          __tournamentId: tournament.tournamentId,
+          __unique_key: `${gameId}_${tournament.tournamentId}_TOURNAMENT_URL_MISMATCH`,
+          __targetIndex: targetIndexMap[gameId] ?? 999999,
+          __sortTime: 999999999998,
+          __sortTournamentNo: tournament.tournamentNo
+        });
+      }
+
       for (let i = 0; i < hitPlayers.length; i++) {
         const player = hitPlayers[i];
         const targetIndex = targetIndexMap[player.raw_game_id] ?? 999999;
@@ -1967,18 +1982,7 @@
           }
 
           if (d.status === "NO_CASH_RECORD") {
-            result.needCheckRows.push({
-              "Game ID": d.raw_game_id,
-              "購入時間": "",
-              "大会名": cleanTournamentName(d.tournamentName),
-              "確認区分": "購入明細なし",
-              "確認内容": "大会のプレイヤー一覧には存在しますが、購入・支払い明細がありません。",
-              __tournamentId: d.tournamentId,
-              __unique_key: `${d.raw_game_id}_${d.tournamentId}_NO_CASH_RECORD`,
-              __targetIndex: d.targetIndex,
-              __sortTime: 999999999999,
-              __sortTournamentNo: d.tournamentNo
-            });
+            result.ignoredRows++;
             continue;
           }
 
@@ -2034,10 +2038,14 @@
   function makeReportRowFromResult(r, targetCount) {
     let resultText = "完了";
     let note = "正常に完了しました";
+    const urlMismatchRows = r.needCheckRows.filter(row => row["確認区分"] === "大会URL不一致");
 
     if (r.status !== "DONE") {
       resultText = "確認必要";
       note = r.error || r.status;
+    } else if (urlMismatchRows.length > 0) {
+      resultText = "確認必要";
+      note = `重要：大会URL不一致 / Game ID ${urlMismatchRows.map(row => row["Game ID"]).join(", ")}`;
     } else if (r.needCheckRows.length > 0) {
       note = `確認必要：${r.needCheckRows.length}件`;
     }
@@ -2259,7 +2267,6 @@
         }
       }
 
-      const targetSet = new Set(gameIds);
       const tournamentMap = new Map();
 
       for (const row of usable) {
@@ -2275,9 +2282,13 @@
             tournamentId,
             name,
             fullName: name,
-            url
+            url,
+            targetGameIds: new Set()
           });
         }
+
+        const targetGameId = normalizeGameId(row["Game ID"]);
+        if (targetGameId) tournamentMap.get(tournamentId).targetGameIds.add(targetGameId);
 
         setSharedCacheItem(name, {
           tournamentId,
@@ -2299,11 +2310,12 @@
         const t = tournaments[i];
         setStatus(`支払い取得 ${i + 1}/${tournaments.length}: ${t.name}`);
 
-        const result = await scanTournament(t, targetSet, targetIndexMap);
+        const tournamentTargetSet = new Set(t.targetGameIds || []);
+        const result = await scanTournament(t, tournamentTargetSet, targetIndexMap);
 
         pasteRows.push(...result.pasteRows);
         needCheckRows.push(...result.needCheckRows);
-        reportRows.push(makeReportRowFromResult(result, gameIds.length));
+        reportRows.push(makeReportRowFromResult(result, tournamentTargetSet.size));
 
         await sleep(CONFIG.betweenTournamentMs);
       }
@@ -2390,7 +2402,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.6.13</div>
+        <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.6.15</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-manual-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-manual-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>

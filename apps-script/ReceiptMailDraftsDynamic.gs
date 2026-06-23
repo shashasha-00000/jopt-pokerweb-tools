@@ -66,7 +66,10 @@
  ************************************/
 
 const RECEIPT_MAIL_CONFIG = {
-  SHEET_NAME: 'メール送信一覧',
+  SHEET_NAMES: ['メール送信', 'メール送信一覧'],
+  SETTINGS_SHEET_NAME: '領収書設定',
+  SETTINGS_FOLDER_KEY: 'PNG DriveフォルダURL',
+  SETTINGS_EVENT_LABEL_KEY: 'EVENT LABEL',
 
   // 対象行は ReceiptSemiAutoAppend.gs が保存した最新生成範囲を自動使用する。
 
@@ -81,7 +84,7 @@ const RECEIPT_MAIL_CONFIG = {
 
   SUBJECT: '電子領収書の送付について',
 
-  EVENT_LABEL: '【SPADIE Osaka 1st】',
+  EVENT_LABEL: '',
 
   // 元データ列
   COL_GAME_ID: 1,             // A列
@@ -471,6 +474,14 @@ function receipt_createDraftForRow_(sheet, receiptFiles, duplicateNameSet, row) 
     );
     sheet.getRange(row, RECEIPT_MAIL_CONFIG.COL_DRAFT_ID).setValue(draftId);
 
+    if (typeof RSA_clearManualInputsForDraftRow_ === 'function') {
+      try {
+        RSA_clearManualInputsForDraftRow_(row);
+      } catch (cleanupError) {
+        Logger.log('手入力の自動クリアをスキップしました: ' + cleanupError.message);
+      }
+    }
+
     Logger.log('下書き作成 row ' + row);
     Logger.log('Game ID: ' + gameId);
     Logger.log('氏名: ' + name);
@@ -625,7 +636,7 @@ function receipt_findReceiptFilesForRow_(params) {
  * メール本文
  */
 function receipt_buildMailBody_(addressee) {
-  const eventLabel = String(RECEIPT_MAIL_CONFIG.EVENT_LABEL || '').trim();
+  const eventLabel = receipt_getConfiguredEventLabel_();
 
   const receiptIntro = eventLabel
     ? `この度は${eventLabel}にご参加いただき、誠にありがとうございました。
@@ -663,7 +674,7 @@ function receipt_buildAddressee_(addresseeRaw, name) {
  * 複数のDriveフォルダを取得
  */
 function receipt_getReceiptFolders_() {
-  const urls = RECEIPT_MAIL_CONFIG.RECEIPT_FOLDER_URLS || [];
+  const urls = receipt_getConfiguredFolderUrls_();
 
   if (!urls.length) {
     throw new Error('DriveフォルダURLが設定されていません');
@@ -678,6 +689,46 @@ function receipt_getReceiptFolders_() {
 
     return DriveApp.getFolderById(folderId);
   });
+}
+
+function receipt_getConfiguredEventLabel_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const settingsSheet = ss.getSheetByName(RECEIPT_MAIL_CONFIG.SETTINGS_SHEET_NAME);
+
+  if (settingsSheet && settingsSheet.getLastRow() >= 2) {
+    const values = settingsSheet
+      .getRange(2, 1, settingsSheet.getLastRow() - 1, 2)
+      .getDisplayValues();
+    for (const row of values) {
+      if (String(row[0] || '').trim() === RECEIPT_MAIL_CONFIG.SETTINGS_EVENT_LABEL_KEY) {
+        return String(row[1] || '').trim();
+      }
+    }
+  }
+
+  return String(RECEIPT_MAIL_CONFIG.EVENT_LABEL || '').trim();
+}
+
+function receipt_getConfiguredFolderUrls_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const settingsSheet = ss.getSheetByName(RECEIPT_MAIL_CONFIG.SETTINGS_SHEET_NAME);
+
+  if (settingsSheet && settingsSheet.getLastRow() >= 2) {
+    const values = settingsSheet
+      .getRange(2, 1, settingsSheet.getLastRow() - 1, 2)
+      .getDisplayValues();
+
+    for (const row of values) {
+      if (String(row[0] || '').trim() !== RECEIPT_MAIL_CONFIG.SETTINGS_FOLDER_KEY) continue;
+      const urls = String(row[1] || '')
+        .split(/\r?\n|,|、/)
+        .map(value => value.trim())
+        .filter(Boolean);
+      if (urls.length) return urls;
+    }
+  }
+
+  return (RECEIPT_MAIL_CONFIG.RECEIPT_FOLDER_URLS || []).filter(Boolean);
 }
 
 
@@ -755,17 +806,18 @@ function receipt_buildReceiptFileListFromFolders_(folders) {
  *
  * 対応例：
  * 【SPADIE Season 41st】 領収書_酒井慎吾 様-1.png
+ * 領収書 酒井慎吾 様-1.png
  * 領収書_酒井慎吾 様-1.pdf
  */
 function receipt_extractNameFromReceiptFileName_(fileName) {
   const text = receipt_normalizeUnicode_(String(fileName || ''));
 
-  let match = text.match(/領収書_(.+?)\s*様\s*-\s*\d+/);
+  let match = text.match(/領収書[_\s]+(.+?)\s*様\s*-\s*\d+/);
   if (match && match[1]) {
     return receipt_cleanExtractedName_(match[1]);
   }
 
-  match = text.match(/領収書_(.+?)\s*様/);
+  match = text.match(/領収書[_\s]+(.+?)\s*様/);
   if (match && match[1]) {
     return receipt_cleanExtractedName_(match[1]);
   }
@@ -1113,13 +1165,11 @@ function receipt_validateEmail_(email) {
  */
 function receipt_getTargetSheet_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(RECEIPT_MAIL_CONFIG.SHEET_NAME);
-
-  if (!sheet) {
-    throw new Error('対象シートが見つかりません: ' + RECEIPT_MAIL_CONFIG.SHEET_NAME);
+  for (const name of RECEIPT_MAIL_CONFIG.SHEET_NAMES) {
+    const sheet = ss.getSheetByName(name);
+    if (sheet) return sheet;
   }
-
-  return sheet;
+  throw new Error('対象シートが見つかりません: ' + RECEIPT_MAIL_CONFIG.SHEET_NAMES.join(' / '));
 }
 
 

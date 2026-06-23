@@ -38,7 +38,7 @@
     {
         "file":  "pw-receipt-manual-confirm.user.js",
         "name":  "PW 領収書抜き出し 人工確認版 v1.6",
-        "version":  "1.6.14",
+        "version":  "1.6.15",
         "description":  "Game ID + キーワードで候補大会をAPI検索し、URL Cacheを厳密照合しながら支払い情報を高速取得する版",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-confirm.user.js",
         "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-confirm.user.js",
