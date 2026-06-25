@@ -25,7 +25,7 @@
     playerSearchUrl: '/cb/jogadores/search',
     groupPathPattern: /\/painel_grupo_tickets\/(\d+)/,
     ticketListTextPattern: /ナショナル\s*チケット|national\s*ticket/i,
-    minDelayMs: 250,
+    minDelayMs: 50,
     maxDelayMs: 500,
     verifyAttempts: 3,
     verifyDelayMs: 650

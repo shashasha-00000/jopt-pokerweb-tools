@@ -1,5 +1,14 @@
 [
     {
+        "file":  "pw-cashier-ticket-quick-check.user.js",
+        "name":  "PW Cashier Ticket Quick Check",
+        "version":  "0.1.0",
+        "description":  "Quick read-only Main Event ticket check from the PokerWeb tournament cashier page.",
+        "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-cashier-ticket-quick-check.user.js",
+        "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-cashier-ticket-quick-check.user.js",
+        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-cashier-ticket-quick-check.user.js"
+    },
+    {
         "file":  "pw-existing-tournament-item-updater.user.js",
         "name":  "PW 既存大会 Item 更新 人工確認版",
         "version":  "0.6.4",

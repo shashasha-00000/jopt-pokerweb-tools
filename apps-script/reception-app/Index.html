@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <base target="_top">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#0b1f33">
+    <title>JOPT Entry</title>
+    <?!= include('Styles'); ?>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">JOPT ENTRY</div>
+      <div class="topbar-actions">
+        <button id="langButton" type="button" class="lang-button" aria-label="Change language">EN</button>
+        <button id="reloadButton" type="button" class="icon-button" aria-label="Reload">↻</button>
+      </div>
+    </header>
+
+    <main class="page-shell">
+      <div id="appStatus" class="app-status visible" aria-live="polite">読み込み中...</div>
+
+      <section id="formScreen" class="screen active">
+        <div class="progress" aria-label="Progress">
+          <span class="progress-dot active" data-progress="1">1</span>
+          <span class="progress-line"></span>
+          <span class="progress-dot" data-progress="2">2</span>
+          <span class="progress-line"></span>
+          <span class="progress-dot" data-progress="3">3</span>
+        </div>
+
+        <form id="orderForm" novalidate>
+          <section class="step-panel active" data-step="1">
+            <p class="eyebrow" data-i18n="step1">STEP 1</p>
+            <h1 data-i18n="chooseTournament">参加する大会を選択</h1>
+
+            <label class="field-label" for="tournamentSelect" data-i18n="tournament">大会</label>
+            <select id="tournamentSelect" class="large-select" required></select>
+
+            <label class="field-label" for="gameIdInput">Game ID</label>
+            <input id="gameIdInput" class="large-input" type="text" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="33221075" required>
+
+            <button id="step1Next" type="button" class="primary-action" data-i18n="next">次へ</button>
+          </section>
+
+          <section class="step-panel" data-step="2">
+            <p class="eyebrow" data-i18n="step2">STEP 2</p>
+            <h1 data-i18n="chooseMethod">参加方法を選択</h1>
+
+            <div id="registrationMethodGroup" class="choice-stack"></div>
+
+            <div class="step-actions">
+              <button type="button" class="secondary-action back-button" data-back="1" data-i18n="back">戻る</button>
+              <button id="step2Next" type="button" class="primary-action" data-i18n="next">次へ</button>
+            </div>
+          </section>
+
+          <section class="step-panel" data-step="3">
+            <p class="eyebrow" data-i18n="step3">STEP 3</p>
+            <h1 data-i18n="chooseEntry">受付内容を確認</h1>
+
+            <div id="entryTypeGroup" class="choice-grid two"></div>
+
+            <div class="amount-card">
+              <span data-i18n="amountDue">お支払い金額</span>
+              <strong id="amountDue">¥0</strong>
+            </div>
+
+            <h2 class="section-heading" data-i18n="choosePayment">お支払い方法</h2>
+            <div id="paymentMethodGroup" class="payment-options"></div>
+
+            <section id="voucherDetails" class="sub-panel hidden">
+              <label class="field-label" for="voucherAmount" data-i18n="voucherAmount">Ticket / Voucher 利用額</label>
+              <input id="voucherAmount" class="large-input" type="number" min="0" step="1" value="0">
+
+              <div id="remainingPaymentBlock" class="hidden">
+                <div class="remaining-row">
+                  <span data-i18n="remainingAmount">残額</span>
+                  <strong id="remainingAmount">¥0</strong>
+                </div>
+                <label class="field-label" for="remainingPayment" data-i18n="remainingPayment">残額のお支払い方法</label>
+                <select id="remainingPayment" class="large-select"></select>
+              </div>
+            </section>
+
+            <div id="selectionSummary" class="selection-summary"></div>
+
+            <div class="step-actions">
+              <button type="button" class="secondary-action back-button" data-back="2" data-i18n="back">戻る</button>
+              <button id="createButton" type="submit" class="primary-action" data-i18n="createQr">受付QRを作成</button>
+            </div>
+          </section>
+        </form>
+      </section>
+
+      <section id="resultScreen" class="screen result-screen">
+        <div class="success-mark">✓</div>
+        <p class="eyebrow" data-i18n="complete">COMPLETE</p>
+        <h1 data-i18n="showAtCounter">このQRを受付でご提示ください</h1>
+
+        <article id="printTicket" class="print-ticket">
+          <div class="ticket-brand">JOPT ENTRY</div>
+          <div id="ticketTournament" class="ticket-tournament"></div>
+          <div id="ticketMeta" class="ticket-meta"></div>
+          <div id="ticketAmount" class="ticket-amount"></div>
+          <div id="qrBox" class="qr-box"></div>
+          <div id="ticketOrderId" class="ticket-order-id"></div>
+          <div class="ticket-message" data-i18n="showAtCounterShort">受付で提示してください</div>
+        </article>
+
+        <textarea id="payloadOutput" class="payload-output" readonly rows="4" aria-label="QR payload"></textarea>
+        <button id="copyButton" type="button" class="secondary-action" data-i18n="copyQr">QR文字列をコピー</button>
+        <button id="printButton" type="button" class="primary-action desktop-only" data-i18n="printTicket">受付票を印刷</button>
+        <button id="newOrderButton" type="button" class="secondary-action" data-i18n="newEntry">別の受付QRを作成</button>
+      </section>
+    </main>
+
+    <?!= include('Client'); ?>
+  </body>
+</html>

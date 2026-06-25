@@ -1,0 +1,565 @@
+<script>
+  const state = {
+    bootstrap: null,
+    selectedTournament: null,
+    currentStep: 1,
+    registrationMethod: 'NORMAL',
+    entryType: 'EN',
+    paymentMethod: 'cash',
+    qrPayload: '',
+    language: localStorage.getItem('receptionLanguage') || 'ja'
+  };
+
+  const $ = id => document.getElementById(id);
+
+  const I18N = {
+    ja: {
+      loading: '設定を読み込み中...',
+      ready: version => `準備完了 v${version || '-'}`,
+      noTournament: '受付可能な大会がありません。',
+      noTournamentOption: '受付可能な大会がありません',
+      gameIdRequired: 'Game ID は8桁で入力してください。',
+      paymentMismatch: '支払合計が請求額と一致していません。',
+      creatingQr: 'QR作成中...',
+      created: orderId => `作成完了 ${orderId}`,
+      errorPrefix: 'エラー',
+      copied: 'QR文字列をコピーしました。',
+      copyFailed: 'コピーに失敗しました。QR文字列を手動でコピーしてください。',
+      normal: '通常エントリー',
+      normalDesc: '現金・カード等で支払います',
+      ticketEntry: 'メインイベントチケット利用',
+      ticketEntryDesc: 'TEとしてメインイベントチケットを使用します',
+      firstEntry: '初回エントリー',
+      reEntry: 'リエントリー',
+      cash: '現金',
+      credit_card: 'クレジットカード',
+      usdt: 'USDT',
+      point: 'POINT',
+      contract: '選手契約履行',
+      voucher_ticket: 'Ticket / Voucher',
+      selectedTournament: '大会',
+      selectedEntry: '受付内容',
+      selectedPayment: '支払方法',
+      amountDue: 'お支払い金額',
+      remaining: '残額',
+      showAtCounter: 'このQRを受付でご提示ください',
+      languageButton: 'EN'
+    },
+    en: {
+      loading: 'Loading settings...',
+      ready: version => `Ready v${version || '-'}`,
+      noTournament: 'No tournaments are currently available.',
+      noTournamentOption: 'No tournaments available',
+      gameIdRequired: 'Game ID must be 8 digits.',
+      paymentMismatch: 'The payment total does not match the amount due.',
+      creatingQr: 'Creating QR...',
+      created: orderId => `Created ${orderId}`,
+      errorPrefix: 'Error',
+      copied: 'QR text copied.',
+      copyFailed: 'Copy failed. Please copy the QR text manually.',
+      normal: 'Normal Entry',
+      normalDesc: 'Pay by cash, card, or another method',
+      ticketEntry: 'Use Main Event Ticket',
+      ticketEntryDesc: 'Use main event ticket as TE',
+      firstEntry: 'First Entry',
+      reEntry: 'Re-entry',
+      cash: 'Cash',
+      credit_card: 'Credit Card',
+      usdt: 'USDT',
+      point: 'POINT',
+      contract: 'Player Contract',
+      voucher_ticket: 'Ticket / Voucher',
+      selectedTournament: 'Tournament',
+      selectedEntry: 'Entry',
+      selectedPayment: 'Payment',
+      amountDue: 'Amount Due',
+      remaining: 'Remaining',
+      showAtCounter: 'Show this QR at reception',
+      languageButton: 'JA'
+    }
+  };
+
+  const PAYMENT_METHODS = [
+    ['cash', '¥'],
+    ['credit_card', 'CC'],
+    ['usdt', '₮'],
+    ['point', 'P'],
+    ['contract', '契'],
+    ['voucher_ticket', 'T']
+  ];
+
+  const REMAINING_METHODS = PAYMENT_METHODS.filter(([key]) => key !== 'voucher_ticket');
+
+  function t(key, ...args) {
+    const value = I18N[state.language][key];
+    return typeof value === 'function' ? value(...args) : value;
+  }
+
+  function money(value) {
+    return `¥${Number(value || 0).toLocaleString(state.language === 'ja' ? 'ja-JP' : 'en-US')}`;
+  }
+
+  function numberValue(id) {
+    return Number($(id)?.value || 0);
+  }
+
+  function tournamentName(tournament) {
+    return tournament?.display_name || tournament?.name || tournament?.tournament_id || '';
+  }
+
+  function setStatus(message, isError = false) {
+    const el = $('appStatus');
+    if (!el) return;
+    el.textContent = message;
+    el.className = isError ? 'app-status visible error' : 'app-status visible';
+  }
+
+  function showStep(step) {
+    state.currentStep = step;
+    document.querySelectorAll('.step-panel').forEach(panel => {
+      panel.classList.toggle('active', Number(panel.dataset.step) === step);
+    });
+    document.querySelectorAll('.progress-dot').forEach(dot => {
+      const n = Number(dot.dataset.progress);
+      dot.classList.toggle('active', n === step);
+      dot.classList.toggle('done', n < step);
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function showFormScreen() {
+    $('formScreen')?.classList.add('active');
+    $('resultScreen')?.classList.remove('active');
+  }
+
+  function showResultScreen() {
+    $('formScreen')?.classList.remove('active');
+    $('resultScreen')?.classList.add('active');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function getTournaments() {
+    return Array.isArray(state.bootstrap?.tournaments) ? state.bootstrap.tournaments : [];
+  }
+
+  function loadBootstrap() {
+    setStatus(t('loading'));
+    google.script.run
+      .withSuccessHandler(data => {
+        state.bootstrap = data || {};
+        renderTournaments();
+        setStatus(t('ready', data?.version));
+      })
+      .withFailureHandler(error => {
+        setStatus(`${t('errorPrefix')}: ${error?.message || String(error)}`, true);
+      })
+      .getReceptionBootstrap();
+  }
+
+  function renderTournaments() {
+    const select = $('tournamentSelect');
+    if (!select) return;
+    const previousValue = select.value;
+    const tournaments = getTournaments();
+    select.innerHTML = '';
+
+    if (!tournaments.length) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = t('noTournamentOption');
+      option.disabled = true;
+      option.selected = true;
+      select.appendChild(option);
+      state.selectedTournament = null;
+      renderRegistrationMethods();
+      updateAll();
+      setStatus(t('noTournament'), true);
+      return;
+    }
+
+    tournaments.forEach(tournament => {
+      const option = document.createElement('option');
+      option.value = String(tournament.tournament_id || '');
+      option.textContent = tournamentName(tournament);
+      select.appendChild(option);
+    });
+
+    if (tournaments.some(tournament => String(tournament.tournament_id) === previousValue)) {
+      select.value = previousValue;
+    }
+    updateSelectedTournament();
+  }
+
+  function updateSelectedTournament() {
+    const selectedId = String($('tournamentSelect')?.value || '');
+    state.selectedTournament = getTournaments().find(tournament => String(tournament.tournament_id) === selectedId) || null;
+    if (state.selectedTournament && !state.selectedTournament.has_te && state.registrationMethod === 'TICKET') {
+      state.registrationMethod = 'NORMAL';
+    }
+    renderRegistrationMethods();
+    renderEntryTypes();
+    updateAll();
+  }
+
+  function renderRegistrationMethods() {
+    const group = $('registrationMethodGroup');
+    if (!group) return;
+    group.innerHTML = '';
+    if (!state.selectedTournament) return;
+
+    const methods = [
+      ['NORMAL', t('normal'), t('normalDesc'), 'EN']
+    ];
+    if (state.selectedTournament.has_te) {
+      methods.push(['TICKET', t('ticketEntry'), t('ticketEntryDesc'), 'TE']);
+    }
+    if (!methods.some(([value]) => value === state.registrationMethod)) {
+      state.registrationMethod = methods[0][0];
+    }
+
+    methods.forEach(([value, label, desc, icon]) => {
+      group.appendChild(choiceCard({
+        name: 'registrationMethod',
+        value,
+        checked: value === state.registrationMethod,
+        icon,
+        label,
+        desc,
+        onChange: () => {
+          state.registrationMethod = value;
+          renderEntryTypes();
+          updateAll();
+        }
+      }));
+    });
+  }
+
+  function renderEntryTypes() {
+    const group = $('entryTypeGroup');
+    if (!group) return;
+    group.innerHTML = '';
+    if (!state.selectedTournament) return;
+    if (!['EN', 'RE'].includes(state.entryType)) state.entryType = 'EN';
+
+    [
+      ['EN', t('firstEntry'), amountForEntryType('EN'), '1'],
+      ['RE', t('reEntry'), amountForEntryType('RE'), 'R']
+    ].forEach(([value, label, amount, icon]) => {
+      group.appendChild(choiceCard({
+        name: 'entryType',
+        value,
+        checked: value === state.entryType,
+        icon,
+        label,
+        desc: money(amount),
+        onChange: () => {
+          state.entryType = value;
+          updateAll();
+        }
+      }));
+    });
+  }
+
+  function renderPaymentMethods() {
+    const group = $('paymentMethodGroup');
+    if (!group) return;
+    group.innerHTML = '';
+    PAYMENT_METHODS.forEach(([key, icon]) => {
+      const label = document.createElement('label');
+      label.className = 'payment-card';
+      const input = document.createElement('input');
+      input.type = 'radio';
+      input.name = 'paymentMethod';
+      input.value = key;
+      input.checked = key === state.paymentMethod;
+      input.addEventListener('change', () => {
+        state.paymentMethod = key;
+        if (key === 'voucher_ticket') $('voucherAmount').value = amountDueForCurrentMode();
+        updateAll();
+      });
+      const iconEl = document.createElement('span');
+      iconEl.className = 'payment-icon';
+      iconEl.textContent = icon;
+      const text = document.createElement('strong');
+      text.textContent = t(key);
+      label.append(input, iconEl, text);
+      group.appendChild(label);
+    });
+  }
+
+  function renderRemainingPaymentOptions() {
+    const select = $('remainingPayment');
+    if (!select) return;
+    const previous = select.value || 'cash';
+    select.innerHTML = '';
+    REMAINING_METHODS.forEach(([key]) => {
+      const option = document.createElement('option');
+      option.value = key;
+      option.textContent = t(key);
+      select.appendChild(option);
+    });
+    select.value = REMAINING_METHODS.some(([key]) => key === previous) ? previous : 'cash';
+  }
+
+  function choiceCard({ name, value, checked, icon, label, desc, onChange }) {
+    const wrap = document.createElement('label');
+    wrap.className = 'choice-card';
+    const input = document.createElement('input');
+    input.type = 'radio';
+    input.name = name;
+    input.value = value;
+    input.checked = checked;
+    input.addEventListener('change', onChange);
+    const iconEl = document.createElement('span');
+    iconEl.className = 'choice-icon';
+    iconEl.textContent = icon;
+    const text = document.createElement('span');
+    text.className = 'choice-text';
+    const strong = document.createElement('strong');
+    strong.textContent = label;
+    const small = document.createElement('small');
+    small.textContent = desc;
+    text.append(strong, small);
+    const check = document.createElement('span');
+    check.className = 'choice-check';
+    check.textContent = '✓';
+    wrap.append(input, iconEl, text, check);
+    return wrap;
+  }
+
+  function selectedEntryMode() {
+    if (state.registrationMethod === 'TICKET') return state.entryType === 'RE' ? 'TE_RE' : 'TE_EN';
+    return state.entryType === 'RE' ? 'RE' : 'EN';
+  }
+
+  function amountForEntryType(entryType) {
+    const tournament = state.selectedTournament;
+    if (!tournament) return 0;
+    const base = entryType === 'RE' ? Number(tournament.re_amount || 0) : Number(tournament.en_amount || 0);
+    if (state.registrationMethod !== 'TICKET') return base;
+    return base + Number(tournament.te_amount || 0) - teTicketValue(tournament);
+  }
+
+  function teTicketValue(tournament) {
+    return Number(tournament?.main_ticket_required || 0) * Number(tournament?.main_ticket_face_value || 0);
+  }
+
+  function amountDueForCurrentMode() {
+    return amountForEntryType(state.entryType);
+  }
+
+  function buildPayments() {
+    const due = amountDueForCurrentMode();
+    const payments = {
+      cash: 0,
+      credit_card: 0,
+      usdt: 0,
+      point: 0,
+      contract: 0,
+      voucher_ticket: 0
+    };
+
+    if (state.paymentMethod === 'voucher_ticket') {
+      const voucher = Math.max(0, Math.min(numberValue('voucherAmount'), due));
+      const remaining = Math.max(0, due - voucher);
+      const remainingMethod = $('remainingPayment')?.value || 'cash';
+      payments.voucher_ticket = voucher;
+      if (remaining > 0) payments[remainingMethod] = remaining;
+      return payments;
+    }
+
+    payments[state.paymentMethod] = due;
+    return payments;
+  }
+
+  function paymentTotal(payments) {
+    return Object.keys(payments).reduce((sum, key) => sum + Number(payments[key] || 0), 0);
+  }
+
+  function updateAll() {
+    const due = amountDueForCurrentMode();
+    if ($('amountDue')) $('amountDue').textContent = money(due);
+
+    const isVoucher = state.paymentMethod === 'voucher_ticket';
+    $('voucherDetails')?.classList.toggle('hidden', !isVoucher);
+    if (isVoucher) {
+      const voucher = Math.max(0, Math.min(numberValue('voucherAmount'), due));
+      const remaining = Math.max(0, due - voucher);
+      $('remainingAmount').textContent = money(remaining);
+      $('remainingPaymentBlock')?.classList.toggle('hidden', remaining <= 0);
+    }
+
+    updateSummary();
+  }
+
+  function updateSummary() {
+    const tournament = state.selectedTournament;
+    const payments = buildPayments();
+    const due = amountDueForCurrentMode();
+    const total = paymentTotal(payments);
+    const entryLabel = selectedEntryMode().replace('TE_', 'TE + ');
+    const paymentLabel = state.paymentMethod === 'voucher_ticket'
+      ? `${t('voucher_ticket')} / ${money(payments.voucher_ticket)}`
+      : t(state.paymentMethod);
+
+    const lines = [
+      [t('selectedTournament'), tournament ? tournamentName(tournament) : '-'],
+      [t('selectedEntry'), entryLabel],
+      [t('amountDue'), money(due)],
+      [t('selectedPayment'), paymentLabel]
+    ];
+    if (state.paymentMethod === 'voucher_ticket' && total !== payments.voucher_ticket) {
+      lines.push([t('remaining'), money(total - payments.voucher_ticket)]);
+    }
+
+    const summary = $('selectionSummary');
+    if (summary) {
+      summary.innerHTML = lines.map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
+    }
+  }
+
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, ch => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    }[ch]));
+  }
+
+  function validateStep1() {
+    if (!state.selectedTournament) {
+      setStatus(t('noTournament'), true);
+      return false;
+    }
+    const gameId = String($('gameIdInput')?.value || '').replace(/\D/g, '');
+    if (!/^\d{8}$/.test(gameId)) {
+      setStatus(t('gameIdRequired'), true);
+      return false;
+    }
+    $('gameIdInput').value = gameId;
+    setStatus(t('ready', state.bootstrap?.version));
+    return true;
+  }
+
+  function createOrderPayload() {
+    return {
+      tournament_id: String(state.selectedTournament?.tournament_id || $('tournamentSelect').value),
+      game_id: String($('gameIdInput').value || '').replace(/\D/g, ''),
+      entry_mode: selectedEntryMode(),
+      created_by: 'PLAYER',
+      note: '',
+      payments: buildPayments()
+    };
+  }
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    if (!validateStep1()) return;
+    updateAll();
+
+    const due = amountDueForCurrentMode();
+    const payments = buildPayments();
+    const total = paymentTotal(payments);
+    if (Math.abs(total - due) > 0.01) {
+      setStatus(t('paymentMismatch'), true);
+      return;
+    }
+
+    $('createButton').disabled = true;
+    setStatus(t('creatingQr'));
+
+    google.script.run
+      .withSuccessHandler(result => {
+        $('createButton').disabled = false;
+        showQr(result);
+        setStatus(t('created', result.order_id));
+      })
+      .withFailureHandler(error => {
+        $('createButton').disabled = false;
+        setStatus(`${t('errorPrefix')}: ${error?.message || String(error)}`, true);
+      })
+      .createReceptionOrder(createOrderPayload());
+  }
+
+  function showQr(result) {
+    state.qrPayload = result.qr_payload;
+    const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=' + encodeURIComponent(result.qr_payload);
+    $('qrBox').innerHTML = `<img alt="Reception QR" src="${qrUrl}">`;
+    $('ticketTournament').textContent = tournamentName(state.selectedTournament);
+    $('ticketMeta').textContent = `Game ID ${$('gameIdInput').value} / ${selectedEntryMode()}`;
+    $('ticketAmount').textContent = money(result.amount_due);
+    $('ticketOrderId').textContent = result.order_id;
+    $('payloadOutput').value = result.qr_payload;
+    $('copyButton').disabled = false;
+    showResultScreen();
+  }
+
+  function copyPayload() {
+    if (!state.qrPayload) return;
+    navigator.clipboard.writeText(state.qrPayload).then(
+      () => setStatus(t('copied')),
+      () => setStatus(t('copyFailed'), true)
+    );
+  }
+
+  function resetForNewOrder() {
+    state.qrPayload = '';
+    state.registrationMethod = 'NORMAL';
+    state.entryType = 'EN';
+    state.paymentMethod = 'cash';
+    $('gameIdInput').value = '';
+    $('voucherAmount').value = 0;
+    $('payloadOutput').value = '';
+    $('qrBox').textContent = '';
+    showFormScreen();
+    renderRegistrationMethods();
+    renderEntryTypes();
+    renderPaymentMethods();
+    updateAll();
+    showStep(1);
+    setStatus(t('ready', state.bootstrap?.version));
+  }
+
+  function applyLanguage() {
+    document.documentElement.lang = state.language;
+    if ($('langButton')) $('langButton').textContent = t('languageButton');
+    renderRegistrationMethods();
+    renderEntryTypes();
+    renderPaymentMethods();
+    renderRemainingPaymentOptions();
+    updateAll();
+    if (state.bootstrap) setStatus(t('ready', state.bootstrap.version));
+  }
+
+  function toggleLanguage() {
+    state.language = state.language === 'ja' ? 'en' : 'ja';
+    localStorage.setItem('receptionLanguage', state.language);
+    applyLanguage();
+  }
+
+  function bind() {
+    $('reloadButton')?.addEventListener('click', loadBootstrap);
+    $('langButton')?.addEventListener('click', toggleLanguage);
+    $('tournamentSelect')?.addEventListener('change', updateSelectedTournament);
+    $('step1Next')?.addEventListener('click', () => {
+      if (validateStep1()) showStep(2);
+    });
+    $('step2Next')?.addEventListener('click', () => showStep(3));
+    document.querySelectorAll('.back-button').forEach(button => {
+      button.addEventListener('click', () => showStep(Number(button.dataset.back || 1)));
+    });
+    $('orderForm')?.addEventListener('submit', handleSubmit);
+    $('copyButton')?.addEventListener('click', copyPayload);
+    $('printButton')?.addEventListener('click', () => window.print());
+    $('newOrderButton')?.addEventListener('click', resetForNewOrder);
+    $('voucherAmount')?.addEventListener('input', updateAll);
+    $('remainingPayment')?.addEventListener('change', updateAll);
+  }
+
+  bind();
+  renderPaymentMethods();
+  renderRemainingPaymentOptions();
+  loadBootstrap();
+</script>
