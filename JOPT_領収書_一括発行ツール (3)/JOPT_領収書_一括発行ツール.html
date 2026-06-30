@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JOPT 領収書 一括発行</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+:root{--blue:#2c4a8d;--ink:#1a1a1a;--line:#222;--muted:#6b7280;--bg:#0f172a;--panel:#111c33;--accent:#d4af37}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font-family:"Noto Sans JP",system-ui,sans-serif;background:linear-gradient(180deg,#13233f,#0c1525);color:#e8edf5;min-height:100vh;overflow:hidden}
+.top{height:57px;display:flex;align-items:center;gap:14px;padding:16px 22px;border-bottom:1px solid rgba(255,255,255,.08)}
+.top h1{font-size:17px;margin:0;font-weight:700;letter-spacing:.02em}
+.top .tag{font-size:11px;letter-spacing:.16em;color:#8aa0c6;text-transform:uppercase}
+.layout{height:calc(100vh - 57px);display:grid;grid-template-columns:360px 1fr;gap:0;align-items:stretch}
+@media(max-width:900px){body{overflow:auto}.layout{height:auto;grid-template-columns:1fr}.side,.main{height:auto;overflow:visible}}
+.side{height:calc(100vh - 57px);overflow:auto;padding:18px 20px;border-right:1px solid rgba(255,255,255,.07)}
+.card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);border-radius:10px;padding:14px;margin-bottom:14px}
+.card h3{margin:0 0 10px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#8aa0c6;font-weight:600}
+label.lbl{display:block;font-size:11px;color:#9fb1d1;margin:8px 0 4px}
+input,select{width:100%;background:#fff;border:1px solid #cbd2e0;border-radius:7px;padding:8px 10px;font:inherit;font-size:13px;color:#111}
+.drop{border:1.5px dashed #4a6299;border-radius:10px;padding:22px 14px;text-align:center;color:#9fb1d1;font-size:13px;cursor:pointer;transition:.15s}
+.drop:hover{border-color:var(--accent);color:#cdd8ec;background:rgba(212,175,55,.05)}
+.drop b{color:#e8edf5}
+.stat{display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0;color:#c4cfe4}
+.stat b{font-variant-numeric:tabular-nums}
+.btn{width:100%;border:none;border-radius:8px;padding:11px;font:inherit;font-weight:700;font-size:13.5px;cursor:pointer;margin-top:8px;letter-spacing:.03em}
+.btn.primary{background:var(--accent);color:#241a06}
+.btn.ghost{background:rgba(255,255,255,.08);color:#dbe4f3;border:1px solid rgba(255,255,255,.14)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.main{height:calc(100vh - 57px);overflow:auto;padding:0 22px 18px}
+.toolbar{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin:0 -22px 18px;padding:14px 22px;background:rgba(15,23,42,.96);border-bottom:1px solid rgba(255,255,255,.08);backdrop-filter:blur(8px)}
+.toolbar>input{width:280px;max-width:100%;flex:1 1 240px}
+.toolbar .mini{display:flex;flex-direction:column;gap:4px}
+.toolbar .mini label{font-size:10.5px;color:#8aa0c6}
+.toolbar .mini input{width:88px}
+.toolbar .count{min-width:210px;flex:1 1 210px;padding-bottom:9px}
+.toolbar .btn{width:auto;min-width:128px;margin:0;padding:9px 14px}
+.count{font-size:12.5px;color:#9fb1d1}
+.prog{height:6px;background:rgba(255,255,255,.1);border-radius:6px;overflow:hidden;margin-top:8px;display:none}
+.prog.on{display:block}
+.prog>i{display:block;height:100%;width:0;background:var(--accent);transition:width .15s}
+.previews{display:flex;flex-direction:column;gap:18px;align-items:center}
+
+/* ---------- RECEIPT (matches Illustrator) ---------- */
+.r{width:820px;max-width:100%;background:#fff;color:var(--ink);border:1px solid #d7d7d7;box-shadow:0 10px 34px rgba(0,0,0,.3)}
+.r .band{background:var(--blue);color:#fff;text-align:center;font-size:30px;font-weight:900;letter-spacing:.5em;padding:10px 0 12px;padding-left:.5em}
+.r .body{padding:14px 36px 20px}
+.r .head{display:flex;justify-content:space-between;align-items:flex-start;font-size:13px}
+.r .ev{max-width:60%;line-height:1.4;color:#222;padding-top:4px}
+.r .meta{text-align:right;font-size:13px;line-height:1.8}
+.r .meta .no b{font-variant-numeric:tabular-nums;font-size:16px;margin-left:30px}
+.r .meta .dt span{font-variant-numeric:tabular-nums;margin:0 2px}
+.r .to{display:flex;align-items:flex-end;justify-content:space-between;border-bottom:1.5px solid var(--ink);margin:18px 8px 0;padding:0 6px 6px;min-height:30px}
+.r .to .nm{font-size:24px;font-weight:700;letter-spacing:.02em}
+.r .to .sm{font-size:18px;letter-spacing:.1em}
+.r .amt{text-align:center;font-size:30px;font-weight:700;border-bottom:1.5px solid var(--ink);margin:10px 80px 0;padding-bottom:6px;font-variant-numeric:tabular-nums;letter-spacing:.04em}
+.r .but{text-align:center;font-size:13.5px;margin:12px 0}
+.r .but .b{margin-right:10px}
+.r .lower{display:flex;justify-content:space-between;gap:28px;align-items:flex-end}
+.r .break{width:330px;flex:none}
+.r .break .ttl{font-size:12.5px;border-bottom:1px solid #333;padding-bottom:2px;font-weight:500}
+.r .break table{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
+.r .break td{border-bottom:1px solid #cfcfcf;padding:4px;white-space:nowrap}
+.r .break td.k{color:#222}
+.r .break td.v{text-align:right;font-variant-numeric:tabular-nums}
+.r .break td.rate{text-align:center;color:#222;border-right:1px solid #cfcfcf;font-size:12px;line-height:1.25}
+.r .break td.sub{padding-left:8px}
+.r .issuer{flex:1;text-align:right;font-size:12.5px;line-height:1.8;padding-bottom:2px}
+.r .issuer .co{font-size:14.5px;font-weight:700;margin-top:2px}
+.r .issuer .inv{font-variant-numeric:tabular-nums}
+
+.hint{font-size:11.5px;color:#8aa0c6;margin-top:10px;line-height:1.6}
+.empty{text-align:center;color:#7f93b8;padding:60px 20px;font-size:14px}
+
+@media print{
+  @page{size:A5 landscape;margin:8mm}
+  body{background:#fff}
+  body{overflow:auto}
+  .top,.side,.toolbar,.count,.prog{display:none!important}
+  .layout{display:block}.main{padding:0}
+  .previews{gap:0}
+  .r{box-shadow:none;border:none;width:100%;page-break-after:always;break-after:page}
+  .r:last-child{page-break-after:auto}
+}
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>JOPT 領収書 一括発行</h1>
+  <span class="tag">batch receipt generator</span>
+</div>
+
+<div class="layout">
+  <!-- SIDE -->
+  <aside class="side">
+    <div class="card">
+      <h3>1. 申請CSVを読み込む</h3>
+      <div class="drop" id="drop"><b>CSVをドロップ / クリック</b><br>「トナメ抜き出し」形式</div>
+      <input type="file" id="file" accept=".csv" hidden>
+      <div id="stats" style="margin-top:12px;display:none">
+        <div class="stat"><span>明細（受領書）件数</span><b id="sCount">0</b></div>
+        <div class="stat"><span>現金</span><b id="sCash">¥0</b></div>
+        <div class="stat"><span>クレジットカード</span><b id="sCard">¥0</b></div>
+        <div class="stat"><span>ポイント(WEBCOIN)</span><b id="sPoint">¥0</b></div>
+        <div class="stat"><span>USDT</span><b id="sUsdt">¥0</b></div>
+        <div class="stat" style="border-top:1px solid rgba(255,255,255,.12);margin-top:4px;padding-top:6px"><span>合計</span><b id="sTotal">¥0</b></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>2. 共通設定</h3>
+      <div class="row2">
+        <div><label class="lbl">開始 No.</label><input type="number" id="startNo" value="19001"></div>
+        <div><label class="lbl">但し書き</label><input type="text" id="but" value="施設使用料として"></div>
+      </div>
+      <label class="lbl">発行者（会社名）</label>
+      <input type="text" id="co" value="ジャパンオープンポーカーツアー株式会社">
+      <label class="lbl">イベント名（ファイル名に使用）</label>
+      <input type="text" id="event" value="【JOPT 2026 Grand Final】">
+      <label class="lbl">住所</label>
+      <input type="text" id="addr1" value="〒162-0845 東京都新宿区市谷本村町2-21">
+      <input type="text" id="addr2" value="市ヶ谷キャナルコート3階" style="margin-top:6px">
+      <label class="lbl">インボイス登録番号</label>
+      <input type="text" id="inv" value="T2010001175193">
+    </div>
+
+    <div class="card">
+      <h3>3. 出力状況</h3>
+      <div class="prog" id="prog"><i></i></div>
+      <button class="btn ghost" id="cancelExport" style="display:none;margin-top:8px">中止する（ここまでを保存）</button>
+      <div class="count" id="progText" style="margin-top:6px;display:none"></div>
+      <div class="hint">出力ボタンは右側プレビュー上部に固定されています。大量生成時は「生成開始」「生成終了」で分割できます。</div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+    <div class="toolbar">
+      <input type="text" id="search" placeholder="宛名 / 氏名 / GameID / トーナメントで絞り込み">
+      <div class="mini"><label for="rangeFrom">生成開始</label><input type="number" id="rangeFrom" min="1" placeholder="1"></div>
+      <div class="mini"><label for="rangeTo">生成終了</label><input type="number" id="rangeTo" min="1" placeholder="全件"></div>
+      <span class="count" id="filterCount"></span>
+      <button class="btn primary" id="printAll" disabled>PDF（印刷）</button>
+      <button class="btn ghost" id="zipAll" disabled>PNG ZIP保存</button>
+      <button class="btn ghost" id="pngOne" disabled>先頭1件PNG</button>
+    </div>
+    <div class="previews" id="previews">
+      <div class="empty">CSVを読み込むと、ここに領収書が表示されます。</div>
+    </div>
+  </main>
+</div>
+
+<!-- hidden full-render container for print/export -->
+<div id="renderPool" style="position:absolute;left:-99999px;top:0"></div>
+
+<script>
+const $=id=>document.getElementById(id);
+const yen=n=>'¥'+(n||0).toLocaleString('ja-JP')+'-';
+const COL={gid:2,name:3,email:4,kibo:5,year:7,month:8,day:9,tour:10,enre:11,total:12,cash:13,card:14,point:15,usdt:16,tax:17,net:18,titleA:26,titleB:27};
+let ROWS=[];           // parsed receipt rows
+let PREVIEW_LIMIT=25;
+let cancelExport=false; // 中止フラグ
+
+function toNum(x){if(x==null)return 0;const m=String(x).replace(/[^\d]/g,'');return m?parseInt(m,10):0;}
+function clearLoadedRows(message){
+  ROWS=[];
+  $('stats').style.display='none';
+  $('printAll').disabled=$('zipAll').disabled=$('pngOne').disabled=true;
+  $('filterCount').textContent='';
+  $('previews').innerHTML=`<div class="empty">${message}</div>`;
+}
+
+function parseCSV(text){
+  const res=Papa.parse(text,{skipEmptyLines:true});
+  const rows=res.data;
+  const out=[];
+  const missingDates=[];
+  for(let i=1;i<rows.length;i++){            // skip header row
+    const r=rows[i]; if(!r)continue;
+    const tour=(r[COL.tour]||'').trim();
+    if(!tour)continue;                        // only detail rows
+    const total=toNum(r[COL.total]);
+    if(total<=0)continue;
+    const year=(r[COL.year]||'').trim(), month=(r[COL.month]||'').trim(), day=(r[COL.day]||'').trim();
+    if(!year||!month||!day)missingDates.push(i+1);
+    let net=toNum(r[COL.net]), tax=toNum(r[COL.tax]);
+    if(!net){net=Math.floor(total/1.1);tax=total-net;}
+    let to=(r[COL.kibo]||'').trim();            // 宛名 = F列(希望名義)。空欄は名義なし
+    to=to.replace(/\s*様\s*$/,'');
+    const titleA=(r[COL.titleA]||'').trim(), titleB=(r[COL.titleB]||'').trim();
+    out.push({
+      gid:(r[COL.gid]||'').trim(), name:(r[COL.name]||'').trim(),
+      to, titleA, titleB, tour, enre:(r[COL.enre]||'').trim(),
+      year, month, day,
+      total, cash:toNum(r[COL.cash]), card:toNum(r[COL.card]),
+      point:toNum(r[COL.point]), usdt:toNum(r[COL.usdt]), net, tax
+    });
+  }
+  if(missingDates.length){
+    throw new Error(`CSVの日付が空の明細があります。行: ${missingDates.slice(0,20).join(', ')}${missingDates.length>20?' ほか':''}`);
+  }
+  return out;
+}
+
+function fmtDate(rec){
+  return {y:rec.year||'',m:rec.month||'',d:rec.day||''};
+}
+function fileName(r){
+  const ev=$('event').value.trim();
+  const a=(r.titleA||r.to||'noname'), b=(r.titleB||'');
+  return [ev, a + (b?'_'+b:'')].filter(Boolean).join('_').replace(/[\\/:*?"<>|]/g,'_');
+}
+
+function receiptHTML(rec,no){
+  const dt=fmtDate(rec);
+  const but=$('but').value.trim()||'施設使用料として';
+  const rowsBreak=[
+    ['現金',rec.cash],['クレジットカード',rec.card],['ポイント',rec.point]
+  ];
+  if(rec.usdt>0)rowsBreak.push(['USDT',rec.usdt]);
+  const breakTbl=rowsBreak.map(([k,v])=>`<tr><td class="k" colspan="2">${k}</td><td class="v">${yen(v)}</td></tr>`).join('');
+  return `<div class="r">
+    <div class="band">領収書</div>
+    <div class="body">
+      <div class="head">
+        <div class="ev">${rec.tour}</div>
+        <div class="meta">
+          <div class="no">No.<b>${no}</b></div>
+          <div class="dt">領収日 <span>${dt.y}</span>年 <span>${dt.m}</span>月 <span>${dt.d}</span>日</div>
+        </div>
+      </div>
+      <div class="to"><div class="nm">${rec.to||''}</div><div class="sm">${rec.to?'様':''}</div></div>
+      <div class="amt">${yen(rec.total)}</div>
+      <div class="but"><span class="b">但</span>${but}　上記正に領収しました</div>
+      <div class="lower">
+        <div class="break">
+          <div class="ttl">内訳</div>
+          <table>
+            <colgroup><col style="width:44px"><col><col style="width:108px"></colgroup>
+            ${breakTbl}
+            <tr><td class="rate" rowspan="2">税率<br>10%</td><td class="k sub">金額（税抜き）</td><td class="v">¥${rec.net.toLocaleString('ja-JP')}</td></tr>
+            <tr><td class="k sub">消費税額等</td><td class="v">¥${rec.tax.toLocaleString('ja-JP')}</td></tr>
+          </table>
+        </div>
+        <div class="issuer">
+          <div>${$('addr1').value}</div>
+          <div>${$('addr2').value}</div>
+          <div class="co">${$('co').value}</div>
+          <div class="inv">登録番号：${$('inv').value}</div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function filtered(){
+  const q=$('search').value.trim().toLowerCase();
+  if(!q)return ROWS;
+  return ROWS.filter(r=>(r.to+r.gid+r.name+r.tour+r.titleA+r.titleB).toLowerCase().includes(q));
+}
+
+function selectedRows(){
+  const list=filtered();
+  const from=Math.max(1,parseInt($('rangeFrom').value||'1',10)||1);
+  const toRaw=parseInt($('rangeTo').value||'',10);
+  const to=Number.isFinite(toRaw)&&toRaw>0?Math.max(from,toRaw):list.length;
+  return list.slice(from-1,to);
+}
+
+function selectedRangeText(total, selected){
+  const from=Math.max(1,parseInt($('rangeFrom').value||'1',10)||1);
+  const toRaw=parseInt($('rangeTo').value||'',10);
+  const to=Number.isFinite(toRaw)&&toRaw>0?Math.max(from,toRaw):total;
+  if(!total)return '';
+  if(from===1&&to===total)return '';
+  return `（生成対象 ${from}〜${Math.min(to,total)}）`;
+}
+
+function confirmLargeExport(count){
+  if(count<=300)return true;
+  return confirm(`${count.toLocaleString()}枚を生成します。\n件数が多いと時間がかかり、ブラウザが重くなる場合があります。\n続行しますか？`);
+}
+
+function renderPreviews(){
+  const filteredList=filtered();
+  const list=selectedRows();
+  const start=parseInt($('startNo').value||'1',10);
+  const box=$('previews');
+  $('filterCount').textContent=`${list.length} 件を生成 / 絞込 ${filteredList.length} 件 / 全 ${ROWS.length} 件`+selectedRangeText(filteredList.length,list.length)+(list.length>PREVIEW_LIMIT?`（先頭${PREVIEW_LIMIT}件をプレビュー）`:'');
+  if(!list.length){box.innerHTML='<div class="empty">該当する明細がありません。</div>';$('pngOne').disabled=true;return;}
+  box.innerHTML=list.slice(0,PREVIEW_LIMIT).map((r)=>{
+    const no=start+ROWS.indexOf(r);
+    return receiptHTML(r,no);
+  }).join('');
+  $('pngOne').disabled=false;
+}
+
+function load(text){
+  try{
+    ROWS=parseCSV(text);
+  }catch(e){
+    clearLoadedRows(e.message||String(e));
+    alert(e.message||String(e));
+    return;
+  }
+  const sum=(k)=>ROWS.reduce((s,r)=>s+r[k],0);
+  $('stats').style.display='';
+  $('sCount').textContent=ROWS.length.toLocaleString();
+  $('sCash').textContent=yen(sum('cash')); $('sCard').textContent=yen(sum('card'));
+  $('sPoint').textContent=yen(sum('point')); $('sUsdt').textContent=yen(sum('usdt'));
+  $('sTotal').textContent=yen(sum('total'));
+  $('printAll').disabled=$('zipAll').disabled=ROWS.length===0;
+  renderPreviews();
+}
+
+// file handlers
+$('drop').addEventListener('click',()=>$('file').click());
+$('file').addEventListener('change',e=>{const f=e.target.files[0];if(f){const rd=new FileReader();rd.onload=()=>{load(rd.result);$('file').value='';};rd.readAsText(f);}});
+['dragover','dragleave','drop'].forEach(ev=>$('drop').addEventListener(ev,e=>{e.preventDefault();if(ev==='drop'){const f=e.dataTransfer.files[0];if(f){const rd=new FileReader();rd.onload=()=>load(rd.result);rd.readAsText(f);}}}));
+['search','rangeFrom','rangeTo'].forEach(id=>$(id).addEventListener('input',renderPreviews));
+['startNo','but','co','event','addr1','addr2','inv'].forEach(id=>$(id).addEventListener('input',renderPreviews));
+
+// print all
+$('printAll').addEventListener('click',()=>{
+  const list=selectedRows();const start=parseInt($('startNo').value||'1',10);
+  if(!list.length)return;
+  if(!confirmLargeExport(list.length))return;
+  const pool=$('renderPool');
+  pool.innerHTML=list.map(r=>receiptHTML(r,start+ROWS.indexOf(r))).join('');
+  // move pool content into previews area for printing
+  const box=$('previews');const keep=box.innerHTML;
+  box.innerHTML=pool.innerHTML;pool.innerHTML='';
+  window.print();
+  box.innerHTML=keep;
+});
+
+// zip png
+$('zipAll').addEventListener('click',async()=>{
+  const list=selectedRows();const start=parseInt($('startNo').value||'1',10);
+  if(!list.length)return;
+  if(!confirmLargeExport(list.length))return;
+  const zip=new JSZip();const prog=$('prog');prog.classList.add('on');
+  const pool=$('renderPool');
+  cancelExport=false;
+  $('cancelExport').style.display='';$('cancelExport').disabled=false;$('cancelExport').textContent='中止する（ここまでを保存）';
+  $('progText').style.display='';
+  $('zipAll').disabled=$('printAll').disabled=$('pngOne').disabled=true;
+  let done=0;
+  for(let i=0;i<list.length;i++){
+    if(cancelExport)break;
+    const r=list[i];const no=start+ROWS.indexOf(r);
+    pool.innerHTML=receiptHTML(r,no);
+    const el=pool.querySelector('.r');
+    const canvas=await html2canvas(el,{scale:2,backgroundColor:'#fff'});
+    const data=canvas.toDataURL('image/png').split(',')[1];
+    zip.file(fileName(r)+'.png',data,{base64:true});
+    done=i+1;
+    prog.firstElementChild.style.width=(done/list.length*100)+'%';
+    $('progText').textContent=`${done} / ${list.length} 枚`+(cancelExport?'（中止）':'');
+  }
+  pool.innerHTML='';
+  if(done>0){
+    $('progText').textContent=`ZIP生成中… ${done}枚`;
+    const blob=await zip.generateAsync({type:'blob'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+    a.download=cancelExport?`JOPT_領収書_${done}枚まで.zip`:'JOPT_領収書.zip';a.click();
+    $('progText').textContent=(cancelExport?'中止しました — ':'完了 — ')+`${done}枚を保存`;
+  } else { $('progText').textContent='中止しました（0枚）'; }
+  $('cancelExport').style.display='none';
+  $('zipAll').disabled=$('printAll').disabled=$('pngOne').disabled=false;
+  setTimeout(()=>prog.classList.remove('on'),800);
+});
+$('cancelExport').addEventListener('click',()=>{
+  cancelExport=true;$('cancelExport').disabled=true;$('cancelExport').textContent='停止中…';
+});
+
+// single png (first filtered)
+$('pngOne').addEventListener('click',async()=>{
+  const list=selectedRows();if(!list.length)return;
+  const r=list[0];const no=parseInt($('startNo').value||'1',10)+ROWS.indexOf(r);
+  const pool=$('renderPool');pool.innerHTML=receiptHTML(r,no);
+  const canvas=await html2canvas(pool.querySelector('.r'),{scale:2,backgroundColor:'#fff'});
+  pool.innerHTML='';
+  const a=document.createElement('a');a.href=canvas.toDataURL('image/png');
+  a.download=fileName(r)+'.png';a.click();
+});
+</script>
+</body>
+</html>

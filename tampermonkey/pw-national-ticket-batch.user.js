@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         PW ナショナルチケット批量付与 正式版 v1.2
+// @name         PW ナショナルチケット批量付与 正式版 v1.2.1
 // @namespace    pw-national-ticket-batch-safe
-// @version      1.2.0
+// @version      1.2.1
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
 // @description  任意のPokerWeb后台页からGameID・チケット名TSVを厳密検証し、ナショナルチケットを安全に一件ずつ付与する正式版
@@ -25,10 +25,10 @@
     playerSearchUrl: '/cb/jogadores/search',
     groupPathPattern: /\/painel_grupo_tickets\/(\d+)/,
     ticketListTextPattern: /ナショナル\s*チケット|national\s*ticket/i,
-    minDelayMs: 50,
+    minDelayMs: 30,
     maxDelayMs: 500,
-    verifyAttempts: 3,
-    verifyDelayMs: 650
+    verifyAttempts: 2,
+    verifyDelayMs: 200
   };
 
   const PREVIEW_HEADERS = [
@@ -188,6 +188,39 @@
     });
   }
 
+  function normalizeHeader(value) {
+    return norm(value).toLowerCase().replace(/[\s_　]+/g, '');
+  }
+
+  function findHeaderIndex(headers, aliases) {
+    const normalized = headers.map(normalizeHeader);
+    const normalizedAliases = aliases.map(normalizeHeader);
+    return normalized.findIndex(header => normalizedAliases.includes(header));
+  }
+
+  function parseQuantity(value, hasQuantityColumn) {
+    const text = norm(value);
+    if (!hasQuantityColumn && !text) return 1;
+    if (!/^\d+$/.test(text)) return 0;
+    const quantity = Number(text);
+    return Number.isSafeInteger(quantity) && quantity > 0 ? quantity : 0;
+  }
+
+  function createTask(lineNo, gameId, ticketName) {
+    return {
+      lineNo,
+      gameId,
+      ticketName,
+      grupo: '',
+      groupURL: '',
+      idJogador: '',
+      ticketId: '',
+      codbloq: '',
+      status: '未验证',
+      error: ''
+    };
+  }
+
   function parseInput(raw) {
     const lines = String(raw || '')
       .replace(/\r\n/g, '\n')
@@ -199,11 +232,13 @@
     if (!lines.length) throw new Error('TSV が空です。');
 
     const headers = lines[0].split('\t').map(norm);
-    const gameIndex = headers.indexOf('GameID');
-    const ticketIndex = headers.indexOf('チケット名');
+    const gameIndex = findHeaderIndex(headers, ['GameID', 'Game ID', 'ゲームID']);
+    const ticketIndex = findHeaderIndex(headers, ['チケット名', '付与内容', 'Voucher', 'Voucher名', 'バウチャー名']);
+    const quantityIndex = findHeaderIndex(headers, ['枚数', '数量', 'Qty', 'Quantity', 'Count']);
+    const hasQuantityColumn = quantityIndex >= 0;
 
     if (gameIndex < 0 || ticketIndex < 0) {
-      throw new Error('表頭は GameID[TAB]チケット名 の2列が必要です。');
+      throw new Error('表頭は GameID/Game ID と チケット名/付与内容 の列が必要です。');
     }
 
     const tasks = [];
@@ -214,24 +249,20 @@
       const lineNo = index + 2;
       const gameId = normalizeGameId(cols[gameIndex]);
       const ticketName = norm(cols[ticketIndex]);
+      const quantity = parseQuantity(cols[quantityIndex], hasQuantityColumn);
 
       if (!gameId || !ticketName) {
         errors.push(`${lineNo}行目: GameID または チケット名 が不正です。`);
         return;
       }
+      if (!quantity) {
+        errors.push(`${lineNo}行目: 枚数が不正です。1以上の整数を指定してください。`);
+        return;
+      }
 
-      tasks.push({
-        lineNo,
-        gameId,
-        ticketName,
-        grupo: '',
-        groupURL: '',
-        idJogador: '',
-        ticketId: '',
-        codbloq: '',
-        status: '未验证',
-        error: ''
-      });
+      for (let i = 0; i < quantity; i++) {
+        tasks.push(createTask(quantity === 1 ? lineNo : `${lineNo}-${i + 1}`, gameId, ticketName));
+      }
     });
 
     if (errors.length) throw new Error(errors.join('\n'));
@@ -841,14 +872,14 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <strong>PW ナショナルチケット批量付与 正式版 v1.1</strong>
+        <strong>PW ナショナルチケット批量付与 正式版 v1.2.1</strong>
         <div><button id="pwnt-min">Min</button> <button id="pwnt-close">x</button></div>
       </div>
       <div id="pwnt-body" style="overflow:auto;margin-top:8px;">
         <div style="font-size:11px;color:#f6d365;line-height:1.45;margin-bottom:8px;">
           任意のPokerWeb后台页で使用可能。一覧ページは后台取得。正式付与は DRY RUN 成功後に解锁されます。
         </div>
-        <div style="font-weight:bold;">输入 TSV: GameID[TAB]チケット名</div>
+        <div style="font-weight:bold;">输入 TSV: GameID+チケット名 / Game ID+付与内容+枚数</div>
         <textarea id="pwnt-input" style="width:100%;box-sizing:border-box;height:115px;background:#111;color:#fff;border:1px solid #555;padding:8px;font-family:Consolas,monospace;"></textarea>
         <div style="display:flex;gap:6px;margin-top:8px;">
           <button id="pwnt-read" style="flex:1;padding:8px;background:#eee;">读取TSV</button>
