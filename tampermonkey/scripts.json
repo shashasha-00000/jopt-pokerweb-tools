@@ -1,5 +1,23 @@
 [
     {
+        "file":  "JOPT_PW_Reception.user.js",
+        "name":  "JOPT PW Reception Test",
+        "version":  "0.2.8",
+        "description":  "Test reception QR flow for PokerWeb tournament cashier. Never submits final form.",
+        "updateURL":  "",
+        "downloadURL":  "",
+        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/JOPT_PW_Reception.user.js"
+    },
+    {
+        "file":  "PW_Tournament_Double_Check_v2.0.user.js",
+        "name":  "PW Tournament Double Check v2.0",
+        "version":  "2.0.5",
+        "description":  "3つの入力（大会名 / Portal Tournament / 受付Portal Ticket Link）から、Start・EN・RE・TE・Chips・Ticket Link・USDTを一括DC",
+        "updateURL":  "",
+        "downloadURL":  "",
+        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/PW_Tournament_Double_Check_v2.0.user.js"
+    },
+    {
         "file":  "pw-cashier-ticket-quick-check.user.js",
         "name":  "PW Cashier Ticket Quick Check",
         "version":  "0.1.0",
@@ -28,12 +46,21 @@
     },
     {
         "file":  "pw-national-ticket-batch.user.js",
-        "name":  "PW ナショナルチケット批量付与 正式版 v1.2.1",
-        "version":  "1.2.1",
+        "name":  "PW ナショナルチケット批量付与 正式版 v1.2.2",
+        "version":  "1.2.2",
         "description":  "任意のPokerWeb后台页からGameID・チケット名TSVを厳密検証し、ナショナルチケットを安全に一件ずつ付与する正式版",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js",
         "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js",
         "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js"
+    },
+    {
+        "file":  "pw-prize-batch-manual.user.js",
+        "name":  "PW Prize Plan Writer Checker",
+        "version":  "2.0.0",
+        "description":  "Dirty prize sheet -\u003e URL Manager scan -\u003e confirmed Prize Plan -\u003e write or readonly check.",
+        "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-batch-manual.user.js",
+        "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-batch-manual.user.js",
+        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-batch-manual.user.js"
     },
     {
         "file":  "pw-receipt-full-auto.user.js",

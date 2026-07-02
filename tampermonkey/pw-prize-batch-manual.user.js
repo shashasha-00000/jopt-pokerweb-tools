@@ -4,6 +4,8 @@
 // @version      2.0.0
 // @description  Dirty prize sheet -> URL Manager scan -> confirmed Prize Plan -> write or readonly check.
 // @match        https://japanopt.pokerweb.com.br/*
+// @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-batch-manual.user.js
+// @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-batch-manual.user.js
 // @grant        none
 // ==/UserScript==
 
