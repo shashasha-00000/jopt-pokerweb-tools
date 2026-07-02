@@ -79,12 +79,20 @@ input,select{width:100%;background:#fff;border:1px solid #cbd2e0;border-radius:7
 
 .hint{font-size:11.5px;color:#8aa0c6;margin-top:10px;line-height:1.6}
 .empty{text-align:center;color:#7f93b8;padding:60px 20px;font-size:14px}
+.modal{position:fixed;inset:0;z-index:30;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.55);padding:20px}
+.modal.on{display:flex}
+.modalBox{width:min(920px,100%);background:#101a30;border:1px solid rgba(255,255,255,.16);border-radius:10px;box-shadow:0 24px 70px rgba(0,0,0,.45);padding:16px;color:#e8edf5}
+.modalHead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.modalHead h2{margin:0;font-size:16px}
+.modalText{width:100%;height:320px;resize:vertical;border-radius:8px;border:1px solid #cbd2e0;background:#fff;color:#111;font:13px/1.5 Consolas,"Noto Sans JP",monospace;padding:10px;white-space:pre}
+.modalActions{display:flex;gap:10px;justify-content:flex-end;margin-top:10px}
+.modalActions .btn{width:auto;min-width:110px;margin:0}
 
 @media print{
   @page{size:A5 landscape;margin:8mm}
   body{background:#fff}
   body{overflow:auto}
-  .top,.side,.toolbar,.count,.prog{display:none!important}
+  .top,.side,.toolbar,.count,.prog,.modal{display:none!important}
   .layout{display:block}.main{padding:0}
   .previews{gap:0}
   .r{box-shadow:none;border:none;width:100%;page-break-after:always;break-after:page}
@@ -151,11 +159,25 @@ input,select{width:100%;background:#fff;border:1px solid #cbd2e0;border-radius:7
       <button class="btn primary" id="printAll" disabled>PDF（印刷）</button>
       <button class="btn ghost" id="zipAll" disabled>PNG ZIP保存</button>
       <button class="btn ghost" id="pngOne" disabled>先頭1件PNG</button>
+      <button class="btn ghost" id="showLog" disabled>生成LOG</button>
     </div>
     <div class="previews" id="previews">
       <div class="empty">CSVを読み込むと、ここに領収書が表示されます。</div>
     </div>
   </main>
+</div>
+
+<div class="modal" id="logModal" role="dialog" aria-modal="true" aria-labelledby="logTitle">
+  <div class="modalBox">
+    <div class="modalHead">
+      <h2 id="logTitle">生成LOG</h2>
+      <button class="btn ghost" id="logClose" type="button">閉じる</button>
+    </div>
+    <textarea class="modalText" id="logText" readonly></textarea>
+    <div class="modalActions">
+      <button class="btn primary" id="logCopy" type="button">コピー</button>
+    </div>
+  </div>
 </div>
 
 <!-- hidden full-render container for print/export -->
@@ -168,12 +190,14 @@ const COL={gid:2,name:3,email:4,kibo:5,year:7,month:8,day:9,tour:10,enre:11,tota
 let ROWS=[];           // parsed receipt rows
 let PREVIEW_LIMIT=25;
 let cancelExport=false; // 中止フラグ
+let LAST_LOG_TSV='';
 
 function toNum(x){if(x==null)return 0;const m=String(x).replace(/[^\d]/g,'');return m?parseInt(m,10):0;}
 function clearLoadedRows(message){
   ROWS=[];
+  LAST_LOG_TSV='';
   $('stats').style.display='none';
-  $('printAll').disabled=$('zipAll').disabled=$('pngOne').disabled=true;
+  $('printAll').disabled=$('zipAll').disabled=$('pngOne').disabled=$('showLog').disabled=true;
   $('filterCount').textContent='';
   $('previews').innerHTML=`<div class="empty">${message}</div>`;
 }
@@ -216,7 +240,39 @@ function fmtDate(rec){
 function fileName(r){
   const ev=$('event').value.trim();
   const a=(r.titleA||r.to||'noname'), b=(r.titleB||'');
-  return [ev, a + (b?'_'+b:'')].filter(Boolean).join('_').replace(/[\\/:*?"<>|]/g,'_');
+  const label=ev?`${ev} 領収書`:'領収書';
+  return [label, a + (b?'_'+b:'')].filter(Boolean).join('_').replace(/[\\/:*?"<>|]/g,'_');
+}
+
+function tsvCell(value){
+  return String(value==null?'':value).replace(/\t/g,' ').replace(/\r?\n/g,' ');
+}
+
+function logRow(r,no,file){
+  const dt=fmtDate(r);
+  return [
+    no,
+    file,
+    r.to?`${r.to} 様`:'',
+    r.gid,
+    r.tour,
+    r.total,
+    `${dt.y}/${dt.m}/${dt.d}`
+  ].map(tsvCell).join('\t');
+}
+
+function buildLogTsv(rows){
+  const header=['領収書No','ファイル名','宛名','GameID','大会名','金額','領収日'].join('\t');
+  return [header].concat(rows).join('\r\n');
+}
+
+function showLogModal(tsv){
+  LAST_LOG_TSV=tsv;
+  $('showLog').disabled=false;
+  $('logText').value=tsv;
+  $('logModal').classList.add('on');
+  $('logText').focus();
+  $('logText').select();
 }
 
 function receiptHTML(rec,no){
@@ -306,6 +362,8 @@ function renderPreviews(){
 function load(text){
   try{
     ROWS=parseCSV(text);
+    LAST_LOG_TSV='';
+    $('showLog').disabled=true;
   }catch(e){
     clearLoadedRows(e.message||String(e));
     alert(e.message||String(e));
@@ -349,6 +407,7 @@ $('zipAll').addEventListener('click',async()=>{
   if(!confirmLargeExport(list.length))return;
   const zip=new JSZip();const prog=$('prog');prog.classList.add('on');
   const pool=$('renderPool');
+  const logRows=[];
   cancelExport=false;
   $('cancelExport').style.display='';$('cancelExport').disabled=false;$('cancelExport').textContent='中止する（ここまでを保存）';
   $('progText').style.display='';
@@ -361,7 +420,9 @@ $('zipAll').addEventListener('click',async()=>{
     const el=pool.querySelector('.r');
     const canvas=await html2canvas(el,{scale:2,backgroundColor:'#fff'});
     const data=canvas.toDataURL('image/png').split(',')[1];
-    zip.file(fileName(r)+'.png',data,{base64:true});
+    const pngName=fileName(r)+'.png';
+    zip.file(pngName,data,{base64:true});
+    logRows.push(logRow(r,no,pngName));
     done=i+1;
     prog.firstElementChild.style.width=(done/list.length*100)+'%';
     $('progText').textContent=`${done} / ${list.length} 枚`+(cancelExport?'（中止）':'');
@@ -369,10 +430,13 @@ $('zipAll').addEventListener('click',async()=>{
   pool.innerHTML='';
   if(done>0){
     $('progText').textContent=`ZIP生成中… ${done}枚`;
+    const logTsv=buildLogTsv(logRows);
+    zip.file('生成LOG.tsv','\ufeff'+logTsv);
     const blob=await zip.generateAsync({type:'blob'});
     const a=document.createElement('a');a.href=URL.createObjectURL(blob);
     a.download=cancelExport?`JOPT_領収書_${done}枚まで.zip`:'JOPT_領収書.zip';a.click();
     $('progText').textContent=(cancelExport?'中止しました — ':'完了 — ')+`${done}枚を保存`;
+    showLogModal(logTsv);
   } else { $('progText').textContent='中止しました（0枚）'; }
   $('cancelExport').style.display='none';
   $('zipAll').disabled=$('printAll').disabled=$('pngOne').disabled=false;
@@ -390,7 +454,22 @@ $('pngOne').addEventListener('click',async()=>{
   const canvas=await html2canvas(pool.querySelector('.r'),{scale:2,backgroundColor:'#fff'});
   pool.innerHTML='';
   const a=document.createElement('a');a.href=canvas.toDataURL('image/png');
-  a.download=fileName(r)+'.png';a.click();
+  const pngName=fileName(r)+'.png';
+  a.download=pngName;a.click();
+  showLogModal(buildLogTsv([logRow(r,no,pngName)]));
+});
+$('logClose').addEventListener('click',()=>$('logModal').classList.remove('on'));
+$('logModal').addEventListener('click',e=>{if(e.target===$('logModal'))$('logModal').classList.remove('on');});
+$('showLog').addEventListener('click',()=>{if(LAST_LOG_TSV)showLogModal(LAST_LOG_TSV);});
+$('logCopy').addEventListener('click',async()=>{
+  const text=$('logText').value;
+  try{
+    await navigator.clipboard.writeText(text);
+  }catch(e){
+    $('logText').focus();
+    $('logText').select();
+    document.execCommand('copy');
+  }
 });
 </script>
 </body>

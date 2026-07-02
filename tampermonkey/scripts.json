@@ -108,6 +108,15 @@
         "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-pipeline.user.js"
     },
     {
+        "file":  "pw-tournament-background-create.user.js",
+        "name":  "PW Tournament Background Create",
+        "version":  "0.1.0",
+        "description":  "API-first tournament create flow from fixed TSV: create, USDT, items, and Ticket Link without page-step pipeline.",
+        "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-background-create.user.js",
+        "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-background-create.user.js",
+        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-background-create.user.js"
+    },
+    {
         "file":  "pw-url-manager.user.js",
         "name":  "PW URL Cache Manager v0.6",
         "version":  "0.6.3",
