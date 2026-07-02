@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         PW ナショナルチケット批量付与 正式版 v1.2.1
+// @name         PW ナショナルチケット批量付与 正式版 v1.2.2
 // @namespace    pw-national-ticket-batch-safe
-// @version      1.2.1
+// @version      1.2.2
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
 // @description  任意のPokerWeb后台页からGameID・チケット名TSVを厳密検証し、ナショナルチケットを安全に一件ずつ付与する正式版
@@ -60,9 +60,9 @@
 
   function norm(value) {
     return String(value ?? '')
-      .replace(/\uFEFF/g, '')
-      .replace(/\u3000/g, ' ')
-      .replace(/\u00a0/g, ' ')
+      .replace(/﻿/g, '')
+      .replace(/　/g, ' ')
+      .replace(/ /g, ' ')
       .replace(/[ \t\r\n]+/g, ' ')
       .trim();
   }
@@ -226,7 +226,7 @@
       .replace(/\r\n/g, '\n')
       .replace(/\r/g, '\n')
       .split('\n')
-      .map(line => line.replace(/\uFEFF/g, ''))
+      .map(line => line.replace(/﻿/g, ''))
       .filter(line => norm(line));
 
     if (!lines.length) throw new Error('TSV が空です。');
@@ -487,6 +487,38 @@
     throw new Error(`GameID ${gameId}: 検索結果が不唯一 (${unique.map(x => x.internalId).join(',')})`);
   }
 
+  function askGameIdAction(gameId, errorMessage) {
+    const wantsRetry = confirm(
+      `GameID ${gameId} のプレイヤー検索に失敗しました:\n${errorMessage}\n\n` +
+      `[OK] 別のGameIDを入力して再試行します。\n[キャンセル] このGameIDに関連するタスクをスキップします。`
+    );
+    if (!wantsRetry) return { action: 'skip' };
+
+    const input = prompt('新しいGameIDを入力してください（8桁の数字）:', gameId);
+    if (input === null) return { action: 'skip' };
+
+    const normalized = normalizeGameId(input);
+    if (!normalized) {
+      alert('GameID の形式が不正です（8桁の数字が必要）。このタスクはスキップされます。');
+      return { action: 'skip' };
+    }
+    return { action: 'retry', gameId: normalized };
+  }
+
+  async function resolvePlayerForGameId(gameId) {
+    let currentGameId = gameId;
+    while (true) {
+      try {
+        const internalId = await searchInternalId(currentGameId);
+        return { resolvedGameId: currentGameId, internalId };
+      } catch (error) {
+        const decision = askGameIdAction(currentGameId, error.message || String(error));
+        if (decision.action === 'skip') return null;
+        currentGameId = decision.gameId;
+      }
+    }
+  }
+
   async function dryRun() {
     if (state.running) return;
     state = freshState();
@@ -519,16 +551,30 @@
       });
 
       const playerMap = new Map();
+      const gameIdResolution = new Map();
       const gameIds = [...new Set(tasks.map(task => task.gameId))];
       for (let i = 0; i < gameIds.length; i++) {
-        const gameId = gameIds[i];
-        setStatus(`DRY RUN: GameID 検索 ${i + 1}/${gameIds.length} / ${gameId}`);
-        playerMap.set(gameId, await searchInternalId(gameId));
+        const originalGameId = gameIds[i];
+        setStatus(`DRY RUN: GameID 検索 ${i + 1}/${gameIds.length} / ${originalGameId}`);
+        const resolved = await resolvePlayerForGameId(originalGameId);
+        if (!resolved) {
+          gameIdResolution.set(originalGameId, null);
+          continue;
+        }
+        playerMap.set(resolved.resolvedGameId, resolved.internalId);
+        gameIdResolution.set(originalGameId, resolved.resolvedGameId);
       }
 
       const inventoryCursor = new Map();
       const assignedIds = new Set();
       tasks.forEach(task => {
+        const resolvedGameId = gameIdResolution.get(task.gameId);
+        if (resolvedGameId === null) {
+          task.status = 'SKIPPED';
+          task.error = `GameID ${task.gameId} のプレイヤーが見つからず、ユーザー操作によりスキップされました。`;
+          return;
+        }
+
         const group = groupMap.get(task.ticketName);
         const inventory = inventoryMap.get(task.ticketName);
         const cursor = inventoryCursor.get(task.ticketName) || 0;
@@ -540,9 +586,10 @@
 
         assignedIds.add(ticketId);
         inventoryCursor.set(task.ticketName, cursor + 1);
+        task.gameId = resolvedGameId;
         task.grupo = group.grupo;
         task.groupURL = group.groupURL;
-        task.idJogador = playerMap.get(task.gameId);
+        task.idJogador = playerMap.get(resolvedGameId);
         task.ticketId = ticketId;
         task.codbloq = inventory.codbloq;
         task.status = 'OK';
@@ -559,7 +606,7 @@
     } catch (error) {
       state.dryRunOk = false;
       state.tasks.forEach(task => {
-        if (task.status !== 'OK') {
+        if (task.status !== 'OK' && task.status !== 'SKIPPED') {
           task.status = 'ERROR';
           task.error = error.message || String(error);
         }
@@ -872,7 +919,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <strong>PW ナショナルチケット批量付与 正式版 v1.2.1</strong>
+        <strong>PW ナショナルチケット批量付与 正式版 v1.2.2</strong>
         <div><button id="pwnt-min">Min</button> <button id="pwnt-close">x</button></div>
       </div>
       <div id="pwnt-body" style="overflow:auto;margin-top:8px;">

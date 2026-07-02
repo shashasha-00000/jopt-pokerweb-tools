@@ -1,12 +1,12 @@
 /**
  * ReceiptUnifiedFlow.gs
  *
- * Generated from ReceiptSemiAutoAppend.gs and ReceiptMailDraftsDynamic.gs.
- * Run tools/build-receipt-unified.js after changing either source file.
+ * Unified receipt workflow source for Google Apps Script.
+ * This file is maintained directly.
  */
 
 /*******************************************************
- * ReceiptSemiAutoAppend.gs
+ * PW TSV / tournament extraction / mail row workflow
  *
  * PW TSVショウ用 + 領収書申請入力 / フォームの回答 1 から、
  * トナメ抜き出しへ今回分を追加して既存番号体系に乗せ、
@@ -139,11 +139,11 @@ function RSA_addMenu_() {
     .addItem('2. 最新トナメ行→メール送信生成', 'buildReceiptMailRowsFromLatestNukidashi')
     .addItem('書き出しデータを開く', 'openReceiptAiOutputSheet')
     .addSeparator()
-    .addItem('最新分のGmail下書きを作成', 'createReceiptDraftsAllRows')
-    .addItem('最新分のエラー行を再下書き', 'retryReceiptErrorRows')
-    .addItem('最新分のOK下書きを送信', 'sendApprovedReceiptDraftsAllRows')
-    .addItem('最新分のメール処理を診断', 'debugReceiptDraftsAllRows')
-    .addItem('選択行を今回のメール範囲に設定', 'setSelectedRowsAsLatestReceiptMailRange')
+    .addItem('選択行のGmail下書きを作成', 'createReceiptDraftsForSelectedRows')
+    .addItem('未作成行のGmail下書きを作成', 'createReceiptDraftsForUnfinishedRows')
+    .addSeparator()
+    .addItem('選択行のOK下書きを送信', 'sendApprovedReceiptDraftsForSelectedRows')
+    .addItem('未送信行のOK下書きを送信', 'sendApprovedReceiptDraftsForUnsentRows')
     .addSeparator()
     .addItem('初期設定・不足表を準備', 'setupReceiptSemiAutoAppend')
     .addItem('メール送信の表頭だけ修正', 'fixReceiptMailHeaders')
@@ -678,44 +678,6 @@ function openReceiptCheckReport() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = RSA_ensureOwnedSheet_(ss, RSA_CONFIG.CHECK_SHEET_NAME, RSA_CONFIG.CHECK_HEADERS);
   ss.setActiveSheet(sheet);
-}
-
-function setSelectedRowsAsLatestReceiptMailRange() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getActiveSheet();
-
-  if (RSA_CONFIG.MAIL_SHEET_NAMES.indexOf(sheet.getName()) < 0) {
-    throw new Error('メール送信 表で、今回処理する行を選択してから実行してください。');
-  }
-
-  const range = sheet.getActiveRange();
-  if (!range || range.getRow() < 2) {
-    throw new Error('第2行以降の今回処理する行を選択してください。');
-  }
-
-  const startRow = range.getRow();
-  const rowCount = range.getNumRows();
-  const names = sheet.getRange(startRow, 2, rowCount, 1).getDisplayValues();
-  const emptyRows = [];
-
-  names.forEach((row, index) => {
-    if (!RSA_text_(row[0])) emptyRows.push(startRow + index);
-  });
-
-  if (emptyRows.length) {
-    throw new Error('選択範囲に氏名が空白の行があります: ' + emptyRows.join(', '));
-  }
-
-  PropertiesService.getDocumentProperties().setProperties({
-    RSA_LAST_MAIL_START_ROW: String(startRow),
-    RSA_LAST_MAIL_ROW_COUNT: String(rowCount)
-  });
-
-  RSA_alert_(
-    '今回のメール処理範囲を設定しました。\n\n' +
-    '対象行: ' + startRow + '〜' + (startRow + rowCount - 1) + '\n' +
-    '次に「最新分のGmail下書きを作成」を実行してください。'
-  );
 }
 
 function RSA_readPwRows_(sheet) {
@@ -1458,7 +1420,8 @@ function RSA_getOrCreateMailSheet_(ss) {
 function RSA_requiredCsvFormulaSheet_(ss) {
   const selectedName = RSA_getSettingValue_(ss, 'CSV書き出しシート名');
   if (selectedName) {
-    const selectedSheet = ss.getSheetByName(selectedName);
+    const selectedSheet = ss.getSheetByName(selectedName) ||
+      RSA_findSheetByLooseName_(ss, selectedName);
     if (selectedSheet) return selectedSheet;
     throw new Error('領収書設定で選択したCSV書き出しシートが見つかりません: ' + selectedName);
   }
@@ -1478,12 +1441,33 @@ function RSA_requiredCsvFormulaSheet_(ss) {
 
 function RSA_findCsvFormulaSheets_(ss) {
   const baseName = RSA_CONFIG.CSV_FORMULA_SHEET_BASE_NAME;
+  const baseKey = RSA_looseSheetNameKey_(baseName);
   return ss.getSheets().filter(sheet => {
     const name = sheet.getName();
     if (name === baseName || name === baseName + '）') return true;
+    const nameKey = RSA_looseSheetNameKey_(name);
+    if (nameKey === baseKey) return true;
     const suffix = name.slice(baseName.length);
-    return /^(?:）)? \(\d+\)$/.test(suffix);
+    return /^(?:\uFF09)? \(\d+\)$/.test(suffix);
   });
+}
+
+function RSA_findSheetByLooseName_(ss, expectedName) {
+  const expectedKey = RSA_looseSheetNameKey_(expectedName);
+  if (!expectedKey) return null;
+
+  const matches = ss.getSheets().filter(sheet => RSA_looseSheetNameKey_(sheet.getName()) === expectedKey);
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function RSA_looseSheetNameKey_(name) {
+  let text = String(name || '');
+  if (text.normalize) text = text.normalize('NFKC');
+  return text
+    .replace(/[\s\u3000]/g, '')
+    .replace(/[()（）]/g, '')
+    .trim()
+    .toLowerCase();
 }
 
 function RSA_getSettingValue_(ss, key) {
@@ -1681,7 +1665,7 @@ const RECEIPT_MAIL_CONFIG = {
   SETTINGS_FOLDER_KEY: 'PNG DriveフォルダURL',
   SETTINGS_EVENT_LABEL_KEY: 'EVENT LABEL',
 
-  // 対象行は ReceiptSemiAutoAppend.gs が保存した最新生成範囲を自動使用する。
+  // Gmail下書き作成は、選択行またはH列未作成行を明示的に対象にする。
 
   // ★ここにDriveフォルダURLを入れる
   RECEIPT_FOLDER_URLS: [
@@ -1716,20 +1700,34 @@ const RECEIPT_MAIL_CONFIG = {
 };
 
 
-/**
- * 全表：下書き作成
- * まずこれを実行
- */
-function createReceiptDraftsAllRows() {
+function createReceiptDraftsForSelectedRows() {
   const sheet = receipt_getTargetSheet_();
+  const rows = receipt_getSelectedTargetRows_(sheet);
+  receipt_createDraftsForRows_(sheet, rows, '選択行');
+}
+
+function createReceiptDraftsForUnfinishedRows() {
+  const sheet = receipt_getTargetSheet_();
+  const rows = receipt_getUnfinishedDraftRows_(sheet);
+  receipt_createDraftsForRows_(sheet, rows, '未作成行');
+}
+
+function createReceiptDraftsAllRows() {
+  createReceiptDraftsForUnfinishedRows();
+}
+
+function receipt_createDraftsForRows_(sheet, rows, label) {
+  if (!rows.length) {
+    throw new Error(label + 'のGmail下書き作成対象がありません。');
+  }
+
   const folders = receipt_getReceiptFolders_();
 
   receipt_setupHeaders_(sheet);
 
-  const targetRange = receipt_getLatestBatchRange_(sheet);
-  const startRow = targetRange.startRow;
-  const endRow = targetRange.endRow;
-  receipt_showToast_('最新分の領収書ファイルを検索しています...', 'Gmail下書き作成');
+  const startRow = Math.min.apply(null, rows);
+  const endRow = Math.max.apply(null, rows);
+  receipt_showToast_(label + 'の領収書ファイルを検索しています...', 'Gmail下書き作成');
 
   const duplicateNameSet = receipt_buildDuplicateNameSet_(sheet, startRow, endRow);
   const receiptFiles = receipt_buildReceiptFileListFromFolders_(folders);
@@ -1738,7 +1736,7 @@ function createReceiptDraftsAllRows() {
   let skippedCount = 0;
   let errorCount = 0;
 
-  for (let row = startRow; row <= endRow; row++) {
+  rows.forEach(row => {
     const result = receipt_createDraftForRow_(sheet, receiptFiles, duplicateNameSet, row);
 
     if (result === 'created') createdCount++;
@@ -1746,40 +1744,144 @@ function createReceiptDraftsAllRows() {
     if (result === 'error') errorCount++;
 
     Utilities.sleep(200);
-  }
+  });
 
-  Logger.log('全表 下書き作成完了');
-  Logger.log('対象範囲: ' + startRow + '〜' + endRow + '行');
+  Logger.log(label + ' 下書き作成完了');
+  Logger.log('対象行: ' + receipt_formatRowsForMessage_(rows));
   Logger.log('作成: ' + createdCount + '件');
   Logger.log('スキップ: ' + skippedCount + '件');
   Logger.log('エラー: ' + errorCount + '件');
 
   receipt_showResult_(
-    '最新分 Gmail下書き作成完了\n\n' +
-    '対象行: ' + startRow + '〜' + endRow + '\n' +
+    label + ' Gmail下書き作成完了\n\n' +
+    '対象行: ' + receipt_formatRowsForMessage_(rows) + '\n' +
     '作成: ' + createdCount + '件\n' +
     'スキップ: ' + skippedCount + '件\n' +
     'エラー: ' + errorCount + '件'
   );
 }
 
+function receipt_getSelectedTargetRows_(sheet) {
+  const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  if (activeSheet.getSheetId() !== sheet.getSheetId()) {
+    throw new Error('メール送信表で対象行を選択してから実行してください。');
+  }
 
-/**
- * 全表：L列がOKの下書きだけ送信
- */
-function sendApprovedReceiptDraftsAllRows() {
+  const range = activeSheet.getActiveRange();
+  if (!range || range.getRow() < 2) {
+    throw new Error('メール送信表の2行目以降を選択してください。');
+  }
+
+  const startRow = range.getRow();
+  const endRow = startRow + range.getNumRows() - 1;
+  const rows = [];
+
+  for (let row = startRow; row <= endRow; row++) {
+    rows.push(row);
+  }
+
+  return rows;
+}
+
+function receipt_getUnfinishedDraftRows_(sheet) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+
+  const values = sheet
+    .getRange(2, 1, lastRow - 1, RECEIPT_MAIL_CONFIG.COL_DRAFT_STATUS)
+    .getDisplayValues();
+  const rows = [];
+
+  values.forEach((rowValues, index) => {
+    const rowNo = index + 2;
+    const name = String(rowValues[RECEIPT_MAIL_CONFIG.COL_NAME - 1] || '').trim();
+    const email = String(rowValues[RECEIPT_MAIL_CONFIG.COL_EMAIL - 1] || '').trim();
+    const draftStatus = String(rowValues[RECEIPT_MAIL_CONFIG.COL_DRAFT_STATUS - 1] || '').trim();
+
+    if (!name && !email) return;
+    if (draftStatus === '下書き作成済み') return;
+
+    rows.push(rowNo);
+  });
+
+  return rows;
+}
+
+function receipt_getUnsentRows_(sheet) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+
+  const values = sheet
+    .getRange(2, 1, lastRow - 1, RECEIPT_MAIL_CONFIG.COL_SEND_STATUS)
+    .getDisplayValues();
+  const rows = [];
+
+  values.forEach((rowValues, index) => {
+    const rowNo = index + 2;
+    const name = String(rowValues[RECEIPT_MAIL_CONFIG.COL_NAME - 1] || '').trim();
+    const email = String(rowValues[RECEIPT_MAIL_CONFIG.COL_EMAIL - 1] || '').trim();
+    const sendStatus = String(rowValues[RECEIPT_MAIL_CONFIG.COL_SEND_STATUS - 1] || '').trim();
+
+    if (!name && !email) return;
+    if (sendStatus === '送信済み') return;
+
+    rows.push(rowNo);
+  });
+
+  return rows;
+}
+
+function receipt_formatRowsForMessage_(rows) {
+  if (!rows.length) return '';
+  const sorted = rows.slice().sort((a, b) => a - b);
+  const ranges = [];
+  let start = sorted[0];
+  let prev = sorted[0];
+
+  for (let i = 1; i < sorted.length; i++) {
+    const row = sorted[i];
+    if (row === prev + 1) {
+      prev = row;
+      continue;
+    }
+    ranges.push(start === prev ? String(start) : start + '〜' + prev);
+    start = row;
+    prev = row;
+  }
+
+  ranges.push(start === prev ? String(start) : start + '〜' + prev);
+  return ranges.join(', ');
+}
+
+
+function sendApprovedReceiptDraftsForSelectedRows() {
   const sheet = receipt_getTargetSheet_();
+  const rows = receipt_getSelectedTargetRows_(sheet);
+  receipt_sendApprovedDraftsForRows_(sheet, rows, '選択行');
+}
 
-  const targetRange = receipt_getLatestBatchRange_(sheet);
-  const startRow = targetRange.startRow;
-  const endRow = targetRange.endRow;
-  receipt_showToast_('最新分のL列「OK」を確認して送信しています...', 'Gmail送信');
+function sendApprovedReceiptDraftsForUnsentRows() {
+  const sheet = receipt_getTargetSheet_();
+  const rows = receipt_getUnsentRows_(sheet);
+  receipt_sendApprovedDraftsForRows_(sheet, rows, '未送信行');
+}
+
+function sendApprovedReceiptDraftsAllRows() {
+  sendApprovedReceiptDraftsForSelectedRows();
+}
+
+function receipt_sendApprovedDraftsForRows_(sheet, rows, label) {
+  if (!rows.length) {
+    throw new Error(label + 'のGmail送信対象がありません。');
+  }
+
+  receipt_showToast_(label + 'のL列「OK」を確認して送信しています...', 'Gmail送信');
 
   let sentCount = 0;
   let skippedCount = 0;
   let errorCount = 0;
 
-  for (let row = startRow; row <= endRow; row++) {
+  rows.forEach(row => {
     const draftStatus = String(sheet.getRange(row, RECEIPT_MAIL_CONFIG.COL_DRAFT_STATUS).getValue() || '').trim();
     const error = String(sheet.getRange(row, RECEIPT_MAIL_CONFIG.COL_ERROR).getValue() || '').trim();
     const draftId = String(sheet.getRange(row, RECEIPT_MAIL_CONFIG.COL_DRAFT_ID).getValue() || '').trim();
@@ -1792,27 +1894,27 @@ function sendApprovedReceiptDraftsAllRows() {
 
     if (!isSendableDraftStatus) {
       skippedCount++;
-      continue;
+      return;
     }
 
     if (error !== '') {
       skippedCount++;
-      continue;
+      return;
     }
 
     if (!draftId) {
       skippedCount++;
-      continue;
+      return;
     }
 
     if (sendOk !== 'OK') {
       skippedCount++;
-      continue;
+      return;
     }
 
     if (sendStatus === '送信済み') {
       skippedCount++;
-      continue;
+      return;
     }
 
     try {
@@ -1842,17 +1944,17 @@ function sendApprovedReceiptDraftsAllRows() {
       sheet.getRange(row, RECEIPT_MAIL_CONFIG.COL_SEND_STATUS).setValue('送信エラー: ' + err.message);
       errorCount++;
     }
-  }
+  });
 
-  Logger.log('全表 送信完了');
-  Logger.log('対象範囲: ' + startRow + '〜' + endRow + '行');
+  Logger.log(label + ' 送信完了');
+  Logger.log('対象行: ' + receipt_formatRowsForMessage_(rows));
   Logger.log('送信済み: ' + sentCount + '件');
   Logger.log('スキップ: ' + skippedCount + '件');
   Logger.log('送信エラー: ' + errorCount + '件');
 
   receipt_showResult_(
-    '最新分 Gmail送信完了\n\n' +
-    '対象行: ' + startRow + '〜' + endRow + '\n' +
+    label + ' Gmail送信完了\n\n' +
+    '対象行: ' + receipt_formatRowsForMessage_(rows) + '\n' +
     '送信済み: ' + sentCount + '件\n' +
     'スキップ: ' + skippedCount + '件\n' +
     '送信エラー: ' + errorCount + '件'
@@ -1866,14 +1968,12 @@ function sendApprovedReceiptDraftsAllRows() {
 function debugReceiptDraftsAllRows() {
   const sheet = receipt_getTargetSheet_();
 
-  const targetRange = receipt_getLatestBatchRange_(sheet);
-  const startRow = targetRange.startRow;
-  const endRow = targetRange.endRow;
+  const rows = receipt_getSelectedTargetRows_(sheet);
 
-  Logger.log('=== 全表 送信対象チェック開始 ===');
-  Logger.log('対象範囲: ' + startRow + '〜' + endRow + '行');
+  Logger.log('=== 選択行 送信対象チェック開始 ===');
+  Logger.log('対象行: ' + receipt_formatRowsForMessage_(rows));
 
-  for (let row = startRow; row <= endRow; row++) {
+  for (const row of rows) {
     const name = String(sheet.getRange(row, RECEIPT_MAIL_CONFIG.COL_NAME).getValue() || '').trim();
     const email = String(sheet.getRange(row, RECEIPT_MAIL_CONFIG.COL_EMAIL).getValue() || '').trim();
     const count = receipt_getAttachmentCount_(sheet, row);
@@ -1947,7 +2047,7 @@ function debugReceiptDraftsAllRows() {
     }
   }
 
-  Logger.log('=== 全表 送信対象チェック終了 ===');
+  Logger.log('=== 選択行 送信対象チェック終了 ===');
 }
 
 
@@ -1961,10 +2061,10 @@ function retryReceiptErrorRows() {
 
   receipt_setupHeaders_(sheet);
 
-  const targetRange = receipt_getLatestBatchRange_(sheet);
-  const startRow = targetRange.startRow;
-  const endRow = targetRange.endRow;
-  receipt_showToast_('最新分のエラー行を再処理しています...', 'Gmail下書き再作成');
+  const rows = receipt_getSelectedTargetRows_(sheet);
+  const startRow = Math.min.apply(null, rows);
+  const endRow = Math.max.apply(null, rows);
+  receipt_showToast_('選択行のエラー行を再処理しています...', 'Gmail下書き再作成');
 
   const duplicateNameSet = receipt_buildDuplicateNameSet_(sheet, startRow, endRow);
   const receiptFiles = receipt_buildReceiptFileListFromFolders_(folders);
@@ -1973,13 +2073,13 @@ function retryReceiptErrorRows() {
   let skippedCount = 0;
   let errorCount = 0;
 
-  for (let row = startRow; row <= endRow; row++) {
+  rows.forEach(row => {
     const draftStatus = String(sheet.getRange(row, RECEIPT_MAIL_CONFIG.COL_DRAFT_STATUS).getValue() || '').trim();
     const error = String(sheet.getRange(row, RECEIPT_MAIL_CONFIG.COL_ERROR).getValue() || '').trim();
 
     if (draftStatus !== 'エラー' && !error) {
       skippedCount++;
-      continue;
+      return;
     }
 
     const result = receipt_createDraftForRow_(sheet, receiptFiles, duplicateNameSet, row);
@@ -1989,17 +2089,17 @@ function retryReceiptErrorRows() {
     if (result === 'error') errorCount++;
 
     Utilities.sleep(200);
-  }
+  });
 
   Logger.log('エラー行 再下書き作成完了');
-  Logger.log('対象範囲: ' + startRow + '〜' + endRow + '行');
+  Logger.log('対象行: ' + receipt_formatRowsForMessage_(rows));
   Logger.log('作成: ' + createdCount + '件');
   Logger.log('スキップ: ' + skippedCount + '件');
   Logger.log('エラー: ' + errorCount + '件');
 
   receipt_showResult_(
-    '最新分 エラー行再処理完了\n\n' +
-    '対象行: ' + startRow + '〜' + endRow + '\n' +
+    '選択行 エラー行再処理完了\n\n' +
+    '対象行: ' + receipt_formatRowsForMessage_(rows) + '\n' +
     '作成: ' + createdCount + '件\n' +
     'スキップ: ' + skippedCount + '件\n' +
     'エラー: ' + errorCount + '件'
@@ -2846,46 +2946,6 @@ function receipt_setupHeaders_(sheet) {
   sheet.getRange(1, RECEIPT_MAIL_CONFIG.COL_SENT_AT).setValue('送信日時');
 }
 
-
-/**
- * 半自動生成で最後に追加したメール送信行だけを対象にする。
- * 行番号をコードへ手入力する必要はない。
- */
-function receipt_getLatestBatchRange_(sheet) {
-  const props = PropertiesService.getDocumentProperties();
-  const startRow = Number(
-    props.getProperty('RFP_LAST_MAIL_START_ROW') ||
-    props.getProperty('RSA_LAST_MAIL_START_ROW') ||
-    0
-  );
-  const rowCount = Number(
-    props.getProperty('RFP_LAST_MAIL_ROW_COUNT') ||
-    props.getProperty('RSA_LAST_MAIL_ROW_COUNT') ||
-    0
-  );
-  const lastRow = sheet.getLastRow();
-
-  if (!Number.isInteger(startRow) || startRow < 2 ||
-      !Number.isInteger(rowCount) || rowCount < 1) {
-    throw new Error(
-      '最新のメール送信対象行を取得できません。先に「2. 最新トナメ行→メール送信一覧」を実行してください。'
-    );
-  }
-
-  const endRow = startRow + rowCount - 1;
-
-  if (endRow > lastRow) {
-    throw new Error(
-      '保存された最新処理範囲がメール送信表の最終行を超えています。' +
-      '先に「2. 最新トナメ行→メール送信一覧」を再実行してください。'
-    );
-  }
-
-  return {
-    startRow: startRow,
-    endRow: endRow
-  };
-}
 
 function receipt_showToast_(message, title) {
   try {

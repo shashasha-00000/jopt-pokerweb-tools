@@ -12,6 +12,7 @@
  * - D列「対象プロモ」が B / C: Millions
  * - I列「Millons1」と J列「PPC」は付与済み CHECK。未チェック分だけ出力する
  * - K列「WeChat送信」はチケット付与判定に使用しない
+ * - H列に何か入力がある行はスキップする（対象外として無視）
  *
  * 出力は「GameID」「チケット名」だけ。個人情報列は読み取らず、出力もしない。
  */
@@ -93,14 +94,20 @@ function NTB_buildNationalTicketTsv_() {
 
   const gameIdColumn = 2;
   const promoColumn = 3;
+  const skipColumn = 7;
   const millionsCheckColumn = 8;
   const ppcCheckColumn = 9;
 
   const outputRows = [];
   const errors = [];
+  let skippedCount = 0;
 
   values.slice(NTB_CONFIG.HEADER_ROW).forEach((row, offset) => {
     const sheetRow = NTB_CONFIG.HEADER_ROW + offset + 1;
+    if (NTB_text_(row[skipColumn])) {
+      skippedCount += 1;
+      return;
+    }
     const promo = NTB_text_(row[promoColumn]).toUpperCase();
     const millionsDone = NTB_isChecked_(row[millionsCheckColumn]);
     const ppcDone = NTB_isChecked_(row[ppcCheckColumn]);
@@ -155,6 +162,7 @@ function NTB_buildNationalTicketTsv_() {
   NTB_alert_(
     'TSV出力を更新しました。\n\n' +
       '未付与タスク: ' + outputRows.length + ' 件\n' +
+      'H列入力によりスキップ: ' + skippedCount + ' 件\n' +
       '出力シート: ' + NTB_CONFIG.OUTPUT_SHEET_NAME + '\n\n' +
       'A:B列を表頭ごとコピーして PokerWeb のツールへ貼り付けてください。\n' +
       '付与完了後、元表の対応する Millons1 / PPC を手動でCHECKしてください。'

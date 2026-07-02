@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         PW Prize Check Readonly
+// @name         PW Prize Plan Writer Checker
 // @namespace    https://japanopt.pokerweb.com.br/
-// @version      1.4.0
-// @description  Google Sheet Prize and Portal tournaments readonly checker for PokerWeb.
+// @version      2.0.0
+// @description  Dirty prize sheet -> URL Manager scan -> confirmed Prize Plan -> write or readonly check.
 // @match        https://japanopt.pokerweb.com.br/*
 // @grant        none
 // ==/UserScript==
@@ -11,62 +11,38 @@
   'use strict';
 
   const APP = {
-    name: 'PW-PRIZE-CHECK',
-    panelId: 'pw-prize-check-panel',
-    stateKey: 'PW_PRIZE_CHECK_READONLY_STATE_V3',
-    scanKey: 'PW_PRIZE_CHECK_READONLY_SCAN_V3',
+    name: 'PW-PRIZE-PLAN',
+    panelId: 'pw-prize-plan-panel',
+    stateKey: 'PW_PRIZE_PLAN_STATE_V2',
     urlCacheKey: 'PW_SHARED_TOURNAMENT_URL_CACHE_V1',
-    legacyKeys: [
-      'PW_PRIZE_CHECK_STATE_V1',
-      'PW_PRIZE_CHECK_REPORT_V1',
-      'PW_PRIZE_CHECK_PREVIEW_V1',
-      'PW_PRIZE_BATCH_MANUAL_STATE_V1',
-      'PW_PRIZE_BATCH_MANUAL_REPORT_V1',
-      'PW_PRIZE_BATCH_MANUAL_PREVIEW_V1'
-    ]
+    endpointPrizeList: '/cb/torneio/abas/premiacao/faixas_premiacoes',
+    endpointPotTotal: id => `/cb/torneio/abas/premiacao/pot_total/${encodeURIComponent(id)}`,
+    listPages: [
+      { label: 'OPEN', path: '/cb/torneio/abertos' }
+    ],
+    pageLength: 100,
+    waitMs: 25000,
+    pollMs: 300
   };
 
-  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-  const debugLines = [];
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const detailLines = [];
+  let running = false;
 
-  function debug(message, data) {
-    const line = `[${new Date().toLocaleString('ja-JP')}] ${message}` +
-      (data == null ? '' : ` ${typeof data === 'string' ? data : JSON.stringify(data)}`);
-    debugLines.push(line);
-    const el = document.getElementById('pwPrizeCheckDetailLog');
-    if (el) el.value = debugLines.join('\n');
-    console.log(`[${APP.name}]`, message, data || '');
+  function norm(value) {
+    return String(value ?? '')
+      .replace(/\u3000/g, ' ')
+      .replace(/\u00a0/g, ' ')
+      .replace(/[ \t\r\n]+/g, ' ')
+      .trim();
   }
 
-  function safeJsonParse(text, fallback = null) {
-    try { return JSON.parse(text); } catch (_) { return fallback; }
-  }
-
-  function loadState() {
-    return safeJsonParse(sessionStorage.getItem(APP.stateKey), null);
-  }
-
-  function saveState(state) {
-    sessionStorage.setItem(APP.stateKey, JSON.stringify({ ...state, mode: 'READONLY_CHECK' }));
-  }
-
-  function clearState() {
-    sessionStorage.removeItem(APP.stateKey);
-  }
-
-  function loadScan() {
-    return safeJsonParse(sessionStorage.getItem(APP.scanKey), null);
-  }
-
-  function saveScan(scan) {
-    sessionStorage.setItem(APP.scanKey, JSON.stringify(scan));
-  }
-
-  function clearLegacyState() {
-    for (const key of APP.legacyKeys) {
-      localStorage.removeItem(key);
-      sessionStorage.removeItem(key);
-    }
+  function compact(value) {
+    return norm(value)
+      .replace(/[\/／\-‐‑‒–—―]/g, '')
+      .replace(/\s+/g, '')
+      .replace(/監査(?:済み|待ち)/g, '')
+      .toLowerCase();
   }
 
   function escapeHtml(value) {
@@ -78,389 +54,463 @@
       .replace(/'/g, '&#039;');
   }
 
-  function normalizeSpace(value) {
-    return String(value || '').replace(/\u3000/g, ' ').replace(/\s+/g, ' ').trim();
+  function nowText() {
+    const d = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   }
 
-  function normalizeText(value) {
-    return normalizeSpace(value)
-      .toLowerCase()
-      .replace(/[【】\[\]（）()]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
+  function debug(type, data) {
+    const line = `[${nowText()}] ${type} ${typeof data === 'string' ? data : JSON.stringify(data)}`;
+    detailLines.push(line);
+    const el = document.querySelector('#pwPrizeDetail');
+    if (el) el.value = detailLines.join('\n');
+    console.log(`[${APP.name}]`, type, data);
   }
 
-  function normalizeMoney(value) {
+  function setStatus(text) {
+    const el = document.querySelector('#pwPrizeStatus');
+    if (el) el.textContent = text || '';
+    debug('STATUS', text || '');
+  }
+
+  function safeJsonParse(text, fallback = null) {
+    try { return JSON.parse(text); } catch (_) { return fallback; }
+  }
+
+  function loadState() {
+    return safeJsonParse(sessionStorage.getItem(APP.stateKey), {});
+  }
+
+  function saveState(state) {
+    sessionStorage.setItem(APP.stateKey, JSON.stringify(state || {}));
+  }
+
+  function moneyNumber(value) {
     const raw = String(value ?? '').trim();
-    if (!raw) return null;
-    if (/\$|usdt|usd/i.test(raw)) return null;
-    const cleaned = raw
-      .replace(/[￥¥,]/g, '')
-      .replace(/\s+/g, '')
-      .replace(/[^\d.-]/g, '');
+    if (!raw || /\$|usdt|usd/i.test(raw) || /#DIV|#VALUE|#N\/A|ERROR/i.test(raw)) return null;
+    if (/^-?\$/.test(raw)) return null;
+    const cleaned = raw.replace(/[￥¥,]/g, '').replace(/\s+/g, '').replace(/[^\d.-]/g, '');
     if (!cleaned || cleaned === '-' || cleaned === '.') return null;
     const n = Number(cleaned);
     return Number.isFinite(n) ? Math.round(n) : null;
   }
 
+  function yen(value) {
+    const n = Number(value || 0);
+    return Number.isFinite(n) ? `¥${n.toLocaleString('ja-JP')}` : '';
+  }
+
   function splitTsv(raw) {
-    return String(raw || '').replace(/\r/g, '').split('\n').map(line => line.split('\t'));
+    return String(raw || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').map(line => line.split('\t'));
   }
 
-  function cell(row, index) {
-    return row && index >= 0 ? String(row[index] ?? '').trim() : '';
-  }
-
-  function inheritedCell(row, index, minIndex = 0) {
-    for (let col = index; col >= minIndex; col--) {
-      const value = normalizeSpace(cell(row, col));
-      if (value) return value;
-    }
-    return '';
-  }
-
-  function blockStatusCell(statusRow, col, block) {
-    const left = Math.max(0, block.startCol - 3);
-    const right = Math.min(statusRow.length, block.endCol + 3);
-    const sameBlock = inheritedCell(statusRow, col, block.startCol);
-    if (sameBlock) return sameBlock;
-    for (let c = col + 1; c < block.endCol; c++) {
-      const value = normalizeSpace(cell(statusRow, c));
-      if (value) return value;
-    }
-    for (let c = col; c >= left; c--) {
-      const value = normalizeSpace(cell(statusRow, c));
-      if (value) return value;
-    }
-    for (let c = col + 1; c < right; c++) {
-      const value = normalizeSpace(cell(statusRow, c));
-      if (value) return value;
-    }
-    return '';
-  }
-
-  function findRowIndex(rows, labelPattern) {
-    return rows.findIndex(row => labelPattern.test(cell(row, 0)));
-  }
-
-  function findAnyRowIndex(rows, predicate) {
-    return rows.findIndex(row => row.some(value => predicate(normalizeSpace(value))));
-  }
-
-  function looksLikeStatusValue(value) {
-    return /確定|不使用|アップグレード|upgrade/i.test(normalizeSpace(value));
+  function cell(row, col) {
+    return row && col >= 0 && col < row.length ? row[col] : '';
   }
 
   function parseRank(value) {
-    const m = String(value || '').match(/\d+/);
-    return m ? Number(m[0]) : null;
+    const m = String(value || '').trim().match(/^(\d+)\s*(?:位|st|nd|rd|th)?$/i);
+    return m ? Number(m[1]) : null;
   }
 
-  function isRankLabel(value) {
-    return /^\d+\s*(?:位|st|nd|rd|th)?$/i.test(String(value || '').trim());
+  function isPwCoin(value) {
+    return /PW\s*COIN/i.test(String(value || ''));
+  }
+
+  function statusKind(value) {
+    const text = norm(value);
+    if (/不使用/.test(text)) return 'unused';
+    if (/確定/.test(text)) return 'confirmed';
+    if (/アップグレード|upgrade/i.test(text)) return 'upgrade';
+    return 'unknown';
+  }
+
+  function statusLabel(kind, raw) {
+    if (raw) return raw;
+    if (kind === 'confirmed') return '確定レート';
+    if (kind === 'upgrade') return 'アップグレード';
+    if (kind === 'unused') return '不使用';
+    return '状態不明';
+  }
+
+  function detectVersion(title) {
+    const text = norm(title).toLowerCase();
+    if (/コインのみ|coin only|pw coin only/.test(text)) return 'coin';
+    if (/voucherのみ|voucher only|バウチャーのみ/.test(text)) return 'voucher';
+    if (/apt抜き|apt抜き|APT抜き/i.test(title)) return 'apt';
+    if (/アップグレード|upgrade/i.test(text)) return 'upgrade';
+    if (/全体/.test(title)) return 'all';
+    return 'base';
+  }
+
+  function stripVersion(title) {
+    return norm(title)
+      .replace(/[（(]\s*(?:全体|コインのみ|voucherのみ|バウチャーのみ|APT抜き|apt抜き)\s*[）)]/gi, '')
+      .replace(/\s*(?:アップグレード|upgrade)\s*$/i, '')
+      .trim();
+  }
+
+  function baseKey(title) {
+    const alias = aliasKey(title);
+    if (alias) return alias;
+    return compact(stripVersion(title)
+      .replace(/^[#＃]\s*\d{1,3}\s+/, '')
+      .replace(/1\s*人分/g, '')
+      .replace(/\b(player|team|nlh|plo|fl|hold'?em|sponsored|by)\b/gi, ' ')
+      .replace(/\bPPC\b/gi, 'Poker Players Championship'));
+  }
+
+  function aliasKey(title) {
+    const text = norm(stripVersion(title));
+    if (/^PPC\b/i.test(text)) return compact('Poker Players Championship');
+    if (/^10\s*-\s*Game\s*CS\b/i.test(text)) return compact('10-Game MIX Championship');
+    return '';
+  }
+
+  function tournamentNoFromName(name) {
+    const text = norm(name).replace(/^【[^】]+】\s*/, '');
+    const m = text.match(/^[#＃]\s*0*(\d{1,3})(?:\b|\s)/);
+    return m ? String(Number(m[1])) : '';
+  }
+
+  function prizeGroupKey(title) {
+    const no = tournamentNoFromName(title);
+    const key = baseKey(title);
+    return no ? `no:${no}:${key}` : `name:${key}`;
+  }
+
+  function strictNameMatch(inputKey, pwKey, inputName = '') {
+    if (!inputKey || !pwKey) return false;
+    if (inputKey === pwKey) return true;
+    if (inputKey === 'pokerplayerschampionship' || /\bPPC\b/i.test(norm(inputName))) {
+      return pwKey.includes('pokerplayerschampionship');
+    }
+    if (inputKey === '10gamemixchampionship' || /^10\s*-\s*Game\s*CS\b/i.test(norm(inputName))) {
+      return pwKey.includes('10gamemixchampionship');
+    }
+    if (inputKey.length < 5 || pwKey.length < 5) return false;
+    return pwKey.includes(inputKey);
+  }
+
+  function dayNumber(name) {
+    const m = String(name || '').match(/\bDay\s*(\d+)/i);
+    return m ? Number(m[1]) : null;
+  }
+
+  function isDayOne(name) {
+    return /\bDay\s*1[A-Z]?\b/i.test(String(name || ''));
+  }
+
+  function teamSizeFromText(text) {
+    const s = norm(text).toLowerCase();
+    if (/3on3/.test(s)) return 3;
+    if (/2on2|tag team|twins/.test(s)) return 2;
+    return 1;
+  }
+
+  function isMultiPlayerGroup(group) {
+    const text = `${group?.inputName || ''} ${(group?.variants || []).map(v => `${v.sourceTitle} ${v.currency}`).join(' ')}`;
+    return /3on3|2on2|tag team|twins|1\s*人分|player/i.test(text);
+  }
+
+  function findRow(rows, pattern) {
+    return rows.findIndex(row => row.some(v => pattern.test(norm(v))));
   }
 
   function findRankRows(rows, currencyRowIndex) {
     const start = Math.max(0, currencyRowIndex + 1);
     const maxCols = Math.max(0, ...rows.map(row => row.length));
     let best = { col: 0, items: [] };
-    for (let col = 0; col < Math.min(maxCols, 8); col++) {
+    for (let col = 0; col < Math.min(maxCols, 12); col++) {
       const items = [];
       for (let r = start; r < rows.length; r++) {
-        const value = cell(rows[r], col);
-        const rank = parseRank(value);
-        if (rank && isRankLabel(value)) items.push({ row: rows[r], rank });
+        const rank = parseRank(cell(rows[r], col));
+        if (rank) items.push({ row: rows[r], rowIndex: r, rank, rankCol: col });
       }
       if (items.length > best.items.length) best = { col, items };
     }
-    return best.items;
+    const firstRank = best.items.findIndex(item => item.rank === 1);
+    const source = firstRank >= 0 ? best.items.slice(firstRank) : best.items;
+    const clean = [];
+    const seen = new Set();
+    let prev = 0;
+    for (const item of source) {
+      const labelText = norm(item.row.join(' '));
+      if (/\bTotal\b|合計|In Prize|Status|Entry|Fee|Rake|PW\s*COIN|USDT/i.test(labelText)) continue;
+      if (clean.length && item.rank === 1 && prev > 1) break;
+      if (clean.length && item.rank < prev) break;
+      if (seen.has(item.rank)) continue;
+      clean.push(item);
+      seen.add(item.rank);
+      prev = item.rank;
+    }
+    clean.rankCol = best.col;
+    clean.rawCount = best.items.length;
+    clean.skippedBeforeFirstRank = firstRank > 0 ? firstRank : 0;
+    return clean;
   }
 
-  function isPwCoinLabel(value) {
-    return /PW\s*COIN/i.test(String(value || ''));
-  }
-
-  function looksLikeTournamentTitle(value) {
-    const text = normalizeSpace(value);
+  function looksLikeTitle(value) {
+    const text = norm(value);
     if (!text) return false;
-    if (/^\d{1,2}\/\d{1,2}$/.test(text)) return false;
     if (/^(Entry|Fee|Rake|Other Costs|USDT|USD|PW\s*COIN|JPY|Date|Close|Total|Status|In Prize|In Prize %)$/i.test(text)) return false;
-    return /[A-Za-z\u3040-\u30ff\u3400-\u9fff]/.test(text);
+    if (/^\d{1,2}\/\d{1,2}/.test(text)) return false;
+    return /[A-Za-z\u3040-\u30ff\u3400-\u9fff#＃]/.test(text);
   }
 
-  function findCurrencyRowIndex(rows, statusRowIndex) {
-    for (let i = statusRowIndex + 1; i < Math.min(rows.length, statusRowIndex + 5); i++) {
-      if ((rows[i] || []).some(value => isPwCoinLabel(value))) return i;
+  function blockStatus(statusRow, col, start, end) {
+    const same = norm(cell(statusRow, col));
+    if (same) return same;
+    for (let c = col; c >= start; c--) {
+      const v = norm(cell(statusRow, c));
+      if (v) return v;
     }
-    return rows.findIndex(row => row.some(value => isPwCoinLabel(value)));
-  }
-
-  function buildTournamentBlocks(tournamentRow, currencyRow) {
-    const titleCols = [];
-    for (let col = 0; col < tournamentRow.length; col++) {
-      const title = normalizeSpace(cell(tournamentRow, col));
-      if (looksLikeTournamentTitle(title)) titleCols.push({ col, title });
+    for (let c = col + 1; c < end; c++) {
+      const v = norm(cell(statusRow, c));
+      if (v) return v;
     }
-    return titleCols.map((item, index) => {
-      const endCol = index + 1 < titleCols.length ? titleCols[index + 1].col : tournamentRow.length;
-      return { titleCol: item.col, title: item.title, startCol: item.col, endCol };
-    }).filter(block => {
-      for (let col = block.startCol; col < block.endCol; col++) {
-        if (isPwCoinLabel(cell(currencyRow, col))) return true;
-      }
-      return false;
-    });
-  }
-
-  function stripVersionLabels(name) {
-    return normalizeSpace(name)
-      .replace(/[（(]\s*(?:全体|コインのみ|voucherのみ|バウチャーのみ|APT抜き|apt抜き)\s*[）)]/gi, '')
-      .replace(/\s*\d+\s*位\s*$/i, '')
-      .replace(/\s*(?:アップグレード|upgrade)\s*$/gi, '')
-      .trim();
-  }
-
-  function baseKey(name) {
-    return normalizeText(stripVersionLabels(name))
-      .replace(/\bsponsored\s+by\b.*$/i, ' ')
-      .replace(/\b(nlh|plo|fl|hold'?em|omaha|draw|event|sponsored|by)\b/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
-  function compactKey(name) {
-    return baseKey(name).replace(/[^a-z0-9\u3040-\u30ff\u3400-\u9fff]/g, '');
-  }
-
-  function romanValue(value) {
-    const text = String(value || '').toUpperCase();
-    const map = {
-      'Ⅰ': 1, 'Ⅱ': 2, 'Ⅲ': 3, 'Ⅳ': 4, 'Ⅴ': 5, 'Ⅵ': 6, 'Ⅶ': 7, 'Ⅷ': 8, 'Ⅸ': 9, 'Ⅹ': 10,
-      'I': 1, 'II': 2, 'III': 3, 'IV': 4, 'V': 5, 'VI': 6, 'VII': 7, 'VIII': 8, 'IX': 9, 'X': 10
-    };
-    return map[text] || null;
-  }
-
-  function normalizeRunSuffix(name) {
-    const value = stripVersionLabels(name);
-    return value.replace(/\s*([ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]|I{1,3}|IV|V|VI{0,3}|IX|X)\s*$/i, (_, roman) => {
-      const num = romanValue(roman);
-      return num ? String(num) : roman;
-    });
-  }
-
-  function detectVersion(title) {
-    const text = normalizeText(title);
-    if (/コインのみ|coin only|pw coin only/.test(text)) return 'coin';
-    if (/voucherのみ|voucher only|バウチャーのみ/.test(text)) return 'voucher';
-    if (/全体|overall/.test(text)) return 'all';
-    if (/upgrade|アップグレード/.test(text)) return 'upgrade';
-    if (/apt抜き|without apt/.test(text)) return 'special';
-    return 'base';
-  }
-
-  function detectStatus(status) {
-    const text = normalizeText(status);
-    if (!text) return 'unknown';
-    if (/確定レート|confirmed|final/.test(text)) return 'confirmed';
-    if (/不使用|未使用|使わない|not use|unused/.test(text)) return 'unused';
-    if (/アップグレード|upgrade/.test(text)) return 'upgrade';
-    return 'unknown';
-  }
-
-  function payoutMode(text) {
-    const value = String(text || '');
-    if (/player|プレイヤー|個人|1人分|heads?\s*up|hu\b/i.test(value)) return 'player';
-    if (/team|チーム|3on3|2on2/i.test(value)) return 'team';
     return '';
-  }
-
-  function dayNumber(name) {
-    const m = String(name || '').match(/\bday\s*(\d+)[a-z]?\b|day(\d+)[a-z]?/i);
-    return m ? Number(m[1] || m[2]) : null;
-  }
-
-  function isDayOne(name) {
-    return /\bday\s*1[a-z]?\b|day1[a-z]?/i.test(String(name || '')) || dayNumber(name) === 1;
-  }
-
-  function trailingRunNumber(name) {
-    const stripped = stripVersionLabels(name);
-    const match = stripped.match(/(.+?)(\d+)\s*$/);
-    if (!match) return { baseName: stripped, runNumber: null };
-    return { baseName: normalizeSpace(match[1]), runNumber: Number(match[2]) };
-  }
-
-  function romanRunNumber(name) {
-    const stripped = stripVersionLabels(name);
-    const match = stripped.match(/(.+?)\s*([ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]|I{1,3}|IV|V|VI{0,3}|IX|X)\s*$/i);
-    if (!match) return null;
-    return { baseName: normalizeSpace(match[1]), runNumber: romanValue(match[2]) };
-  }
-
-  function teamFamilyKey(name) {
-    return compactKey(String(name || '').replace(/1\s*人分|1人分|player|team/gi, ''));
   }
 
   function parsePrizeSheet(raw) {
     const rows = splitTsv(raw);
-    let tournamentRowIndex = findRowIndex(rows, /^Tournament$/i);
-    const totalRowIndex = findRowIndex(rows, /^Total$/i);
-    let statusRowIndex = findRowIndex(rows, /^Status$/i);
-    if (tournamentRowIndex < 0 && rows.length) tournamentRowIndex = 0;
-    if (statusRowIndex < 0) statusRowIndex = findAnyRowIndex(rows, looksLikeStatusValue);
-    const currencyRowIndex = statusRowIndex >= 0 ? findCurrencyRowIndex(rows, statusRowIndex) : -1;
+    let titleRowIndex = findRow(rows, /^Tournament$/i);
+    if (titleRowIndex < 0) titleRowIndex = 0;
+    const totalRowIndex = findRow(rows, /^Total$/i);
+    let statusRowIndex = findRow(rows, /^Status$/i);
+    if (statusRowIndex < 0) statusRowIndex = findRow(rows, /確定|不使用|アップグレード|upgrade/i);
+    const currencyRowIndex = statusRowIndex >= 0
+      ? rows.findIndex((row, i) => i > statusRowIndex && i < statusRowIndex + 6 && row.some(isPwCoin))
+      : -1;
     const rankRows = currencyRowIndex >= 0 ? findRankRows(rows, currencyRowIndex) : [];
     const errors = [];
-
-    if (tournamentRowIndex < 0) errors.push('Tournament行、または1行目の大会名が見つかりません。');
+    if (titleRowIndex < 0) errors.push('大会名行が見つかりません。');
     if (totalRowIndex < 0) errors.push('Total行が見つかりません。');
-    if (statusRowIndex < 0) errors.push('Status行、または確定/不使用/アップグレード行が見つかりません。');
+    if (statusRowIndex < 0) errors.push('確定/不使用/アップグレード行が見つかりません。');
     if (currencyRowIndex < 0) errors.push('PW COIN行が見つかりません。');
-    if (!rankRows.length) errors.push('Prize順位行が見つかりません。');
-    if (errors.length) return { ok: false, errors, variants: [], groups: [] };
+    if (!rankRows.length) errors.push('順位行が見つかりません。');
+    if (errors.length) return { errors, groups: [] };
 
-    const tournamentRow = rows[tournamentRowIndex];
+    const titleRow = rows[titleRowIndex];
     const totalRow = rows[totalRowIndex];
     const statusRow = rows[statusRowIndex];
     const currencyRow = rows[currencyRowIndex];
-    const blocks = buildTournamentBlocks(tournamentRow, currencyRow);
-    const variants = [];
+    const titleCols = [];
+    for (let col = 0; col < titleRow.length; col++) {
+      const title = norm(cell(titleRow, col));
+      if (looksLikeTitle(title)) titleCols.push({ col, title });
+    }
 
-    for (const block of blocks) {
-      const title = block.title;
-      for (let col = block.startCol; col < block.endCol; col++) {
-        const currencyLabel = normalizeSpace(cell(currencyRow, col));
-        if (!isPwCoinLabel(currencyLabel)) continue;
-        const statusRaw = blockStatusCell(statusRow, col, block);
-        const total = normalizeMoney(cell(totalRow, col));
+    const variants = [];
+    titleCols.forEach((item, index) => {
+      const end = index + 1 < titleCols.length ? titleCols[index + 1].col : titleRow.length;
+      for (let col = item.col; col < end; col++) {
+        const currency = norm(cell(currencyRow, col));
+        if (!isPwCoin(currency)) continue;
         const prizes = [];
-        const seenRanks = new Set();
-        for (const item of rankRows) {
-          const amount = normalizeMoney(cell(item.row, col));
-          if (amount == null || amount === 0) continue;
-          if (seenRanks.has(item.rank)) continue;
-          seenRanks.add(item.rank);
-          prizes.push({ rank: item.rank, amount });
+        for (const rr of rankRows) {
+          const amount = moneyNumber(cell(rr.row, col));
+          if (amount == null || amount <= 0) continue;
+          prizes.push({ rank: rr.rank, amount, sourceRow: rr.rowIndex + 1 });
         }
-        if (total == null && !prizes.length) continue;
-        const mode = payoutMode(currencyLabel) || payoutMode(title);
+        const rawTotal = moneyNumber(cell(totalRow, col));
+        const sumPrizes = prizes.reduce((sum, row) => sum + row.amount, 0);
+        const statusRaw = blockStatus(statusRow, col, item.col, end);
+        const kind = statusKind(statusRaw);
+        const mode = /player/i.test(currency) ? 'player' : /team/i.test(currency) ? 'team' : (/1\s*人分|player/i.test(item.title) ? 'player' : /team|3on3|tag/i.test(item.title) ? 'team' : 'normal');
+        const total = sumPrizes;
         variants.push({
           id: `v${variants.length}`,
-          inputName: title,
-          sourceTitle: `${title}${mode ? ` / ${mode}` : ''}`,
-          baseName: stripVersionLabels(title),
-          key: compactKey(title),
-          version: detectVersion(title),
+          inputName: item.title,
+          sourceTitle: item.title,
+          baseName: stripVersion(item.title),
+          key: prizeGroupKey(item.title),
+          version: detectVersion(item.title),
+          status: kind,
           statusRaw,
-          status: detectStatus(statusRaw),
-          total: total || prizes.reduce((sum, prize) => sum + prize.amount, 0),
-          prizes: prizes.sort((a, b) => a.rank - b.rank),
-          payoutMode: mode,
-          currencyLabel,
-          column: col
+          mode,
+          currency,
+          total,
+          prizes,
+          valid: kind !== 'unused' && total > 0 && prizes.some(p => p.amount > 0) && prizes.every(p => p.amount >= 0),
+          column: col,
+          debug: {
+            column: col + 1,
+            rankColumn: (rankRows.rankCol ?? 0) + 1,
+            rawRankRows: rankRows.rawCount || rankRows.length,
+            skippedBeforeFirstRank: rankRows.skippedBeforeFirstRank || 0,
+            rawTotal,
+            sumPrizes,
+            firstRank: prizes[0]?.rank || '',
+            lastRank: prizes[prizes.length - 1]?.rank || '',
+            firstSourceRow: prizes[0]?.sourceRow || '',
+            lastSourceRow: prizes[prizes.length - 1]?.sourceRow || ''
+          },
+          summary: {
+            total,
+            first: prizes[0]?.amount || 0,
+            last: prizes[prizes.length - 1]?.amount || 0,
+            rows: prizes.length
+          }
         });
       }
-    }
-    if (!variants.length) {
-      return {
-        ok: false,
-        errors: ['Prize列が見つかりません。大会名行、Status行、PW COIN行、順位行を含めて貼り付けてください。'],
-        variants: [],
-        groups: []
-      };
-    }
+    });
 
+    if (!variants.length) return { errors: ['Prize列が見つかりません。'], groups: [] };
     const grouped = new Map();
     for (const variant of variants) {
-      const key = compactKey(normalizeRunSuffix(variant.baseName));
-      if (!grouped.has(key)) grouped.set(key, []);
-      grouped.get(key).push(variant);
+      if (!grouped.has(variant.key)) grouped.set(variant.key, []);
+      grouped.get(variant.key).push(variant);
     }
-    const groups = [...grouped.entries()].map(([key, groupVariants], index) => ({
+    const groups = [...grouped.values()].map((vars, index) => ({
       id: `g${index}`,
-      key,
-      inputName: groupVariants[0]?.baseName || groupVariants[0]?.inputName || key,
-      variants: dedupeVariants(groupVariants)
+      inputName: vars[0].baseName || vars[0].inputName,
+      key: vars[0].key,
+      variants: vars
     }));
-    return { ok: true, errors: [], variants, groups };
+    return { errors: [], groups, variants };
   }
 
-  function dedupeVariants(variants) {
+  function isVisible(win, el) {
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    const style = win.getComputedStyle(el);
+    return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+  }
+
+  function waitForWindowLoad(win, timeoutMs = APP.waitMs) {
+    return new Promise((resolve, reject) => {
+      const start = Date.now();
+      const tick = () => {
+        try {
+          if (!win || win.closed) return reject(new Error('WINDOW_CLOSED'));
+          if (win.document && win.document.readyState === 'complete') return resolve(true);
+        } catch (e) {
+          return reject(e);
+        }
+        if (Date.now() - start >= timeoutMs) return reject(new Error('window load timeout'));
+        setTimeout(tick, APP.pollMs);
+      };
+      tick();
+    });
+  }
+
+  async function waitForInWindow(win, fn, timeoutMs = 18000) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      try {
+        const result = fn(win);
+        if (result) return result;
+      } catch (_) {}
+      await sleep(APP.pollMs);
+    }
+    return null;
+  }
+
+  function dataTable(win) {
+    try {
+      if (!win.jQuery || !win.jQuery.fn || !win.jQuery.fn.dataTable) return null;
+      for (const table of Array.from(win.jQuery.fn.dataTable.tables() || [])) {
+        if (!win.jQuery.fn.DataTable.isDataTable(table)) continue;
+        const dt = win.jQuery(table).DataTable();
+        if (dt) return dt;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  function dataTableNode(dt) {
+    try { return dt?.table?.().node?.() || null; } catch (_) { return null; }
+  }
+
+  function rowsForRead(win, searchApplied) {
+    const rows = [];
     const seen = new Set();
-    const result = [];
-    for (const variant of variants) {
-      const prizeSig = (variant.prizes || []).map(p => `${p.rank}:${p.amount}`).join(',');
-      const sig = [variant.sourceTitle, variant.payoutMode, variant.total, prizeSig].join('|');
-      if (seen.has(sig)) continue;
-      seen.add(sig);
-      result.push(variant);
-    }
-    return result;
-  }
-
-  function parsePortal(raw) {
-    if (!normalizeSpace(raw)) return { ok: true, errors: [], entries: [] };
-    const rows = splitTsv(raw);
-    const headerIndex = rows.findIndex(row =>
-      row.some(c => normalizeSpace(c) === '#') &&
-      row.some(c => /^Name$/i.test(normalizeSpace(c)))
-    );
-    if (headerIndex < 0) return { ok: false, errors: ['# / Name のヘッダーが見つかりません。'], entries: [] };
-    const header = rows[headerIndex].map(normalizeSpace);
-    const noCol = header.findIndex(c => c === '#');
-    const nameCol = header.findIndex(c => /^Name$/i.test(c));
-    const entries = [];
-    for (let i = headerIndex + 1; i < rows.length; i++) {
-      const noRaw = normalizeSpace(cell(rows[i], noCol));
-      const name = normalizeSpace(cell(rows[i], nameCol));
-      if (!noRaw || !name) continue;
-      if (/^\(s\d+\)$/i.test(noRaw)) continue;
-      const num = Number(String(noRaw).match(/\d+/)?.[0] || '');
-      if (!Number.isInteger(num) || num <= 0) continue;
-      entries.push({
-        no: String(num),
-        noDisplay: String(num).padStart(2, '0'),
-        name,
-        key: compactKey(name),
-        day: dayNumber(name)
-      });
-    }
-    return { ok: true, errors: [], entries };
-  }
-
-  function cleanOfficialTournamentName(raw) {
-    const fullName = normalizeSpace(raw);
-    const afterEventPrefix = fullName.replace(/^【[^】]+】\s*/, '');
-    const noMatch = afterEventPrefix.match(/[#＃]\s*0*(\d+)\b/);
-    const no = noMatch ? Number(noMatch[1]) : 0;
-    const name = afterEventPrefix
-      .replace(/^[#＃]\s*0*\d+\s*/, '')
-      .trim();
-    return {
-      fullName,
-      no: no ? String(no) : '',
-      noDisplay: no ? String(no).padStart(2, '0') : '',
-      name,
-      key: compactKey(name),
-      day: dayNumber(name)
+    const add = row => {
+      if (!row || !String(row.innerHTML || '').includes('/cb/torneio/painel/')) return;
+      const key = row.outerHTML || row.innerText || Math.random();
+      if (seen.has(key)) return;
+      seen.add(key);
+      rows.push(row);
     };
+    const dt = dataTable(win);
+    try {
+      if (dt) {
+        const selector = searchApplied ? { search: 'applied' } : {};
+        dt.rows(selector).nodes().each(add);
+        const node = dataTableNode(dt);
+        if (node) [...node.querySelectorAll('tbody tr')].forEach(add);
+      }
+      [...win.document.querySelectorAll('tr')].forEach(add);
+    } catch (_) {}
+    return rows;
   }
 
-  function extractPainelUrlFromRow(row) {
-    const link = row.querySelector('a[href*="/cb/torneio/painel/"]');
-    if (link?.href) return link.href;
-    const html = row.innerHTML || '';
-    const match = html.match(/\/cb\/torneio\/painel\/(\d+)/);
-    return match ? painelUrlFromId(match[1]) : '';
+  function waitDraw(win, dt) {
+    return new Promise(resolve => {
+      const node = dataTableNode(dt);
+      if (!node || !win.jQuery) return resolve(false);
+      let done = false;
+      const finish = ok => {
+        if (done) return;
+        done = true;
+        try { win.jQuery(node).off('draw.dt', onDraw); } catch (_) {}
+        resolve(ok);
+      };
+      const timer = win.setTimeout(() => finish(false), APP.waitMs);
+      function onDraw() {
+        win.clearTimeout(timer);
+        finish(true);
+      }
+      try { win.jQuery(node).one('draw.dt', onDraw); } catch (_) { finish(false); }
+    });
   }
 
-  function cleanTournamentNameFromRowText(rowText) {
-    let s = normalizeSpace(rowText);
-    const bracketed = s.match(/(【[^】]+】\s*(?:[#＃]\s*\d+[A-Za-z]?|\(s\d+\)|s\d+)\s+.+?)(?:\s+\d{1,2}\/\d{1,2}\/\d{4}|\s+Aberto|\s+Fechado|\s+オープン|\s+クローズ|$)/i);
-    if (bracketed) return normalizeSpace(bracketed[1]);
-    const withNo = s.match(/((?:[#＃]\s*\d+[A-Za-z]?|\(s\d+\)|s\d+)\s+.+?)(?:\s+\d{1,2}\/\d{1,2}\/\d{4}|\s+Aberto|\s+Fechado|\s+オープン|\s+クローズ|$)/i);
-    if (withNo) return normalizeSpace(withNo[1]);
+  async function searchTable(win, prefix) {
+    const dt = dataTable(win);
+    if (dt) {
+      const draw = waitDraw(win, dt);
+      try {
+        dt.search(prefix);
+        dt.page.len(APP.pageLength);
+        dt.page(0);
+        dt.draw();
+        await draw;
+        await sleep(200);
+      } catch (_) {}
+      return dt;
+    }
+    const input = [...win.document.querySelectorAll('.dataTables_filter input[type="search"], input[type="search"]')].find(el => isVisible(win, el));
+    if (input) {
+      input.value = prefix;
+      input.dispatchEvent(new win.Event('input', { bubbles: true }));
+      input.dispatchEvent(new win.Event('change', { bubbles: true }));
+      await sleep(900);
+    }
+    return dataTable(win);
+  }
+
+  async function goTablePage(win, dt, page) {
+    if (!dt) return;
+    const draw = waitDraw(win, dt);
+    try {
+      dt.page(page).draw('page');
+      await draw;
+      await sleep(120);
+    } catch (_) {}
+  }
+
+  function cleanTournamentName(name) {
+    return norm(name).replace(/\s*-\s*PokerWeb\s*$/i, '').replace(/\s*監査(?:済み|待ち)\s*$/g, '');
+  }
+
+  function extractTournamentTitleFromRow(rowText) {
+    let s = norm(rowText);
+    const m = s.match(/(【[^】]+】\s*(?:#\d+[A-Za-z]?|\(s\d+\)|s\d+)\s+.+?)(?:\s+\d{1,2}\/\d{1,2}\/\d{4}|\s+Aberto|\s+Fechado|\s+オープン|\s+クローズ|$)/i);
+    if (m) return cleanTournamentName(m[1]);
+    const m2 = s.match(/(【[^】]+】.+?)(?:\s+\d{1,2}\/\d{1,2}\/\d{4}|\s+Aberto|\s+Fechado|$)/i);
+    if (m2) return cleanTournamentName(m2[1]);
     s = s
       .replace(/^アクション\s+/i, '')
       .replace(/^\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}:\d{2}\s+/, '')
@@ -470,754 +520,389 @@
       .replace(/\s+オープン$/i, '')
       .replace(/\s+クローズ$/i, '')
       .trim();
-    return normalizeSpace(s);
+    return cleanTournamentName(s);
   }
 
-  function getPrimaryDataTable() {
-    try {
-      if (!window.jQuery || !window.jQuery.fn || !window.jQuery.fn.dataTable) return null;
-      const tables = window.jQuery.fn.dataTable.tables();
-      for (const table of Array.from(tables || [])) {
-        if (!window.jQuery.fn.DataTable.isDataTable(table)) continue;
-        const dt = window.jQuery(table).DataTable();
-        if (dt) return dt;
-      }
-    } catch (_) {}
-    return null;
-  }
-
-  function getDataTableRows(dt, searchApplied) {
-    const rows = [];
-    try {
-      const selector = searchApplied ? { search: 'applied' } : {};
-      dt.rows(selector).nodes().each(tr => {
-        if (tr && String(tr.innerHTML || '').includes('/cb/torneio/painel/')) rows.push(tr);
-      });
-    } catch (_) {}
-    return rows;
-  }
-
-  function waitDataTableDraw(dt, timeout = 8000) {
-    return new Promise(resolve => {
-      const node = dt?.table?.().node?.();
-      if (!node || !window.jQuery) {
-        resolve(false);
-        return;
-      }
-      let done = false;
-      const finish = ok => {
-        if (done) return;
-        done = true;
-        try { window.jQuery(node).off('draw.dt', onDraw); } catch (_) {}
-        resolve(ok);
-      };
-      const timer = setTimeout(() => finish(false), timeout);
-      function onDraw() {
-        clearTimeout(timer);
-        finish(true);
-      }
-      try { window.jQuery(node).one('draw.dt', onDraw); } catch (_) { finish(false); }
-    });
-  }
-
-  async function setDataTableSearchAndLength(dt, prefix) {
-    if (!dt) return;
-    const draw = waitDataTableDraw(dt);
-    try {
-      dt.search(prefix || '');
-      dt.page.len(100);
-      dt.page(0);
-      dt.draw();
-      await draw;
-      await sleep(120);
-    } catch (_) {}
-  }
-
-  async function goDataTablePage(dt, pageIndex) {
-    if (!dt) return;
-    const draw = waitDataTableDraw(dt);
-    try {
-      dt.page(pageIndex).draw('page');
-      await draw;
-      await sleep(80);
-    } catch (_) {}
-  }
-
-  function cacheTournamentEntry(entry, source) {
-    if (!entry?.fullName || !entry?.tournamentId || !entry?.url) return false;
-    const cache = readUrlCache();
-    const key = `${entry.fullName}||${entry.tournamentId}`;
-    cache[key] = {
-      name: entry.fullName,
-      tournamentId: entry.tournamentId,
-      url: entry.url,
-      painelUrl: entry.url,
-      actualName: entry.fullName,
-      matchedRow: entry.matchedRow || '',
-      savedAt: nowText(),
-      source: source || 'prize-check-url-manager-scan'
-    };
-    writeUrlCache(cache);
-    return true;
-  }
-
-  function extractTournamentEntryFromRow(row, sourceLabel, pageNo) {
-    const url = extractPainelUrlFromRow(row);
-    const tournamentId = getTournamentIdFromUrl(url);
-    if (!tournamentId) return null;
-    const matchedRow = normalizeSpace(row.innerText || row.textContent || '');
-    const fullName = cleanTournamentNameFromRowText(matchedRow);
-    const parsed = cleanOfficialTournamentName(fullName);
-    if (!parsed.no || !parsed.name) return null;
+  function extractTournament(row) {
+    const html = row.innerHTML || '';
+    const match = html.match(/\/cb\/torneio\/painel\/(\d+)/);
+    if (!match) return null;
+    const rowText = norm(row.innerText || row.textContent || '');
+    const actualName = extractTournamentTitleFromRow(rowText);
+    const afterPrefix = actualName.replace(/^【[^】]+】\s*/, '');
+    const no = tournamentNoFromName(afterPrefix);
     return {
-      ...parsed,
-      url,
-      tournamentId,
-      matchedRow,
-      source: sourceLabel || 'datatable',
-      pageNo: pageNo || ''
+      tournamentId: match[1],
+      url: `/cb/torneio/painel/${match[1]}`,
+      actualName,
+      name: afterPrefix.replace(/^[#＃]\s*0*\d+\s*/, '').trim(),
+      no,
+      noDisplay: no ? String(Number(no)).padStart(2, '0') : '',
+      day: dayNumber(actualName),
+      matchedRow: rowText
     };
   }
 
-  async function extractTournamentEntriesFromCurrentPage(prefix) {
-    const dt = getPrimaryDataTable();
-    const seen = new Set();
-    const entries = [];
-
-    if (dt) {
-      await setDataTableSearchAndLength(dt, prefix);
-      const info = dt.page?.info?.();
-      const pages = info?.pages || 1;
-      for (let page = 0; page < pages; page++) {
-        await goDataTablePage(dt, page);
-        for (const row of getDataTableRows(dt, true)) {
-          const entry = extractTournamentEntryFromRow(row, 'datatable', page + 1);
-          if (!entry) continue;
-          const key = entry.url;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          cacheTournamentEntry(entry, `prize-check-datatable-p${page + 1}`);
-          entries.push(entry);
-        }
-      }
-    }
-
-    if (!entries.length) {
-      for (const row of document.querySelectorAll('tr')) {
-        const entry = extractTournamentEntryFromRow(row, 'dom-fallback', '');
-        if (!entry) continue;
-        if (prefix && !entry.fullName.includes(prefix) && !compactKey(entry.fullName).includes(compactKey(prefix))) continue;
-        const key = entry.url;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        cacheTournamentEntry(entry, 'prize-check-dom-fallback');
-        entries.push(entry);
-      }
-    }
-
-    return entries.sort((a, b) => {
-      const byNo = Number(a.no) - Number(b.no);
-      if (byNo) return byNo;
-      return String(a.fullName || a.name).localeCompare(String(b.fullName || b.name), 'ja');
-    });
-  }
-
-  function aliasTournamentName(name) {
-    return normalizeSpace(name)
-      .replace(/^【[^】]+】\s*/, '')
-      .replace(/\bPPC\b/gi, 'Players Poker Championship')
-      .replace(/^[#＃]?\s*\d{1,3}\s+/, '')
-      .replace(/1\s*人分/g, '')
-      .replace(/\bplayer\b/gi, '')
-      .replace(/\bteam\b/gi, '');
-  }
-
-  function portalEntryKey(entry) {
-    return [entry?.noDisplay || '', entry?.name || '', entry?.fullName || '', entry?.tournamentId || ''].join('|');
-  }
-
-  function leadingTournamentNo(name) {
-    const text = normalizeSpace(name).replace(/^【[^】]+】\s*/, '');
-    const match = text.match(/^\s*[#＃]?\s*0*(\d{1,3})\b/);
-    return match ? String(Number(match[1])) : '';
-  }
-
-  function chooseVariant(group) {
-    const usable = group.variants.filter(v => v.status !== 'unused');
-    const player = usable.filter(v => v.payoutMode === 'player');
-    const candidates = player.length ? player : usable.length ? usable : group.variants;
-    const confirmed = candidates.filter(v => v.status === 'confirmed');
-    const upgrade = candidates.filter(v => v.status === 'upgrade' || v.version === 'upgrade');
-    if (candidates.length === 1) return { variant: candidates[0], needsConfirm: false, candidates };
-    if (upgrade.length) return { variant: confirmed[0] || null, needsConfirm: true, candidates };
-    if (confirmed.length === 1) return { variant: confirmed[0], needsConfirm: false, candidates };
-    if (player.length && confirmed.length > 1) {
-      const exact = confirmed.filter(v => v.version === 'base' || v.version === 'all');
-      if (exact.length === 1) return { variant: exact[0], needsConfirm: false, candidates };
-    }
-    return { variant: null, needsConfirm: true, candidates };
-  }
-
-  function statusLabel(variant) {
-    if (variant?.statusRaw) return variant.statusRaw;
-    if (variant?.status === 'confirmed') return '確定レート';
-    if (variant?.status === 'upgrade' || variant?.version === 'upgrade') return 'アップグレード';
-    if (variant?.status === 'unused') return '不使用';
-    return '状態不明';
-  }
-
-  function payoutLabel(variant) {
-    if (variant?.payoutMode === 'player') return 'PW COIN/Player';
-    if (variant?.payoutMode === 'team') return 'PW COIN/Team';
-    return variant?.currencyLabel || 'PW COIN';
-  }
-
-  function formatVariantLabel(variant) {
-    if (!variant) return '';
-    const total = variant.total ? ` / ¥${variant.total.toLocaleString('ja-JP')}` : '';
-    return `${statusLabel(variant)} / ${payoutLabel(variant)}${total} / ${variant.sourceTitle || variant.inputName || ''}`;
-  }
-
-  function matchPrizeToPortal(group, portalEntries) {
-    const inputName = aliasTournamentName(group.inputName);
-    const inputNo = leadingTournamentNo(group.inputName);
-    const run = romanRunNumber(inputName) || trailingRunNumber(inputName);
-    const gKey = compactKey(aliasTournamentName(run.runNumber ? run.baseName : inputName));
-    let candidates = inputNo
-      ? portalEntries.filter(entry => String(Number(entry.no || 0)) === inputNo && !isDayOne(entry.name))
-      : [];
-
-    if (!inputNo && !candidates.length) candidates = portalEntries.filter(entry => {
-      if (isDayOne(entry.name)) return false;
-      const eKey = compactKey(aliasTournamentName(entry.name || entry.fullName || ''));
-      return eKey.includes(gKey) || gKey.includes(eKey);
-    });
-    candidates = candidates.sort((a, b) => Number(a.no) - Number(b.no));
-
-    if (/main|millions/i.test(inputName)) {
-      const maxDay = Math.max(0, ...candidates.map(entry => dayNumber(entry.name)).filter(day => day > 1));
-      const day2Plus = candidates.filter(entry => dayNumber(entry.name) && dayNumber(entry.name) > 1);
-      if (maxDay) candidates = candidates.filter(entry => dayNumber(entry.name) === maxDay);
-      else if (day2Plus.length) candidates = day2Plus;
-    }
-
-    if (run.runNumber) {
-      if (candidates.length >= run.runNumber) {
-        return { entry: candidates[run.runNumber - 1], needsConfirm: false, candidates };
-      }
-      return { entry: null, needsConfirm: true, candidates };
-    }
-
-    if (candidates.length === 1) return { entry: candidates[0], needsConfirm: false, candidates };
-    return { entry: null, needsConfirm: candidates.length !== 1, candidates };
-  }
-
-  function readUrlCache() {
+  function readCache() {
     const parsed = safeJsonParse(localStorage.getItem(APP.urlCacheKey), {});
     return parsed && typeof parsed === 'object' ? parsed : {};
   }
 
-  function writeUrlCache(cache) {
+  function writeCache(cache) {
     localStorage.setItem(APP.urlCacheKey, JSON.stringify(cache));
   }
 
-  function cacheKeys(seriesName, portalEntry) {
-    const series = normalizeSpace(seriesName);
-    const full = `${series} #${portalEntry.noDisplay} ${portalEntry.name}`;
-    return [
-      full,
-      `${series} #${portalEntry.noDisplay}`,
-      `${series} ${portalEntry.name}`,
-      portalEntry.name
-    ];
-  }
-
-  function getCachedUrl(seriesName, portalEntry) {
-    const cache = readUrlCache();
-    const wantDayEarly = dayNumber(portalEntry.name);
-    if (wantDayEarly && wantDayEarly > 1) {
-      const seriesKeyEarly = normalizeText(seriesName);
-      const noPatternEarly = new RegExp(`#\\s*0*${portalEntry.no}\\b`);
-      for (const [key, item] of Object.entries(cache)) {
-        const url = typeof item === 'string' ? item : item?.url || item?.painelUrl;
-        if (!url || !/\/cb\/torneio\/painel\/\d+/.test(url)) continue;
-        const haystack = normalizeSpace(`${key} ${item?.name || ''} ${item?.actualName || ''}`);
-        if (seriesKeyEarly && !normalizeText(haystack).includes(seriesKeyEarly)) continue;
-        if (!noPatternEarly.test(haystack)) continue;
-        if (isDayOne(haystack)) continue;
-        const gotDay = dayNumber(haystack);
-        if (gotDay && gotDay !== wantDayEarly) continue;
-        return { url, source: 'URL庫', cacheKey: key, item };
-      }
-      return null;
-    }
-    for (const key of cacheKeys(seriesName, portalEntry)) {
-      const item = cache[key];
-      const url = typeof item === 'string' ? item : item?.url || item?.painelUrl;
-      if (url && /\/cb\/torneio\/painel\/\d+/.test(url)) {
-        return { url, source: 'URL庫', cacheKey: key, item };
-      }
-    }
-    const seriesKey = normalizeText(seriesName);
-    const noPattern = new RegExp(`#\\s*0*${portalEntry.no}\\b`);
-    const matches = [];
-    for (const [key, item] of Object.entries(cache)) {
-      const url = typeof item === 'string' ? item : item?.url || item?.painelUrl;
-      if (!url || !/\/cb\/torneio\/painel\/\d+/.test(url)) continue;
-      const haystack = normalizeSpace(`${key} ${item?.name || ''} ${item?.actualName || ''}`);
-      const normalized = normalizeText(haystack);
-      if (seriesKey && !normalized.includes(seriesKey)) continue;
-      if (!noPattern.test(haystack)) continue;
-      matches.push({ url, source: 'URL庫', cacheKey: key, item });
-    }
-    if (matches.length) {
-      if (matches.length > 1) debug('URL cache duplicate number matches', { portalEntry, count: matches.length });
-      return matches[0];
-    }
-    return null;
-  }
-
-  function saveCachedUrl(seriesName, portalEntry, url) {
-    const cache = readUrlCache();
-    const key = cacheKeys(seriesName, portalEntry)[0];
-    const id = getTournamentIdFromUrl(url);
+  function cacheUrl(entry, source) {
+    if (!entry?.actualName || !entry?.tournamentId || !entry?.url) return;
+    const cache = readCache();
+    const key = `${entry.actualName}||${entry.tournamentId}`;
     cache[key] = {
-      tournamentName: key,
-      tournamentId: id,
-      url,
-      painelUrl: url,
-      actualName: '',
-      savedAt: new Date().toISOString(),
-      source: 'PRIZE_CHECK_MANUAL'
+      name: entry.actualName,
+      tournamentId: entry.tournamentId,
+      url: entry.url,
+      painelUrl: entry.url,
+      actualName: entry.actualName,
+      matchedRow: entry.matchedRow || '',
+      savedAt: nowText(),
+      source
     };
-    writeUrlCache(cache);
+    writeCache(cache);
   }
 
-  function getTournamentIdFromUrl(url = '') {
-    const match = String(url).match(/\/cb\/torneio\/painel\/(\d+)/);
-    return match ? match[1] : '';
+  async function openListWindow(page) {
+    const win = window.open(page.path, `pw_prize_url_${page.label}_${Date.now()}`, 'width=1280,height=900');
+    if (!win) throw new Error(`${page.label}: popup blocked`);
+    await waitForWindowLoad(win);
+    await waitForInWindow(win, w => dataTable(w) || rowsForRead(w, false).length);
+    await sleep(700);
+    return win;
   }
 
-  function painelUrlFromId(id) {
-    return `/cb/torneio/painel/${encodeURIComponent(id)}`;
-  }
-
-  function nowText() {
-    const d = new Date();
-    const pad = n => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-  }
-
-  function makeTask(group, seriesName, portalEntries) {
-    const variantChoice = chooseVariant(group);
-    const portalChoice = matchPrizeToPortal(group, portalEntries);
-    const portal = portalChoice.entry;
-    const direct = portal?.url ? { url: portal.url, source: '一覧', cacheKey: '', item: portal } : null;
-    const cached = direct || (portal ? getCachedUrl(seriesName, portal) : null);
-    const day2PlusPortals = /main/i.test(group.inputName)
-      ? portalChoice.candidates.filter(entry => dayNumber(entry.name) && dayNumber(entry.name) > 1)
-      : [];
-    const cachedDayUrls = day2PlusPortals
-      .map(entry => entry.url ? { url: entry.url, source: '一覧', cacheKey: '', item: entry } : getCachedUrl(seriesName, entry))
-      .filter(item => item?.url);
-    const urls = cachedDayUrls.length > 1 ? cachedDayUrls.map(item => item.url) : (cached?.url ? [cached.url] : []);
-    return {
-      id: group.id,
-      inputName: group.inputName,
-      variants: group.variants,
-      selectedVariantId: variantChoice.needsConfirm ? '' : (variantChoice.variant?.id || ''),
-      variantConfirmRequired: variantChoice.needsConfirm,
-      variantCandidates: variantChoice.candidates.map(v => v.id),
-      portalNo: portal?.noDisplay || '',
-      portalName: portal?.name || '',
-      portalFullName: portal?.fullName || '',
-      portalCandidates: portalChoice.candidates,
-      portalConfirmRequired: portalChoice.needsConfirm,
-      url: cached?.url || '',
-      urls,
-      urlSource: cached?.source || '',
-      urlCacheKey: cached?.cacheKey || '',
-      urlActualName: cached?.item?.actualName || cached?.item?.fullName || cached?.item?.name || '',
-      tournamentId: cached?.item?.tournamentId || getTournamentIdFromUrl(cached?.url || ''),
-      manualUrlRequired: !cached,
-      result: null
-    };
-  }
-
-  function buildTasks(seriesName, prizeGroups, portalEntries) {
-    const playerFamilies = new Set();
-    for (const group of prizeGroups) {
-      if ((group.variants || []).some(v => v.payoutMode === 'player') || /1\s*人分|1人分/.test(group.inputName)) {
-        playerFamilies.add(teamFamilyKey(group.inputName));
+  async function scanEventUrls(prefix) {
+    const found = [];
+    const seen = new Set();
+    const wins = [];
+    try {
+      for (const page of APP.listPages) {
+        setStatus(`${page.label} URLスキャン中...`);
+        const win = await openListWindow(page);
+        wins.push(win);
+        const dt = await searchTable(win, prefix);
+        const info = dt?.page?.info?.();
+        const pages = info?.pages || 1;
+        for (let p = 0; p < pages; p++) {
+          await goTablePage(win, dt, p);
+          const rows = rowsForRead(win, true);
+          for (const row of rows) {
+            const entry = extractTournament(row);
+            if (!entry) continue;
+            const hay = `${entry.actualName} ${entry.matchedRow || ''}`;
+            if (!hay.includes(prefix) && !compact(hay).includes(compact(prefix))) continue;
+            if (seen.has(entry.url)) continue;
+            seen.add(entry.url);
+            entry.sourceLabel = page.label;
+            entry.pageNo = p + 1;
+            found.push(entry);
+            cacheUrl(entry, `prize-plan-${page.label}-p${p + 1}`);
+          }
+        }
+      }
+    } finally {
+      for (const win of wins) {
+        try { if (win && !win.closed) win.close(); } catch (_) {}
       }
     }
-    const effectiveGroups = prizeGroups.filter(group => {
-      const family = teamFamilyKey(group.inputName);
-      const hasTeam = (group.variants || []).some(v => v.payoutMode === 'team');
-      const hasPlayer = (group.variants || []).some(v => v.payoutMode === 'player') || /1\s*人分|1人分/.test(group.inputName);
-      return !(hasTeam && !hasPlayer && playerFamilies.has(family));
-    });
-    const tasks = effectiveGroups.map(group => makeTask(group, seriesName, portalEntries));
-    for (const task of tasks) {
-      const portalName = task.portalName || task.inputName;
-      if (isDayOne(portalName)) {
-        task.manualUrlRequired = false;
-        task.result = {
-          judgement: '対象外',
-          pwName: '',
-          reference: '',
-          remark: 'Day 1のため対象外'
-        };
-      }
+    found.sort((a, b) => Number(a.no || 0) - Number(b.no || 0) || String(a.actualName).localeCompare(String(b.actualName), 'ja'));
+    return found;
+  }
+
+  function chooseVariant(group) {
+    if (isMultiPlayerGroup(group)) {
+      const playerVariants = group.variants.filter(v => v.valid && v.mode === 'player');
+      const confirmedPlayer = playerVariants.filter(v => v.status === 'confirmed');
+      if (confirmedPlayer.length === 1) return { variant: confirmedPlayer[0], judgement: '候補確定', note: '1人分優先', needsConfirm: false };
+      if (playerVariants.length === 1) return { variant: playerVariants[0], judgement: '候補確定', note: '1人分優先 / 状態継承', needsConfirm: false };
+      if (playerVariants.length > 1) return { variant: null, judgement: '要確認', note: '1人分候補複数', needsConfirm: true };
     }
-    return tasks;
+    const validConfirmed = group.variants.filter(v => v.valid && v.status === 'confirmed');
+    if (validConfirmed.length === 1) return { variant: validConfirmed[0], judgement: '候補確定', note: '確定レート優先', needsConfirm: false };
+    if (validConfirmed.length > 1) return { variant: null, judgement: '要確認', note: '複数の確定レート候補', needsConfirm: true };
+    const valid = group.variants.filter(v => v.valid && v.status !== 'unused');
+    if (valid.length === 1) return { variant: valid[0], judgement: '要確認', note: '確定レートなし', needsConfirm: true };
+    return { variant: null, judgement: '要確認', note: '有効Prize候補なし/複数候補', needsConfirm: true };
   }
 
-  function getCurrentPwTournamentName() {
-    const titleInput = document.querySelector('input[name="titulo_torneio"], input[name="nome"], input[name="name"]');
-    if (titleInput?.value) return normalizeSpace(titleInput.value);
-    for (const selector of ['h1', 'h2', '.page-title', '.box-title', '.panel-title', '.breadcrumb']) {
-      const el = document.querySelector(selector);
-      const text = normalizeSpace(el?.innerText || el?.textContent || '');
-      if (text) return text;
+  function matchTournament(group, entries) {
+    const no = tournamentNoFromName(group.inputName);
+    let candidates = [];
+    if (no) {
+      candidates = entries.filter(e => String(Number(e.no || 0)) === String(Number(no)) && !isDayOne(e.actualName));
+    } else {
+      const key = baseKey(group.inputName);
+      candidates = entries.filter(e => !isDayOne(e.actualName) && strictNameMatch(key, baseKey(e.name), group.inputName));
     }
-    return normalizeSpace(document.title);
-  }
-
-  function readVisiblePrizeTable() {
-    for (const table of [...document.querySelectorAll('table')]) {
-      const rows = [...table.querySelectorAll('tr')].map(tr => [...tr.children].map(td => normalizeSpace(td.innerText || td.textContent || '')));
-      if (!rows.length) continue;
-      const header = rows[0];
-      const rankCol = header.findIndex(h => /位置|順位|pos/i.test(h));
-      const amountCol = header.findIndex(h => /金額|amount|valor/i.test(h));
-      if (rankCol < 0 || amountCol < 0) continue;
-      const prizes = [];
-      for (const row of rows.slice(1)) {
-        const rank = parseRank(row[rankCol]);
-        const amount = normalizeMoney(row[amountCol]);
-        if (rank && amount != null && amount > 0) prizes.push({ rank, amount });
-      }
-      if (prizes.length) return prizes;
+    if (/main|millions/i.test(group.inputName)) {
+      const maxDay = Math.max(0, ...candidates.map(c => c.day || 0).filter(d => d > 1));
+      if (maxDay) candidates = candidates.filter(c => c.day === maxDay);
     }
-    return [];
+    if (candidates.length === 1) return { entry: candidates[0], needsConfirm: false, candidates };
+    return { entry: null, needsConfirm: true, candidates };
   }
 
-  function readInputPrizeRows() {
-    const posEls = [...document.querySelectorAll(`[name="${CSS.escape('posicao[]')}"]`)];
-    const valueEls = [...document.querySelectorAll(`[name="${CSS.escape('prizes_valor[]')}"]`)];
-    const len = Math.min(posEls.length, valueEls.length);
-    const raw = [];
-    for (let i = 0; i < len; i++) {
-      const pos = parseRank(posEls[i]?.value || posEls[i]?.textContent || '');
-      const amount = normalizeMoney(valueEls[i]?.value || valueEls[i]?.textContent || '');
-      if (pos == null || amount == null || amount <= 0) continue;
-      raw.push({ pos, amount });
-    }
-    const zeroBased = raw.some(row => row.pos === 0);
-    return raw.map(row => ({ rank: zeroBased ? row.pos + 1 : row.pos, amount: row.amount }));
+  function tournamentIdFromInput(value) {
+    const text = norm(value);
+    const m = text.match(/(?:\/painel\/|^)(\d{4,6})(?:\D|$)/);
+    return m ? m[1] : '';
   }
 
-  function readCurrentPrize() {
-    const rows = readVisiblePrizeTable();
-    const prizes = rows.length ? rows : readInputPrizeRows();
-    return {
-      name: getCurrentPwTournamentName(),
-      total: prizes.reduce((sum, row) => sum + row.amount, 0),
-      rows: prizes.sort((a, b) => a.rank - b.rank)
-    };
-  }
-
-  function readPrizeFromDocument(doc, url) {
-    const title =
-      doc.querySelector('input[name="titulo_torneio"], input[name="nome"], input[name="name"]')?.value ||
-      doc.querySelector('h1,h2,.page-title,.box-title,.panel-title,.breadcrumb')?.textContent ||
-      doc.title || '';
-    const visible = [];
-    for (const table of [...doc.querySelectorAll('table')]) {
-      const rows = [...table.querySelectorAll('tr')].map(tr => [...tr.children].map(td => normalizeSpace(td.textContent || '')));
-      if (!rows.length) continue;
-      const header = rows[0] || [];
-      const rankCol = header.findIndex(h => /位置|順位|pos/i.test(h));
-      const amountCol = header.findIndex(h => /金額|amount|valor/i.test(h));
-      if (rankCol < 0 || amountCol < 0) continue;
-      for (const row of rows.slice(1)) {
-        const rank = parseRank(row[rankCol]);
-        const amount = normalizeMoney(row[amountCol]);
-        if (rank && amount != null && amount > 0) visible.push({ rank, amount });
-      }
-    }
-    const posEls = [...doc.querySelectorAll(`[name="${CSS.escape('posicao[]')}"]`)];
-    const valueEls = [...doc.querySelectorAll(`[name="${CSS.escape('prizes_valor[]')}"]`)];
-    const input = [];
-    for (let i = 0; i < Math.min(posEls.length, valueEls.length); i++) {
-      const pos = parseRank(posEls[i]?.value || posEls[i]?.textContent || '');
-      const amount = normalizeMoney(valueEls[i]?.value || valueEls[i]?.textContent || '');
-      if (pos == null || amount == null || amount <= 0) continue;
-      input.push({ pos, amount });
-    }
-    const zeroBased = input.some(row => row.pos === 0);
-    const inputRows = input.map(row => ({ rank: zeroBased ? row.pos + 1 : row.pos, amount: row.amount }));
-    const rows = (visible.length ? visible : inputRows).sort((a, b) => a.rank - b.rank);
-    return {
-      url,
-      name: normalizeSpace(title).replace(/\s*-\s*PokerWeb\s*$/i, ''),
-      source: visible.length ? 'visible table' : 'input fields',
-      total: rows.reduce((sum, row) => sum + row.amount, 0),
-      rows
-    };
-  }
-
-  async function fetchPrizeSnapshot(url) {
-    const absoluteUrl = url.startsWith('http') ? url : new URL(url, location.origin).href;
-    const html = await fetch(absoluteUrl, { credentials: 'include' }).then(response => {
-      if (!response.ok) throw new Error(`GET ${response.status}`);
-      return response.text();
-    });
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    return readPrizeFromDocument(doc, absoluteUrl);
-  }
-
-  async function fetchTaskActual(task) {
-    const urls = (task.urls?.length ? task.urls : [task.url]).filter(Boolean);
-    if (!urls.length) return { name: task.portalName || '', total: 0, rows: [], snapshots: [] };
-    const snapshots = [];
-    for (const url of urls) snapshots.push(await fetchPrizeSnapshot(url));
-    const rows = snapshots.flatMap(snapshot => snapshot.rows || []).sort((a, b) => a.rank - b.rank);
-    return {
-      name: snapshots.map(snapshot => snapshot.name).filter(Boolean).join(' + ') || task.portalName || '',
-      total: rows.reduce((sum, row) => sum + row.amount, 0),
-      rows,
-      snapshots
-    };
-  }
-
-  function prizeMap(rows) {
-    const map = new Map();
-    for (const row of rows || []) map.set(Number(row.rank), Number(row.amount));
-    return map;
-  }
-
-  function comparePrize(expected, actual) {
-    const expectedMap = prizeMap(expected.prizes);
-    const actualMap = prizeMap(actual.rows);
-    const missing = [];
-    const extra = [];
-    const different = [];
-    for (const [rank, amount] of expectedMap.entries()) {
-      if (!actualMap.has(rank)) missing.push(rank);
-      else if (actualMap.get(rank) !== amount) different.push(rank);
-    }
-    for (const rank of actualMap.keys()) {
-      if (!expectedMap.has(rank)) extra.push(rank);
-    }
-    const totalOk = Number(actual.total || 0) === Number(expected.total || 0);
-    const rowsOk = !missing.length && !extra.length && !different.length;
-    return { ok: totalOk && rowsOk, totalOk, rowsOk, missing, extra, different };
-  }
-
-  function teamSizeForTask(task, variant) {
-    const text = normalizeText(`${task.inputName || ''} ${task.portalName || ''} ${variant?.sourceTitle || ''}`);
-    if (/3on3/.test(text)) return 3;
-    if (/2on2|tag team|twins/.test(text)) return 2;
-    return 1;
-  }
-
-  function expandedReference(task, variant) {
-    const selected = variant || task.variants.find(v => v.id === task.selectedVariantId) || task.variants[0];
-    if (!selected) return null;
-    const size = selected.payoutMode === 'player' ? teamSizeForTask(task, selected) : 1;
-    if (size <= 1) return { ...selected, comparePrizes: selected.prizes || [], compareTotal: selected.total || 0, expandSize: 1 };
-    const expanded = [];
-    let rank = 1;
-    for (const prize of selected.prizes || []) {
-      for (let i = 0; i < size; i++) expanded.push({ rank: rank++, amount: prize.amount });
-    }
-    return {
-      ...selected,
-      comparePrizes: expanded,
-      compareTotal: expanded.reduce((sum, prize) => sum + prize.amount, 0),
-      expandSize: size
-    };
-  }
-
-  function remarkForReference(ref) {
-    if (!ref) return '';
-    if (ref.expandSize > 1) return `1人分×${ref.expandSize}展開一致`;
-    if (ref.status === 'upgrade' || ref.version === 'upgrade') return 'アップグレード一致';
-    if (ref.status === 'confirmed') return '確定レート一致';
-    if (ref.version === 'coin') return 'コインのみ一致';
-    if (ref.version === 'voucher') return 'voucherのみ一致';
-    return '選択Prize一致';
-  }
-
-  function judgeTask(task, actual) {
-    if (task.result?.judgement === '対象外') return task.result;
-    if (!task.url && !(task.urls || []).length) return { judgement: '未検出', pwName: '', reference: '', remark: 'URL未登録' };
-    const selected = task.variants.find(v => v.id === task.selectedVariantId) || task.variants[0];
-    const ref = expandedReference(task, selected);
-    const result = comparePrize({ total: ref.compareTotal, prizes: ref.comparePrizes }, actual);
-    if (result.ok) {
+  function expandPrizes(item, variant) {
+    const size = variant.mode === 'player' ? teamSizeFromText(`${item.inputName} ${item.tournamentName} ${variant.sourceTitle}`) : 1;
+    if (size <= 1) {
+      const rows = variant.prizes.map(p => ({ ...p }));
       return {
-        judgement: 'OK',
-        pwName: actual.name || task.portalName,
-        reference: selected.sourceTitle,
-        referenceStatus: statusLabel(selected),
-        remark: remarkForReference(ref),
-        compare: result
+        rows,
+        total: rows.reduce((sum, p) => sum + p.amount, 0),
+        note: variant.total && variant.total !== rows.reduce((sum, p) => sum + p.amount, 0)
+          ? `Total行参考 ${yen(variant.total)}`
+          : ''
       };
     }
+    const rows = [];
+    let rank = 1;
+    for (const prize of variant.prizes) {
+      for (let i = 0; i < size; i++) rows.push({ rank: rank++, amount: prize.amount });
+    }
     return {
-      judgement: '不一致',
-      pwName: actual.name || task.portalName,
-      reference: selected.sourceTitle,
-      referenceStatus: statusLabel(selected),
-      remark: 'Prize不一致',
-      compare: result
+      rows,
+      total: rows.reduce((sum, p) => sum + p.amount, 0),
+      note: `1人分×${size}展開 / Total行参考 ${yen(variant.total)}`
     };
   }
 
-  function buildReport(tasks) {
-    const lines = [['判定', '入力名', 'PW大会名', '参照Prize', '参照Status', '備考'].join('\t')];
-    for (const task of tasks) {
-      const result = task.result || {};
-      const selected = task.variants.find(v => v.id === task.selectedVariantId) || task.variants[0] || {};
-      lines.push([
-        result.judgement || '未検出',
-        task.inputName || '',
-        result.pwName || task.portalName || '',
-        result.reference || '',
-        result.referenceStatus || statusLabel(selected),
-        result.remark || ''
-      ].map(v => String(v ?? '').replace(/\t/g, ' ')).join('\t'));
-    }
-    return lines.join('\n');
-  }
-
-  function summarizePrizes(rows, limit = 6) {
-    const items = (rows || []).slice(0, limit).map(row => `${row.rank}:${row.amount}`);
-    const suffix = (rows || []).length > limit ? ` ...(${rows.length} rows)` : ` (${(rows || []).length} rows)`;
-    return items.join(' / ') + suffix;
-  }
-
-  function buildCleanPrizePlan(tasks) {
-    const blocks = [];
-    for (const task of tasks) {
-      if (task.result?.judgement === '対象外') continue;
-      const selected = task.variants.find(v => v.id === task.selectedVariantId) || task.variants[0];
-      const ref = expandedReference(task, selected);
-      if (!selected || !ref) continue;
-      const title = task.portalFullName || (task.portalName
-        ? `${task.portalNo ? `#${task.portalNo} ` : ''}${task.portalName}`
-        : task.inputName);
-      const tournamentId = task.tournamentId || getTournamentIdFromUrl(task.url || '') || '';
-      const notes = [];
-      if (ref.expandSize > 1) notes.push(`1人分×${ref.expandSize}展開`);
-      if (/main|millions/i.test(task.inputName) && /day\s*\d+|day\d+/i.test(task.portalName || '')) notes.push('最終Dayに全額登録');
-      if (task.variantConfirmRequired || task.portalConfirmRequired || task.manualUrlRequired) notes.push('要確認');
-      const lines = [
-        title,
-        tournamentId,
-        statusLabel(selected),
-        `PRIZE, ${selected.sourceTitle || task.inputName} / ${payoutLabel(selected)}`,
-        notes.length ? `NOTE, ${notes.join(' / ')}` : '',
-        `TOTAL, ${ref.compareTotal || 0}`,
-        ...(ref.comparePrizes || []).map(row => `${row.rank}, ${row.amount}`)
-      ].filter(line => line !== '');
-      blocks.push(lines.join('\n'));
-    }
-    return blocks.join('\n\n');
-  }
-
-  function buildDebugReport(tasks) {
-    const headers = [
+  function matchDebugRows(prizeGroups, urlEntries) {
+    const rows = [[
       '入力名',
-      'Portal#',
-      'Portal Name',
-      'URL Source',
-      'URL Cache Key',
-      'URL Actual Name',
-      'TournamentId',
-      'URL',
+      '入力番号',
+      '入力Key',
       'PW大会名',
-      '参照Prize',
-      '参照Status',
-      '参照Total',
-      '参照Rows',
-      'PW Total',
-      'PW Rows',
-      '判定',
-      '備考',
-      'Diff'
-    ];
-    const lines = [headers.join('\t')];
-    for (const task of tasks) {
-      const selected = task.variants.find(v => v.id === task.selectedVariantId) || task.variants[0] || {};
-      const ref = expandedReference(task, selected) || {};
-      const actual = task.actualSnapshot || {};
-      const result = task.result || {};
-      const compare = result.compare || {};
-      const diff = [
-        compare.totalOk === false ? 'total' : '',
-        compare.missing?.length ? `missing=${compare.missing.join(',')}` : '',
-        compare.extra?.length ? `extra=${compare.extra.join(',')}` : '',
-        compare.different?.length ? `different=${compare.different.join(',')}` : ''
-      ].filter(Boolean).join(' / ');
-      lines.push([
-        task.inputName || '',
-        task.portalNo || '',
-        task.portalName || '',
-        task.urlSource || '',
-        task.urlCacheKey || '',
-        task.urlActualName || '',
-        task.tournamentId || getTournamentIdFromUrl(task.url || ''),
-        task.url || '',
-        result.pwName || actual.name || '',
-        selected.sourceTitle || '',
-        statusLabel(selected),
-        ref.compareTotal ?? selected.total ?? '',
-        summarizePrizes(ref.comparePrizes || selected.prizes || []),
-        actual.total ?? '',
-        summarizePrizes(actual.rows || []),
-        result.judgement || '',
-        result.remark || '',
-        diff
-      ].map(v => String(v ?? '').replace(/\t/g, ' ')).join('\t'));
+      'PW番号',
+      'PW Key',
+      '判定理由',
+      '結果'
+    ]];
+    for (const group of prizeGroups || []) {
+      const inputNo = tournamentNoFromName(group.inputName);
+      const inputKey = baseKey(group.inputName);
+      const matches = matchTournament(group, urlEntries || []);
+      const candidates = matches.candidates?.length ? matches.candidates : (urlEntries || []).slice(0, 80);
+      for (const entry of candidates) {
+        const noOk = inputNo ? String(Number(entry.no || 0)) === String(Number(inputNo)) : '';
+        const pwKey = baseKey(entry.name);
+        const keyOk = !inputNo ? strictNameMatch(inputKey, pwKey, group.inputName) : '';
+        const selected = matches.entry && String(matches.entry.tournamentId) === String(entry.tournamentId);
+        const reason = inputNo
+          ? `番号${noOk ? '一致' : '不一致'}`
+          : `名前${keyOk ? '一致' : '不一致'}`;
+        if (!selected && !noOk && inputNo) continue;
+        if (!selected && !keyOk && !inputNo && candidates.length > 20) continue;
+        rows.push([
+          group.inputName,
+          inputNo,
+          inputKey,
+          entry.actualName,
+          entry.no || '',
+          pwKey,
+          reason,
+          selected ? '採用' : '候補'
+        ]);
+      }
+      if (!matches.candidates?.length) {
+        rows.push([group.inputName, inputNo, inputKey, '', '', '', inputNo ? '同番号なし' : '候補なし', '未検出']);
+      }
     }
-    return lines.join('\n');
+    return rows.map(row => row.map(v => String(v ?? '').replace(/\t/g, ' ').replace(/\r?\n/g, ' ')).join('\t')).join('\n');
   }
 
-  function showCopyDialog(title, text) {
-    document.getElementById('pw-prize-copy-dialog')?.remove();
-    const div = document.createElement('div');
-    div.id = 'pw-prize-copy-dialog';
-    div.style.cssText = 'position:fixed;inset:36px;z-index:1000002;background:#111827;color:#e5e7eb;border:1px solid #60a5fa;border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:10px;font-family:Arial,"Yu Gothic","Meiryo",sans-serif;';
-    div.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-        <strong>${escapeHtml(title)}</strong>
-        <button id="pwPrizeCopyClose" style="background:#374151;color:white;border:0;border-radius:6px;padding:7px 10px;">閉じる</button>
-      </div>
-      <textarea id="pwPrizeCopyText" style="flex:1;min-height:280px;background:#020617;color:#e5e7eb;border:1px solid #475569;border-radius:6px;padding:8px;font-family:Consolas,'Courier New',monospace;font-size:12px;white-space:pre;"></textarea>
-      <div style="display:flex;gap:8px;justify-content:flex-end;">
-        <button id="pwPrizeCopyButton" style="background:#2563eb;color:white;border:0;border-radius:6px;padding:8px 12px;font-weight:700;">コピー</button>
-      </div>
-    `;
-    document.body.appendChild(div);
-    const textEl = document.getElementById('pwPrizeCopyText');
-    textEl.value = text;
-    textEl.focus();
-    textEl.select();
-    document.getElementById('pwPrizeCopyClose').onclick = () => div.remove();
-    document.getElementById('pwPrizeCopyButton').onclick = async () => {
-      textEl.focus();
-      textEl.select();
-      try {
-        await navigator.clipboard.writeText(text);
-        alert('コピーしました。');
-      } catch (_) {
-        document.execCommand('copy');
+  function prizeDebugRows(prizeGroups) {
+    const rows = [[
+      '入力名',
+      'Prize元',
+      'Status',
+      '列',
+      'Rank列',
+      'Raw Total',
+      '明細合計',
+      '行数',
+      'Rank範囲',
+      '読取行',
+      '除外候補行数',
+      '先頭5件'
+    ]];
+    for (const group of prizeGroups || []) {
+      for (const v of group.variants || []) {
+        const first5 = (v.prizes || []).slice(0, 5).map(p => `${p.rank}:${yen(p.amount)}@${p.sourceRow || ''}`).join(' / ');
+        rows.push([
+          group.inputName,
+          v.sourceTitle,
+          statusLabel(v.status, v.statusRaw),
+          v.debug?.column || '',
+          v.debug?.rankColumn || '',
+          v.debug?.rawTotal != null ? yen(v.debug.rawTotal) : '',
+          yen(v.debug?.sumPrizes || 0),
+          v.prizes?.length || 0,
+          v.debug?.firstRank ? `${v.debug.firstRank}-${v.debug.lastRank}` : '',
+          v.debug?.firstSourceRow ? `${v.debug.firstSourceRow}-${v.debug.lastSourceRow}` : '',
+          v.debug?.skippedBeforeFirstRank || 0,
+          first5
+        ]);
       }
+    }
+    return rows.map(row => row.map(v => String(v ?? '').replace(/\t/g, ' ').replace(/\r?\n/g, ' ')).join('\t')).join('\n');
+  }
+
+  function parsePlanMatrix(raw) {
+    const rows = splitTsv(raw).filter(row => row.some(v => norm(v)));
+    if (!rows.length) return null;
+    const fieldMap = new Map();
+    rows.forEach((row, index) => {
+      const key = norm(cell(row, 0));
+      if (key) fieldMap.set(key, { row, index });
+    });
+    const field = (...names) => names.map(name => fieldMap.get(name)).find(Boolean);
+    const tournamentNameField = field('PW大会名', '大会名', '比赛名字');
+    const tournamentIdField = field('大会ID', 'PokerWeb ID', '比赛ID');
+    const prizeSourceField = field('参照Prize', 'PRIZE元');
+    const statusField = field('ステータス', 'Status');
+    const judgementField = field('判定');
+    const noteField = field('備考', 'Note');
+    if (!tournamentNameField || !tournamentIdField) return null;
+    const rankRows = rows
+      .map(row => ({ row, rank: parseRank(cell(row, 0)) }))
+      .filter(item => item.rank);
+    if (!rankRows.length) return null;
+    const maxCols = Math.max(0, ...rows.map(row => row.length));
+    const items = [];
+    for (let col = 1; col < maxCols; col++) {
+      const tournamentName = norm(cell(tournamentNameField.row, col));
+      const tournamentId = tournamentIdFromInput(cell(tournamentIdField.row, col));
+      const rowsForItem = [];
+      for (const rr of rankRows) {
+        const amount = moneyNumber(cell(rr.row, col));
+        if (amount == null || amount <= 0) continue;
+        rowsForItem.push({ rank: rr.rank, amount });
+      }
+      if (!tournamentName && !tournamentId && !rowsForItem.length) continue;
+      const total = rowsForItem.reduce((sum, row) => sum + row.amount, 0);
+      const judgement = tournamentId && rowsForItem.length ? '人工確認' : '要確認';
+      const notes = [
+        norm(cell(noteField?.row, col)),
+        norm(cell(judgementField?.row, col)) ? `元判定 ${norm(cell(judgementField?.row, col))}` : '',
+        'PLAN横表読込'
+      ].filter(Boolean);
+      items.push({
+        id: `pm${items.length}`,
+        stage: 'PLAN',
+        inputName: tournamentName || `PLAN列${col + 1}`,
+        tournamentName,
+        tournamentId,
+        url: tournamentId ? `/cb/torneio/painel/${tournamentId}` : '',
+        urlCandidates: [],
+        urlConfirmRequired: !tournamentId,
+        prizeSource: norm(cell(prizeSourceField?.row, col)) || 'PLAN横表',
+        status: norm(cell(statusField?.row, col)) || '人工入力',
+        variantId: `plan-${col}`,
+        variantCandidates: [],
+        variantConfirmRequired: !rowsForItem.length,
+        variants: [],
+        planJudgement: judgement,
+        planNote: notes.join(' / '),
+        total,
+        rows: rowsForItem,
+        manual: true,
+        writeStatus: '',
+        writeNote: '',
+        checkStatus: '',
+        checkNote: ''
+      });
+    }
+    if (!items.length) return null;
+    return { prefix: 'PLAN横表', items, urlEntries: [], createdAt: nowText(), source: 'PLAN_MATRIX' };
+  }
+
+  function buildPlan(prefix, prizeGroups, urlEntries) {
+    const items = [];
+    for (const group of prizeGroups) {
+      const vChoice = chooseVariant(group);
+      const tChoice = matchTournament(group, urlEntries);
+      const variant = vChoice.variant;
+      let rows = [];
+      let total = 0;
+      const notes = [vChoice.note].filter(Boolean);
+      if (variant) {
+        const expanded = expandPrizes({ inputName: group.inputName, tournamentName: tChoice.entry?.actualName || '' }, variant);
+        rows = expanded.rows;
+        total = expanded.total;
+        if (expanded.note) notes.push(expanded.note);
+      }
+      if (tChoice.needsConfirm) notes.push(tChoice.candidates.length ? 'PokerWeb候補複数' : 'URL未検出');
+      const item = {
+        id: group.id,
+        stage: 'PLAN',
+        inputName: group.inputName,
+        tournamentName: tChoice.entry?.actualName || '',
+        tournamentId: tChoice.entry?.tournamentId || '',
+        url: tChoice.entry?.url || '',
+        urlCandidates: tChoice.candidates,
+        urlConfirmRequired: tChoice.needsConfirm,
+        prizeSource: variant?.sourceTitle || '',
+        status: variant ? statusLabel(variant.status, variant.statusRaw) : '',
+        variantId: variant?.id || '',
+        variantCandidates: group.variants.map(v => v.id),
+        variantConfirmRequired: vChoice.needsConfirm || !variant,
+        variants: group.variants,
+        planJudgement: (!vChoice.needsConfirm && !tChoice.needsConfirm) ? '候補確定' : '要確認',
+        planNote: notes.join(' / '),
+        total,
+        rows,
+        manual: false,
+        writeStatus: '',
+        writeNote: '',
+        checkStatus: '',
+        checkNote: ''
+      };
+      items.push(item);
+    }
+    return { prefix, items, urlEntries, createdAt: nowText() };
+  }
+
+  function planReady(plan) {
+    return !!plan?.items?.length && plan.items.every(item =>
+      item.planJudgement !== '要確認' &&
+      item.tournamentId &&
+      item.url &&
+      item.variantId &&
+      item.rows?.length
+    );
+  }
+
+  function matrixLog(plan, stage = 'PLAN') {
+    const items = plan?.items || [];
+    const maxRank = Math.max(0, ...items.map(item => Math.max(0, ...(item.rows || []).map(r => r.rank))));
+    const fields = ['PW大会名', '大会ID', '参照Prize', 'ステータス', '判定', 'Total', '備考'];
+    for (let r = 1; r <= maxRank; r++) fields.push(String(r));
+    const valueFor = (item, field) => {
+      if (field === 'PW大会名') return item.tournamentName;
+      if (field === '大会ID') return item.tournamentId;
+      if (field === '参照Prize') return item.prizeSource || item.inputName;
+      if (field === 'ステータス') return item.status;
+      if (field === '判定') return stage === 'WRITE' ? (item.writeStatus || item.planJudgement) : stage === 'CHECK' ? (item.checkStatus || item.planJudgement) : item.planJudgement;
+      if (field === 'Total') return item.total ? yen(item.total) : '';
+      if (field === '備考') return stage === 'WRITE' ? (item.writeNote || item.planNote || '') : stage === 'CHECK' ? (item.checkNote || item.planNote || '') : (item.planNote || '');
+      const rank = Number(field);
+      const row = item.rows?.find(r => r.rank === rank);
+      return row ? yen(row.amount) : '';
     };
+    return fields.map(field => [field, ...items.map(item => valueFor(item, field))].map(v => String(v ?? '').replace(/\t/g, ' ').replace(/\r?\n/g, ' ')).join('\t')).join('\n');
   }
 
   async function copyText(text) {
@@ -1225,308 +910,536 @@
       await navigator.clipboard.writeText(text);
       return true;
     } catch (_) {
-      showCopyDialog('REPORTをコピーしてください', text);
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
       return false;
     }
   }
 
-  function renderSummary(tasks) {
-    const el = document.getElementById('pwPrizeCheckSummary');
-    if (!el) return;
-    const auto = tasks.filter(t => !t.variantConfirmRequired && !t.portalConfirmRequired && !t.manualUrlRequired).length;
-    const confirm = tasks.filter(t => t.variantConfirmRequired || t.portalConfirmRequired).length;
-    const missing = tasks.filter(t => t.manualUrlRequired).length;
-    el.textContent = `自動確認 ${auto} / 要確認 ${confirm} / URL未登録 ${missing}`;
-  }
-
-  function setProgress(message) {
-    const el = document.getElementById('pwPrizeCheckProgress');
-    if (el) el.textContent = message || '';
-  }
-
-  function setChecking(active) {
-    const button = document.getElementById('pwPrizeCheckStart');
-    if (!button) return;
-    button.disabled = active;
-    button.textContent = active ? 'CHECK中...' : 'CHECK開始';
-    button.style.opacity = active ? '.65' : '1';
-  }
-
-  function renderConfirmArea(tasks) {
-    const area = document.getElementById('pwPrizeCheckConfirmArea');
-    const rows = tasks.filter(t => t.variantConfirmRequired || t.portalConfirmRequired || t.manualUrlRequired);
-    if (!rows.length) {
-      area.style.display = 'none';
-      area.innerHTML = '';
-      return;
+  function readPrizeFromDoc(doc) {
+    const title =
+      doc.querySelector('input[name="titulo_torneio"], input[name="nome"], input[name="name"]')?.value ||
+      doc.querySelector('h1,h2,.page-title,.box-title,.panel-title,.breadcrumb')?.textContent ||
+      doc.title || '';
+    const byName = name => [...doc.querySelectorAll(`[name="${CSS.escape(name)}"]`)];
+    const posEls = byName('posicao[]');
+    const valueEls = byName('prizes_valor[]');
+    const rows = [];
+    const max = Math.max(posEls.length, valueEls.length);
+    for (let i = 0; i < max; i++) {
+      const rank = parseRank(posEls[i]?.value || '');
+      const amount = moneyNumber(valueEls[i]?.value || '');
+      if (rank && amount != null && amount > 0) rows.push({ rank, amount });
     }
-    area.style.display = 'block';
-    area.innerHTML = rows.map(task => `
-      <div class="pwpc-confirm-card" data-task-id="${escapeHtml(task.id)}">
-        <div class="pwpc-confirm-title">${escapeHtml(task.inputName)}</div>
-        ${task.variantConfirmRequired ? `
-          <div class="pwpc-confirm-label">最終使用するPrize：</div>
-          ${task.variantCandidates.map(id => {
-            const variant = task.variants.find(v => v.id === id);
-            const label = formatVariantLabel(variant) || id;
-            return `<label class="pwpc-radio"><input type="radio" name="variant-${escapeHtml(task.id)}" value="${escapeHtml(id)}" ${task.selectedVariantId === id ? 'checked' : ''}><span>${escapeHtml(label)}</span></label>`;
-          }).join('')}
-        ` : ''}
-        ${task.portalConfirmRequired ? `
-          <div class="pwpc-confirm-label">ポータル大会：</div>
-          ${task.portalCandidates.map(entry => `<label class="pwpc-radio"><input type="radio" name="portal-${escapeHtml(task.id)}" value="${escapeHtml(portalEntryKey(entry))}"><span>${escapeHtml(entry.fullName || `#${entry.noDisplay} ${entry.name}`)}</span></label>`).join('') || '<div style="color:#fca5a5;">候補なし</div>'}
-        ` : ''}
-        ${task.manualUrlRequired ? `
-          <div class="pwpc-confirm-label">PokerWeb URL：</div>
-          <button class="pwpc-url-button" data-task-id="${escapeHtml(task.id)}">URL入力</button>
-          <span style="margin-left:8px;color:#fca5a5;">URL未登録</span>
-        ` : ''}
-      </div>
-    `).join('');
-
-    for (const input of area.querySelectorAll('input[type="radio"]')) {
-      input.addEventListener('change', () => {
-        const scan = loadScan();
-        const task = scan?.tasks?.find(t => input.name.endsWith(t.id));
-        if (!task) return;
-        if (input.name.startsWith('variant-')) {
-          task.selectedVariantId = input.value;
-          task.variantConfirmRequired = false;
-        }
-        if (input.name.startsWith('portal-')) {
-          const entry = task.portalCandidates.find(e => portalEntryKey(e) === input.value);
-          if (entry) {
-            task.portalNo = entry.noDisplay;
-            task.portalName = entry.name;
-            task.portalFullName = entry.fullName || '';
-            task.portalConfirmRequired = false;
-            const cached = entry.url ? { url: entry.url, source: '一覧', cacheKey: '', item: entry } : getCachedUrl(scan.seriesName, entry);
-            if (cached) {
-              task.url = cached.url;
-              task.urls = [cached.url];
-              task.urlSource = cached.source;
-              task.urlCacheKey = cached.cacheKey || '';
-              task.urlActualName = cached.item?.actualName || cached.item?.fullName || cached.item?.name || '';
-              task.tournamentId = cached.item?.tournamentId || getTournamentIdFromUrl(cached.url || '');
-              task.manualUrlRequired = false;
-            }
-          }
-        }
-        saveScan(scan);
-        renderSummary(scan.tasks);
-        renderConfirmArea(scan.tasks);
-        updateCheckButton();
-      });
-    }
-
-    for (const button of area.querySelectorAll('.pwpc-url-button')) {
-      button.addEventListener('click', () => {
-        const scan = loadScan();
-        const task = scan?.tasks?.find(t => t.id === button.dataset.taskId);
-        if (!task) return;
-        const url = prompt(`${task.inputName}\nPokerWeb URLを入力してください:`, task.url || '');
-        if (!url) return;
-        task.url = url.trim();
-        task.urls = [task.url];
-        task.urlSource = '手入力';
-        task.urlCacheKey = '';
-        task.urlActualName = '';
-        task.tournamentId = getTournamentIdFromUrl(task.url);
-        task.manualUrlRequired = false;
-        const entry = { noDisplay: task.portalNo || '', no: String(Number(task.portalNo || 0)), name: task.portalName || task.inputName };
-        if (task.portalNo) saveCachedUrl(scan.seriesName, entry, task.url);
-        saveScan(scan);
-        renderSummary(scan.tasks);
-        renderConfirmArea(scan.tasks);
-        updateCheckButton();
-      });
-    }
+    return { title: norm(title), rows: rows.sort((a, b) => a.rank - b.rank), total: rows.reduce((sum, r) => sum + r.amount, 0) };
   }
 
-  function allReady(tasks) {
-    return tasks.every(task =>
-      task.result?.judgement === '対象外' ||
-      (!task.variantConfirmRequired || task.selectedVariantId) &&
-      (!task.portalConfirmRequired || task.portalName) &&
-      (!task.manualUrlRequired || task.url)
-    );
+  async function fetchDoc(url) {
+    const absolute = url.startsWith('http') ? url : new URL(url, location.origin).href;
+    const res = await fetch(absolute, { credentials: 'include', cache: 'no-store' });
+    const html = await res.text();
+    if (!res.ok) throw new Error(`GET ${res.status}`);
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    doc.__rawHtml = html;
+    doc.__status = res.status;
+    return doc;
   }
 
-  function updateCheckButton() {
-    const scan = loadScan();
-    const button = document.getElementById('pwPrizeCheckStart');
-    if (!button) return;
-    const ready = !!scan?.tasks?.length && allReady(scan.tasks);
-    button.disabled = !ready;
-    button.style.opacity = ready ? '1' : '.45';
-  }
-
-  async function handleScan() {
-    clearState();
-    const seriesName = normalizeSpace(document.getElementById('pwPrizeCheckSeriesName')?.value || '');
-    const prizeRaw = document.getElementById('pwPrizeCheckPrizeRaw')?.value || '';
-    const prize = parsePrizeSheet(prizeRaw);
-    const errors = [...prize.errors];
-    if (!seriesName) errors.push('大会名を入力してください。');
-    if (errors.length) {
-      alert(errors.join('\n'));
-      return;
+  function compareRows(expected, actual) {
+    const exp = new Map((expected || []).map(r => [Number(r.rank), Number(r.amount)]));
+    const got = new Map((actual || []).map(r => [Number(r.rank), Number(r.amount)]));
+    const diff = [];
+    for (const [rank, amount] of exp.entries()) {
+      if (!got.has(rank)) diff.push(`${rank}位 missing`);
+      else if (got.get(rank) !== amount) diff.push(`${rank}位 ${yen(got.get(rank))} != ${yen(amount)}`);
     }
-    setProgress('URLスキャン中...');
-    const pageEntries = await extractTournamentEntriesFromCurrentPage(seriesName);
-    const tournamentEntries = pageEntries;
-    setProgress(`URLスキャン完了: ${tournamentEntries.length}件`);
-    if (!tournamentEntries.length) {
-      alert('PokerWebのオーペントーナメント、またはクローズトーナメントで実行してください。Tournament行が見つかりません。');
-      return;
+    for (const rank of got.keys()) {
+      if (!exp.has(rank)) diff.push(`${rank}位 extra`);
     }
-    const tasks = buildTasks(seriesName, prize.groups, tournamentEntries);
-    const scan = { ok: true, seriesName, tasks, entrySource: 'current-list', scannedAt: new Date().toISOString() };
-    saveScan(scan);
-    renderSummary(tasks);
-    renderConfirmArea(tasks);
-    updateCheckButton();
-    const detail = buildDebugReport(tasks);
-    const plan = buildCleanPrizePlan(tasks);
-    debugLines.length = 0;
-    debugLines.push(detail);
-    await copyText(plan);
-    alert(`スキャン完了\n\n自動確認：${tasks.filter(t => !t.manualUrlRequired && !t.variantConfirmRequired && !t.portalConfirmRequired).length}件\n要確認：${tasks.filter(t => t.variantConfirmRequired || t.portalConfirmRequired).length}件\n未検出：${tasks.filter(t => t.manualUrlRequired).length}件\n\nPrize Planをクリップボードにコピーしました。`);
+    return diff;
   }
 
-  async function runBackgroundCheck(scan) {
-    const tasks = scan.tasks || [];
-    setChecking(true);
-    setProgress(`CHECK準備中... 0 / ${tasks.length}`);
-    for (const [index, task] of tasks.entries()) {
-      const currentLabel = `${task.inputName || ''}${task.portalName ? ` → ${task.portalName}` : ''}`;
-      setProgress(`CHECK中 ${index + 1} / ${tasks.length}：${currentLabel}`);
-      if (task.result?.judgement === '対象外') continue;
-      if (!task.url && !(task.urls || []).length) {
-        task.result = { judgement: '未検出', pwName: '', reference: '', remark: 'URL未登録' };
+  async function checkPlan() {
+    const state = loadState();
+    const plan = state.plan;
+    if (!plan?.items?.length) return alert('先にPlanを作成してください。');
+    setStatus('CHECK中...');
+    for (const [index, item] of plan.items.entries()) {
+      setStatus(`CHECK ${index + 1}/${plan.items.length}: ${item.tournamentName || item.inputName}`);
+      if (!item.url) {
+        item.checkStatus = '未検出';
+        item.checkNote = [item.checkNote, 'URL未登録'].filter(Boolean).join(' / ');
         continue;
       }
       try {
-        const actual = await fetchTaskActual(task);
-        task.actualSnapshot = actual;
-        task.result = judgeTask(task, actual);
-        debug('checked', { inputName: task.inputName, judgement: task.result.judgement, rows: actual.rows.length });
-      } catch (error) {
-        task.result = {
-          judgement: '未検出',
-          pwName: task.portalName || '',
-          reference: '',
-          remark: `GET失敗: ${error?.message || error}`
-        };
-        debug('GET failed', { inputName: task.inputName, url: task.url, error: String(error?.message || error) });
+        const doc = await fetchDoc(item.url);
+        const actual = readPrizeFromDoc(doc);
+        const diff = compareRows(item.rows, actual.rows);
+        const totalOk = Number(item.total || 0) === Number(actual.total || 0);
+        item.checkStatus = !diff.length && totalOk ? 'OK' : '不一致';
+        if (diff.length || !totalOk) item.checkNote = [!totalOk ? `Total不一致 ${yen(actual.total)} != ${yen(item.total)}` : '', diff.slice(0, 3).join(' / ')].filter(Boolean).join(' / ');
+        else item.checkNote = 'Plan一致';
+      } catch (e) {
+        item.checkStatus = '未検出';
+        item.checkNote = `GET失敗 ${e.message || e}`;
       }
-      renderSummary(tasks);
-      await sleep(80);
     }
-    const checkedScan = { ...scan, tasks, checkedAt: new Date().toISOString() };
-    saveScan(checkedScan);
-    debugLines.length = 0;
-    debugLines.push(buildDebugReport(tasks));
-    await copyText(buildReport(tasks));
-    const ok = tasks.filter(t => t.result?.judgement === 'OK').length;
-    const confirm = tasks.filter(t => t.result?.judgement === '要確認').length;
-    const missing = tasks.filter(t => t.result?.judgement === '未検出').length;
-    setChecking(false);
-    setProgress(`CHECK完了 OK ${ok} / 要確認 ${confirm} / 未検出 ${missing}`);
-    alert(`CHECK完了\n\nOK：${ok}件\n要確認：${confirm}件\n未検出：${missing}件\n\nREPORTをクリップボードにコピーしました。`);
+    saveState({ ...state, plan });
+    renderPlan(plan);
+    const text = matrixLog(plan, 'CHECK');
+    await copyText(text);
+    setStatus('CHECK完了。必要に応じてCHECK COPYを押してください。');
+    alert('CHECK完了\n\n結果を確認する場合は「CHECK COPY」を押してください。');
   }
 
-  async function handleStartCheck() {
-    const scan = loadScan();
-    if (!scan?.tasks?.length) {
-      alert('先にスキャンしてください。');
-      return;
+  function byNameFromDoc(doc, name) {
+    return [...doc.querySelectorAll(`[name="${CSS.escape(name)}"]`)];
+  }
+
+  function readCurrentRows(doc) {
+    const names = ['id[]', 'status[]', 'tipo[]', 'id_grupo[]', 'posicao[]', 'prizes_desc[]', 'prizes_valor[]', 'valor_vaga[]'];
+    const max = Math.max(0, ...names.map(name => byNameFromDoc(doc, name).length));
+    const rows = [];
+    for (let i = 0; i < max; i++) {
+      const row = { index: i };
+      for (const name of names) row[name] = byNameFromDoc(doc, name)[i]?.value ?? '';
+      rows.push(row);
     }
-    if (!allReady(scan.tasks)) {
-      alert('要確認項目を完了してください。');
-      return;
+    return rows;
+  }
+
+  function titleOfDoc(doc) {
+    return norm(
+      doc.querySelector('input[name="titulo_torneio"], input[name="nome"], input[name="name"]')?.value ||
+      doc.querySelector('h1,h2,.page-title,.box-title,.panel-title,.breadcrumb')?.textContent ||
+      doc.title
+    ).replace(/\s*-\s*PokerWeb\s*$/i, '');
+  }
+
+  function getDocValue(doc, name) {
+    const direct = doc.querySelector(`[name="${CSS.escape(name)}"]`)?.value || '';
+    if (direct || name !== 'codbloq') return direct;
+    const html = doc.__rawHtml || '';
+    const patterns = [
+      /name\s*=\s*["']codbloq["'][^>]*value\s*=\s*["']([^"']+)["']/i,
+      /value\s*=\s*["']([^"']+)["'][^>]*name\s*=\s*["']codbloq["']/i,
+      /["']codbloq["']\s*:\s*["']([^"']+)["']/i,
+      /\bcodbloq\s*=\s*["']([^"']+)["']/i
+    ];
+    for (const pattern of patterns) {
+      const m = html.match(pattern);
+      if (m) return m[1];
     }
+    return '';
+  }
+
+  function buildPrizePayload(item, doc) {
+    const currentRows = readCurrentRows(doc);
+    const byPos = new Map();
+    for (const row of currentRows) {
+      const pos = Number(row['posicao[]']);
+      if (pos > 0) byPos.set(pos, row);
+    }
+    const desired = new Map(item.rows.map(r => [Number(r.rank), { valor: String(r.amount), desc: '' }]));
+    const allPositions = [...new Set([...desired.keys(), ...byPos.keys()])].sort((a, b) => a - b);
+    const payload = {
+      salvar: ['prizes'],
+      id_torneio: [String(item.tournamentId)],
+      'id[]': [''],
+      'status[]': ['novo'],
+      'tipo[]': [''],
+      'id_grupo[]': [''],
+      'posicao[]': ['0'],
+      'prizes_desc[]': [''],
+      'prizes_valor[]': [''],
+      'valor_vaga[]': [''],
+      'prizes_visivel[]': ['0'],
+      codbloq: [getDocValue(doc, 'codbloq')]
+    };
+    for (const pos of allPositions) {
+      const old = byPos.get(pos);
+      const want = desired.get(pos);
+      const hasOldId = !!old?.['id[]'];
+      payload['id[]'].push(hasOldId ? old['id[]'] : '');
+      payload['status[]'].push(hasOldId ? (old['status[]'] || '0') : 'novo');
+      payload['tipo[]'].push(old?.['tipo[]'] || '0');
+      payload['id_grupo[]'].push(old?.['id_grupo[]'] || '0');
+      payload['posicao[]'].push(String(pos));
+      payload['prizes_desc[]'].push(want ? want.desc : (old?.['prizes_desc[]'] || ''));
+      payload['prizes_valor[]'].push(want ? want.valor : String(moneyNumber(old?.['prizes_valor[]']) || ''));
+      payload['valor_vaga[]'].push(old?.['valor_vaga[]'] || (hasOldId ? '0' : ''));
+    }
+    return payload;
+  }
+
+  function objectToUrlParams(object) {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(object)) {
+      if (Array.isArray(value)) {
+        for (const item of value) params.append(key, item);
+      } else {
+        params.append(key, value);
+      }
+    }
+    return params;
+  }
+
+  function formatPwNumber(value) {
+    const n = Number(value || 0);
+    return Number.isFinite(n) ? n.toLocaleString('en-US') : String(value || 0);
+  }
+
+  async function postPrizeList(item, doc) {
+    const codbloq = getDocValue(doc, 'codbloq');
+    if (!codbloq) {
+      throw new Error(`codbloq not found. GET status=${doc.__status || ''} title=${titleOfDoc(doc)} hasPrizes=${!!doc.querySelector('#prizes_tela,[name="prizes_valor[]"]')} hasSendForm=${/sendFormPrizes/i.test(doc.__rawHtml || '')}`);
+    }
+    const params = new URLSearchParams();
+    params.append('dados', JSON.stringify(buildPrizePayload(item, doc)));
+    params.append('codbloq', codbloq);
+    return fetch(APP.endpointPrizeList, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+      },
+      body: params,
+      credentials: 'include',
+      redirect: 'manual'
+    });
+  }
+
+  async function postPotTotal(item, doc) {
+    const codbloq = getDocValue(doc, 'codbloq');
+    if (!codbloq) throw new Error(`pot codbloq not found. GET status=${doc.__status || ''} title=${titleOfDoc(doc)}`);
+    const params = objectToUrlParams({
+      layout: 'pot_config',
+      potautomatico: '0',
+      potmanual: formatPwNumber(item.total || 0),
+      potgarantido: '0',
+      codbloq
+    });
+    return fetch(APP.endpointPotTotal(item.tournamentId), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+      },
+      body: params,
+      credentials: 'include',
+      redirect: 'manual'
+    });
+  }
+
+  async function writePlan() {
+    const state = loadState();
+    const plan = state.plan;
+    if (!planReady(plan)) return alert('未確認項目があります。先に修正してください。');
+    if (!confirm(`このPrize Planを書き込みます。\n対象: ${plan.items.length}件\n\n実行しますか？`)) return;
+    for (const [index, item] of plan.items.entries()) {
+      setStatus(`WRITE ${index + 1}/${plan.items.length}: ${item.tournamentName}`);
+      try {
+        const doc1 = await fetchDoc(item.url);
+        const res1 = await postPrizeList(item, doc1);
+        await sleep(500);
+        const doc2 = await fetchDoc(item.url);
+        const res2 = await postPotTotal(item, doc2);
+        await sleep(700);
+        const verifyDoc = await fetchDoc(item.url);
+        const actual = readPrizeFromDoc(verifyDoc);
+        const diff = compareRows(item.rows, actual.rows);
+        const totalOk = Number(item.total || 0) === Number(actual.total || 0);
+        item.writeStatus = (res1.status >= 200 && res1.status < 400 && res2.status >= 200 && res2.status < 400 && !diff.length && totalOk) ? '書込OK' : '書込失敗';
+        item.writeNote = [
+          `Prize HTTP ${res1.status}`,
+          `Total HTTP ${res2.status}`,
+          !totalOk ? `Verify Total ${yen(actual.total)} != ${yen(item.total)}` : '',
+          diff.slice(0, 3).join(' / ')
+        ].filter(Boolean).join(' / ');
+      } catch (e) {
+        item.writeStatus = '書込失敗';
+        item.writeNote = e.message || String(e);
+      }
+      saveState({ ...state, plan });
+      renderPlan(plan);
+    }
+    const text = matrixLog(plan, 'WRITE');
+    await copyText(text);
+    setStatus('書込完了。必要に応じて書込コピーを押してください。');
+    alert('書込完了\n\n結果を確認する場合は「書込コピー」を押してください。');
+  }
+
+  function renderPlan(plan) {
+    const box = document.querySelector('#pwPrizeConfirm');
+    if (!box) return;
+    const items = plan?.items || [];
+    const auto = items.filter(i => i.planJudgement === '候補確定').length;
+    const manual = items.filter(i => i.planJudgement === '人工確認').length;
+    const confirm = items.filter(i => i.planJudgement === '要確認').length;
+    const urlCount = items.filter(i => i.tournamentId && i.url).length || plan?.urlEntries?.length || 0;
+    box.innerHTML = `
+      <div class="pwpp-summary">候補確定 ${auto} / 人工確認 ${manual} / 要確認 ${confirm} / URL ${urlCount}件</div>
+      ${items.filter(i => i.planJudgement === '要確認').map(renderItemCard).join('')}
+      <details style="margin-top:8px;">
+        <summary>候補確定・人工確認済みを表示</summary>
+        ${items.filter(i => i.planJudgement !== '要確認').map(renderItemCard).join('')}
+      </details>
+    `;
+    for (const select of box.querySelectorAll('select[data-action]')) {
+      select.addEventListener('change', () => updateItemFromSelect(select));
+    }
+    for (const button of box.querySelectorAll('button[data-action="manual-url"]')) {
+      button.addEventListener('click', () => updateItemFromManualUrl(button));
+    }
+  }
+
+  function variantOptionLabel(v) {
+    const invalid = v.valid ? '' : ' / 無効';
+    return `${v.sourceTitle} / ${statusLabel(v.status, v.statusRaw)} / Total ${yen(v.total)} / 1位 ${yen(v.summary.first)} / 最終 ${yen(v.summary.last)} / ${v.summary.rows}行${invalid}`;
+  }
+
+  function selectableVariants(item) {
+    const variants = item.variants || [];
+    if (!variants.length && item.variantId) {
+      return [{
+        id: item.variantId,
+        sourceTitle: item.prizeSource || 'PLAN横表',
+        status: 'confirmed',
+        statusRaw: item.status || '人工入力',
+        total: item.total || 0,
+        valid: true,
+        summary: {
+          first: item.rows?.[0]?.amount || 0,
+          last: item.rows?.[item.rows.length - 1]?.amount || 0,
+          rows: item.rows?.length || 0
+        }
+      }];
+    }
+    const valid = variants.filter(v => v.valid && v.status !== 'unused');
+    if (valid.length) return valid;
+    return variants.filter(v => v.id === item.variantId);
+  }
+
+  function renderItemCard(item) {
+    const variants = selectableVariants(item);
+    const urlCandidates = (item.urlCandidates || []).length
+      ? item.urlCandidates
+      : item.tournamentId
+        ? [{ tournamentId: item.tournamentId, actualName: item.tournamentName || `人工入力 ${item.tournamentId}` }]
+        : [];
+    return `
+      <div class="pwpp-card">
+        <div class="pwpp-title">${escapeHtml(item.inputName)} ${item.manual ? '<span class="warn">人工修正</span>' : ''}</div>
+        <label>PokerWeb大会</label>
+        <select data-action="url" data-id="${escapeHtml(item.id)}">
+          <option value="">候補なし</option>
+          ${urlCandidates.map(c => `<option value="${escapeHtml(c.tournamentId)}" ${String(c.tournamentId) === String(item.tournamentId) ? 'selected' : ''}>${escapeHtml(c.actualName)} / ${c.tournamentId}</option>`).join('')}
+        </select>
+        <div style="display:flex;gap:6px;margin-top:6px;">
+          <input data-manual-url="${escapeHtml(item.id)}" placeholder="PokerWeb ID または URL" value="">
+          <button data-action="manual-url" data-id="${escapeHtml(item.id)}" style="background:#e5e7eb;color:#111827;white-space:nowrap;">URL入力</button>
+        </div>
+        <label>使用Prize</label>
+        <select data-action="variant" data-id="${escapeHtml(item.id)}">
+          <option value="">選択してください</option>
+          ${variants.map(v => `<option value="${escapeHtml(v.id)}" ${v.id === item.variantId ? 'selected' : ''}>${escapeHtml(variantOptionLabel(v))}</option>`).join('')}
+        </select>
+        <div class="pwpp-note">判定: ${escapeHtml(item.planJudgement)} / Total: ${escapeHtml(yen(item.total))} / ${escapeHtml(item.planNote || '')}</div>
+      </div>
+    `;
+  }
+
+  function updateItemFromSelect(select) {
+    const state = loadState();
+    const plan = state.plan;
+    const item = plan?.items?.find(i => i.id === select.dataset.id);
+    if (!item) return;
+    if (select.dataset.action === 'url') {
+      const entry = (item.urlCandidates || []).find(c => String(c.tournamentId) === String(select.value));
+      if (entry || select.value) {
+        item.tournamentName = entry?.actualName || item.tournamentName || `人工入力 ${select.value}`;
+        item.tournamentId = entry?.tournamentId || select.value;
+        item.url = entry?.url || `/cb/torneio/painel/${select.value}`;
+        item.urlConfirmRequired = false;
+      }
+    }
+    if (select.dataset.action === 'variant') {
+      const variant = item.variants.find(v => v.id === select.value);
+      if (variant) {
+        const expanded = expandPrizes(item, variant);
+        item.variantId = variant.id;
+        item.prizeSource = variant.sourceTitle;
+        item.status = statusLabel(variant.status, variant.statusRaw);
+        item.rows = expanded.rows;
+        item.total = expanded.total;
+        item.variantConfirmRequired = false;
+        item.planNote = [item.planNote, expanded.note, '人工修正'].filter(Boolean).join(' / ');
+      }
+    }
+    item.manual = true;
+    if (item.tournamentId && item.variantId && item.rows?.length) item.planJudgement = '人工確認';
+    saveState(state);
+    renderPlan(plan);
+  }
+
+  function updateItemFromManualUrl(button) {
+    const state = loadState();
+    const plan = state.plan;
+    const item = plan?.items?.find(i => i.id === button.dataset.id);
+    if (!item) return;
+    const input = document.querySelector(`input[data-manual-url="${CSS.escape(item.id)}"]`);
+    const id = tournamentIdFromInput(input?.value || '');
+    if (!id) return alert('PokerWeb ID または URLを入力してください。');
+    const entry = (plan.urlEntries || []).find(e =>
+      String(e.tournamentId) === String(id) ||
+      String(e.url || '').includes(`/painel/${id}`)
+    );
+    item.tournamentId = id;
+    item.url = `/cb/torneio/painel/${id}`;
+    item.tournamentName = entry?.actualName || `人工入力 ${id}`;
+    item.urlCandidates = entry ? [entry] : item.urlCandidates;
+    item.urlConfirmRequired = false;
+    item.manual = true;
+    item.planNote = [item.planNote, entry ? 'URL人工選択' : 'URL人工入力'].filter(Boolean).join(' / ');
+    if (item.tournamentId && item.variantId && item.rows?.length) item.planJudgement = '人工確認';
+    saveState(state);
+    renderPlan(plan);
+  }
+
+  async function buildPlanFromInput() {
+    if (running) return;
+    running = true;
     try {
-      await runBackgroundCheck(scan);
+      const prefix = norm(document.querySelector('#pwPrizePrefix')?.value || '');
+      const raw = document.querySelector('#pwPrizeRaw')?.value || '';
+      const planMatrix = parsePlanMatrix(raw);
+      if (planMatrix) {
+        saveState({ plan: planMatrix, debugPrizeGroups: [] });
+        renderPlan(planMatrix);
+        const text = matrixLog(planMatrix, 'PLAN');
+        await copyText(text);
+        setStatus('PLAN横表を読み込みました。必要に応じてPLAN COPYを押してください。');
+        alert('PLAN横表を読み込みました\n\nGoogle Sheetで確認する場合は「PLAN COPY」を押してください。');
+        return;
+      }
+      if (!prefix) return alert('大会名を入力してください。例: 【JOPT 2026 Tokyo #02】');
+      const parsed = parsePrizeSheet(raw);
+      if (parsed.errors.length) return alert(parsed.errors.join('\n'));
+      setStatus('OPEN URLスキャン中...');
+      const urls = await scanEventUrls(prefix);
+      if (!urls.length) return alert('URLが見つかりません。大会名を確認してください。');
+      const plan = buildPlan(prefix, parsed.groups, urls);
+      saveState({ plan, debugPrizeGroups: parsed.groups });
+      renderPlan(plan);
+      const text = matrixLog(plan, 'PLAN');
+      await copyText(text);
+      setStatus('PLAN作成完了。必要に応じてPLAN COPYを押してください。');
+      alert('PLAN作成完了\n\nGoogle Sheetで確認する場合は「PLAN COPY」を押してください。');
     } finally {
-      setChecking(false);
+      running = false;
     }
   }
 
-  function createPanel() {
+  function addPanel() {
     if (document.getElementById(APP.panelId)) return;
+    const style = document.createElement('style');
+    style.textContent = `
+      #${APP.panelId}{position:fixed;right:18px;top:70px;width:620px;max-height:86vh;z-index:999999;background:#0f172a;color:#e5e7eb;border:1px solid #475569;border-radius:8px;font-family:Arial,"Yu Gothic","Meiryo",sans-serif;box-shadow:0 16px 40px rgba(0,0,0,.35);overflow:auto}
+      #${APP.panelId} .head{display:flex;justify-content:space-between;align-items:center;padding:10px;border-bottom:1px solid #334155}
+      #${APP.panelId}.minimized{width:300px;max-height:none;overflow:hidden}
+      #${APP.panelId}.minimized .body{display:none}
+      #${APP.panelId} .body{padding:10px}
+      #${APP.panelId} label{display:block;margin:8px 0 4px;color:#cbd5e1;font-weight:700}
+      #${APP.panelId} input,#${APP.panelId} textarea,#${APP.panelId} select{width:100%;box-sizing:border-box;background:#020617;color:#e5e7eb;border:1px solid #475569;border-radius:6px;padding:8px}
+      #${APP.panelId} textarea{font-family:Consolas,"Courier New",monospace;white-space:pre;resize:vertical}
+      #${APP.panelId} button{border:0;border-radius:6px;padding:8px 10px;font-weight:700;cursor:pointer}
+      #${APP.panelId} .actions{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-top:8px}
+      #${APP.panelId} .pwpp-card{border:1px solid #475569;border-radius:6px;padding:8px;margin-top:8px;background:#111827}
+      #${APP.panelId} .pwpp-title{font-weight:700;color:#fde68a;margin-bottom:6px}
+      #${APP.panelId} .pwpp-note{font-size:12px;color:#cbd5e1;margin-top:6px}
+      #${APP.panelId} .pwpp-summary{font-weight:700;margin-top:8px}
+      #${APP.panelId} .warn{color:#fca5a5;margin-left:8px}
+      #pwPrizeDetail{display:none;height:150px;margin-top:8px}
+    `;
+    document.head.appendChild(style);
     const panel = document.createElement('div');
     panel.id = APP.panelId;
     panel.innerHTML = `
-      <style>
-        #${APP.panelId}{position:fixed;right:16px;bottom:16px;z-index:999999;width:470px;max-height:88vh;overflow:auto;background:#111827;color:#e5e7eb;border:1px solid #475569;border-radius:8px;box-shadow:0 14px 34px rgba(0,0,0,.38);font-family:Arial,"Yu Gothic","Meiryo",sans-serif;font-size:13px}
-        #${APP.panelId} .pwpc-head{display:flex;align-items:center;justify-content:space-between;padding:10px;border-bottom:1px solid #334155}
-        #${APP.panelId} .pwpc-body{padding:10px}
-        #${APP.panelId} button{border:0;border-radius:6px;padding:8px 10px;cursor:pointer;font-weight:700}
-        #${APP.panelId} input,#${APP.panelId} textarea{width:100%;box-sizing:border-box;background:#020617;color:#e5e7eb;border:1px solid #475569;border-radius:6px;padding:8px;font-size:12px}
-        #${APP.panelId} textarea{resize:vertical;font-family:Consolas,"Courier New",monospace;white-space:pre}
-        .pwpc-label{display:block;margin:8px 0 4px;color:#cbd5e1;font-weight:700}
-        .pwpc-actions{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-top:8px}
-        .pwpc-confirm-card{border:1px solid #475569;border-radius:6px;padding:8px;margin-top:8px;background:#0f172a}
-        .pwpc-confirm-title{font-weight:700;color:#fde68a;margin-bottom:6px}
-        .pwpc-confirm-label{color:#cbd5e1;margin:8px 0 4px}
-        .pwpc-radio{display:flex;gap:7px;align-items:flex-start;padding:4px 0;line-height:1.35}
-        #pwPrizeCheckDetailLog{height:160px;margin-top:8px;font-size:11px;display:none}
-      </style>
-      <div class="pwpc-head">
-        <strong>Prize Check</strong>
-        <button id="pwPrizeCheckClose" style="background:#374151;color:#e5e7eb;">×</button>
+      <div class="head">
+        <strong>PW Prize Plan v2</strong>
+        <button id="pwPrizeMin" style="background:#374151;color:white;">Min</button>
       </div>
-      <div class="pwpc-body">
-        <div style="color:#93c5fd;font-size:12px;margin-bottom:6px;">オーペントーナメント / クローズトーナメント上で実行してください。</div>
-        <label class="pwpc-label">大会名</label>
-        <input id="pwPrizeCheckSeriesName" type="text" placeholder="例: SPADIE OSAKA 1st">
-        <label class="pwpc-label">大会Prize Google Sheet全体を貼り付けてください</label>
-        <textarea id="pwPrizeCheckPrizeRaw" style="height:170px" spellcheck="false"></textarea>
-        <div class="pwpc-actions">
-          <button id="pwPrizeCheckScan" style="background:#2563eb;color:white;">スキャン</button>
-          <button id="pwPrizeCheckStart" disabled style="background:#16a34a;color:white;opacity:.45;">CHECK開始</button>
-          <button id="pwPrizeCheckDetail" style="background:#334155;color:white;">詳細</button>
+      <div class="body">
+        <label>大会名 prefix</label>
+        <input id="pwPrizePrefix" placeholder="例: 【JOPT 2026 Tokyo #02】">
+        <label>大会Prize Google Sheet全体</label>
+        <textarea id="pwPrizeRaw" style="height:180px" spellcheck="false"></textarea>
+        <div class="actions">
+          <button id="pwPrizeBuild" style="background:#2563eb;color:white;">PLAN作成</button>
+          <button id="pwPrizeWrite" style="background:#b45309;color:white;">書込開始</button>
+          <button id="pwPrizeCheck" style="background:#16a34a;color:white;">CHECK</button>
+          <button id="pwPrizeCopyPlan" style="background:#334155;color:white;">PLAN COPY</button>
+          <button id="pwPrizeCopyCheck" style="background:#334155;color:white;">CHECK COPY</button>
+          <button id="pwPrizeCopyWrite" style="background:#334155;color:white;">書込コピー</button>
+          <button id="pwPrizeCopyDebug" style="background:#475569;color:white;">MATCH DEBUG</button>
+          <button id="pwPrizeCopyPrizeDebug" style="background:#475569;color:white;">PRIZE DEBUG</button>
         </div>
-        <div id="pwPrizeCheckSummary" style="margin-top:8px;color:#cbd5e1;"></div>
-        <div id="pwPrizeCheckProgress" style="margin-top:6px;color:#93c5fd;font-weight:700;"></div>
-        <div id="pwPrizeCheckConfirmArea" style="display:none;margin-top:8px;"></div>
-        <textarea id="pwPrizeCheckDetailLog" readonly></textarea>
+        <div id="pwPrizeStatus" style="margin-top:8px;color:#93c5fd;font-weight:700;"></div>
+        <div id="pwPrizeConfirm"></div>
+        <button id="pwPrizeToggleDetail" style="margin-top:8px;background:#475569;color:white;">詳細</button>
+        <textarea id="pwPrizeDetail" readonly></textarea>
       </div>
     `;
     document.body.appendChild(panel);
-
-    document.getElementById('pwPrizeCheckClose').addEventListener('click', () => panel.remove());
-    document.getElementById('pwPrizeCheckScan').addEventListener('click', handleScan);
-    document.getElementById('pwPrizeCheckStart').addEventListener('click', handleStartCheck);
-    document.getElementById('pwPrizeCheckDetail').addEventListener('click', async () => {
-      const scan = loadScan();
-      const detail = scan?.tasks?.length ? buildDebugReport(scan.tasks) : debugLines.join('\n');
-      if (detail) showCopyDialog('詳細 / Debug Report', detail);
-      if (detail) await copyText(detail);
-      const logEl = document.getElementById('pwPrizeCheckDetailLog');
-      logEl.style.display = logEl.style.display === 'none' ? 'block' : 'none';
-      logEl.value = detail || '';
-    });
-
-    const scan = loadScan();
-    if (scan?.tasks?.length) {
-      document.getElementById('pwPrizeCheckSeriesName').value = scan.seriesName || '';
-      renderSummary(scan.tasks);
-      renderConfirmArea(scan.tasks);
-      updateCheckButton();
-    }
+    document.querySelector('#pwPrizeMin').onclick = () => {
+      const minimized = panel.classList.toggle('minimized');
+      document.querySelector('#pwPrizeMin').textContent = minimized ? '復元' : 'Min';
+    };
+    document.querySelector('#pwPrizeBuild').onclick = buildPlanFromInput;
+    document.querySelector('#pwPrizeWrite').onclick = writePlan;
+    document.querySelector('#pwPrizeCheck').onclick = checkPlan;
+    document.querySelector('#pwPrizeCopyPlan').onclick = async () => {
+      const plan = loadState().plan;
+      if (!plan) return alert('Planがありません。');
+      await copyText(matrixLog(plan, 'PLAN'));
+      alert('PLAN LOGをコピーしました。');
+    };
+    document.querySelector('#pwPrizeCopyCheck').onclick = async () => {
+      const plan = loadState().plan;
+      if (!plan) return alert('Planがありません。');
+      await copyText(matrixLog(plan, 'CHECK'));
+      alert('CHECK LOGをコピーしました。');
+    };
+    document.querySelector('#pwPrizeCopyWrite').onclick = async () => {
+      const plan = loadState().plan;
+      if (!plan) return alert('Planがありません。');
+      await copyText(matrixLog(plan, 'WRITE'));
+      alert('WRITE LOGをコピーしました。');
+    };
+    document.querySelector('#pwPrizeCopyDebug').onclick = async () => {
+      const state = loadState();
+      const plan = state.plan;
+      const parsed = state.debugPrizeGroups || [];
+      if (!plan) return alert('Planがありません。');
+      await copyText(matchDebugRows(parsed, plan.urlEntries || []));
+      alert('MATCH DEBUGをコピーしました。');
+    };
+    document.querySelector('#pwPrizeCopyPrizeDebug').onclick = async () => {
+      const parsed = loadState().debugPrizeGroups || [];
+      if (!parsed.length) return alert('Prize Debugがありません。先にPLAN作成してください。');
+      await copyText(prizeDebugRows(parsed));
+      alert('PRIZE DEBUGをコピーしました。');
+    };
+    document.querySelector('#pwPrizeToggleDetail').onclick = () => {
+      const el = document.querySelector('#pwPrizeDetail');
+      el.style.display = el.style.display === 'block' ? 'none' : 'block';
+      el.value = detailLines.join('\n');
+    };
+    const state = loadState();
+    if (state.plan) renderPlan(state.plan);
   }
 
-  function bootResume() {
-    clearState();
-  }
-
-  function boot() {
-    clearLegacyState();
-    createPanel();
-    bootResume();
-  }
-
-  boot();
+  addPanel();
 })();
