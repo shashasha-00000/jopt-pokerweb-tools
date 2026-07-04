@@ -1,7 +1,7 @@
 [
     {
         "file":  "pw-cashier-ticket-check.user.js",
-        "name":  "PW Cashier Ticket Check",
+        "name":  "PW キャッシャーチケット Check",
         "version":  "0.1.0",
         "description":  "Quick read-only Main Event ticket check from the PokerWeb tournament cashier page.",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-cashier-ticket-check.user.js",
@@ -10,7 +10,7 @@
     },
     {
         "file":  "pw-main-event-ticket-check.user.js",
-        "name":  "PW Main Event Ticket Check",
+        "name":  "PW Main Event チケット Check",
         "version":  "1.1.0",
         "description":  "单个GameID按票名自动解析Main Event ticket group，并区分当前持有与已使用记录。",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-main-event-ticket-check.user.js",
@@ -19,7 +19,7 @@
     },
     {
         "file":  "pw-national-ticket-batch.user.js",
-        "name":  "PW National Ticket Batch",
+        "name":  "PW ナショナルチケット Batch",
         "version":  "1.2.2",
         "description":  "任意のPokerWeb后台页からGameID・チケット名TSVを厳密検証し、ナショナルチケットを安全に一件ずつ付与する正式版",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js",
@@ -37,7 +37,7 @@
     },
     {
         "file":  "pw-receipt-full-auto.user.js",
-        "name":  "PW Receipt Full Auto",
+        "name":  "PW 領収書 Full Auto",
         "version":  "7.0.0",
         "description":  "申請管理から申請キー単位で読み、システム設定のreceiverUrlへ送信する正式版",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-full-auto.user.js",
@@ -46,7 +46,7 @@
     },
     {
         "file":  "pw-receipt-manual-check.user.js",
-        "name":  "PW Receipt Manual Check",
+        "name":  "PW 領収書 Manual Check",
         "version":  "1.6.15",
         "description":  "Manual receipt check/additional-flow entry. Game ID + keyword search, strict URL Cache verification, and payment TSV output.",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js",
@@ -64,7 +64,7 @@
     },
     {
         "file":  "pw-tournament-blind-manual.user.js",
-        "name":  "PW Tournament Blind Manual（可用・待升级）",
+        "name":  "PW ブラインド設定 Manual（現行可・改善予定）",
         "version":  "1.0.0",
         "description":  "PokerWeb blind backend direct success version. Current rules are hardcoded; usable but planned for safer template/preview upgrade.",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-blind-manual.user.js",
@@ -73,7 +73,7 @@
     },
     {
         "file":  "pw-tournament-create-auto.user.js",
-        "name":  "PW Tournament Create Auto",
+        "name":  "PW 大会作成 Auto",
         "version":  "0.1.0",
         "description":  "API-first tournament create flow from fixed TSV: create, USDT, items, and Ticket Link without page-step pipeline.",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js",
@@ -82,7 +82,7 @@
     },
     {
         "file":  "pw-tournament-double-check.user.js",
-        "name":  "PW Tournament Double Check",
+        "name":  "PW 大会 Double Check",
         "version":  "2.0.5",
         "description":  "3つの入力（大会名 / Portal Tournament / 受付Portal Ticket Link）から、Start・EN・RE・TE・Chips・Ticket Link・USDTを一括DC",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-double-check.user.js",

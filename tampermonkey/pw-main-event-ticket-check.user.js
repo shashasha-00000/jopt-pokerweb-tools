@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         PW Main Event Ticket Check
+// @name         PW Main Event チケット Check
 // @namespace    pw-main-event-ticket-check
 // @version      1.1.0
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-main-event-ticket-check.user.js

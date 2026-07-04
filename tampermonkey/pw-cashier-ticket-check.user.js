@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         PW Cashier Ticket Check
+// @name         PW キャッシャーチケット Check
 // @namespace    pw-cashier-ticket-check
 // @version      0.1.0
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-cashier-ticket-check.user.js

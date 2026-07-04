@@ -1,5 +1,5 @@
 ﻿// ==UserScript==
-// @name         PW Receipt Full Auto
+// @name         PW 領収書 Full Auto
 // @version      7.0.0
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-full-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-full-auto.user.js

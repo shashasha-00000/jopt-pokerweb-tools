@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         PW Tournament Double Check
+// @name         PW 大会 Double Check
 // @namespace    pw-tournament-double-check
 // @version      2.0.5
 // @description  3つの入力（大会名 / Portal Tournament / 受付Portal Ticket Link）から、Start・EN・RE・TE・Chips・Ticket Link・USDTを一括DC

@@ -1,5 +1,5 @@
 ﻿// ==UserScript==
-// @name         PW Receipt Manual Check
+// @name         PW 領収書 Manual Check
 // @namespace    pw-receipt-manual-check
 // @version      1.6.15
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js

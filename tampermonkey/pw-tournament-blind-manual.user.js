@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         PW Tournament Blind Manual（可用・待升级）
+// @name         PW ブラインド設定 Manual（現行可・改善予定）
 // @namespace    pw-tournament-blind-manual
 // @version      1.0.0
 // @description  PokerWeb blind backend direct success version. Current rules are hardcoded; usable but planned for safer template/preview upgrade.

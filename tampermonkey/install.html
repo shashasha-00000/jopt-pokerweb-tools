@@ -147,7 +147,6 @@
     </p>
 
     <div class="toolbar">
-      <button id="open-all" class="primary" type="button" disabled>依次打开全部 raw</button>
       <button id="reload" type="button">重新读取清单</button>
       <span id="status" class="status">loading...</span>
     </div>
@@ -160,7 +159,6 @@
     const DEFAULT_OWNER = "shashasha-00000";
     const DEFAULT_REPO = "jopt-pokerweb-tools";
     const DEFAULT_BRANCH = "main";
-    const OPEN_DELAY_MS = 1200;
     const RAW_MANIFEST_URL =
       `https://raw.githubusercontent.com/${DEFAULT_OWNER}/${DEFAULT_REPO}/${DEFAULT_BRANCH}/tampermonkey/scripts.json`;
 
@@ -188,7 +186,6 @@
 
       if (!items.length) {
         list.innerHTML = '<div class="error">No scripts found in scripts.json.</div>';
-        document.querySelector("#open-all").disabled = true;
         return;
       }
 
@@ -211,12 +208,10 @@
         list.appendChild(div);
       }
 
-      document.querySelector("#open-all").disabled = false;
     }
 
     async function loadManifest() {
       setStatus("loading scripts.json...");
-      document.querySelector("#open-all").disabled = true;
 
       try {
         let res;
@@ -238,23 +233,7 @@
       }
     }
 
-    async function openAll() {
-      if (!scripts.length) return;
-      setStatus(`opening ${scripts.length} raw URLs...`);
-
-      for (let i = 0; i < scripts.length; i++) {
-        const item = scripts[i];
-        const rawUrl = item.rawURL || item.downloadURL || rawUrlFor(item.file);
-        setStatus(`opening ${i + 1}/${scripts.length}: ${item.file}`);
-        window.open(rawUrl, "_blank", "noopener");
-        await new Promise(resolve => setTimeout(resolve, OPEN_DELAY_MS));
-      }
-
-      setStatus("done");
-    }
-
     document.querySelector("#reload").addEventListener("click", loadManifest);
-    document.querySelector("#open-all").addEventListener("click", openAll);
     document.addEventListener("click", async event => {
       const btn = event.target.closest("button[data-copy]");
       if (!btn) return;

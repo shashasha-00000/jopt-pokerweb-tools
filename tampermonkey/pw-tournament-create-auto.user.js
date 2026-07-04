@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         PW Tournament Create Auto
+// @name         PW 大会作成 Auto
 // @namespace    pw-tournament-create-auto
 // @version      0.1.0
 // @description  API-first tournament create flow from fixed TSV: create, USDT, items, and Ticket Link without page-step pipeline.
