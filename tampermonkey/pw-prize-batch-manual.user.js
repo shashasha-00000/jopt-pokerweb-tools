@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         PW Prize Plan Writer Checker
+// @name         PW Prize Plan 書込・確認
 // @namespace    https://japanopt.pokerweb.com.br/
 // @version      2.0.0
-// @description  Dirty prize sheet -> URL Manager scan -> confirmed Prize Plan -> write or readonly check.
+// @description  大会Prize表からPLANを作成し、PokerWebへの書込または読取確認を行います。
 // @match        https://japanopt.pokerweb.com.br/*
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-batch-manual.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-batch-manual.user.js
@@ -1047,7 +1047,12 @@
       if (pos > 0) byPos.set(pos, row);
     }
     const desired = new Map(item.rows.map(r => [Number(r.rank), { valor: String(r.amount), desc: '' }]));
-    const allPositions = [...new Set([...desired.keys(), ...byPos.keys()])].sort((a, b) => a - b);
+    const desiredPositions = [...desired.keys()].sort((a, b) => a - b);
+    const deleteIds = [...new Set(
+      [...byPos.entries()]
+        .filter(([pos, row]) => !desired.has(pos) && row?.['id[]'])
+        .map(([, row]) => row['id[]'])
+    )];
     const payload = {
       salvar: ['prizes'],
       id_torneio: [String(item.tournamentId)],
@@ -1062,7 +1067,8 @@
       'prizes_visivel[]': ['0'],
       codbloq: [getDocValue(doc, 'codbloq')]
     };
-    for (const pos of allPositions) {
+    if (deleteIds.length) payload['id_excluir[]'] = deleteIds;
+    for (const pos of desiredPositions) {
       const old = byPos.get(pos);
       const want = desired.get(pos);
       const hasOldId = !!old?.['id[]'];
@@ -1071,8 +1077,8 @@
       payload['tipo[]'].push(old?.['tipo[]'] || '0');
       payload['id_grupo[]'].push(old?.['id_grupo[]'] || '0');
       payload['posicao[]'].push(String(pos));
-      payload['prizes_desc[]'].push(want ? want.desc : (old?.['prizes_desc[]'] || ''));
-      payload['prizes_valor[]'].push(want ? want.valor : String(moneyNumber(old?.['prizes_valor[]']) || ''));
+      payload['prizes_desc[]'].push(want.desc);
+      payload['prizes_valor[]'].push(want.valor);
       payload['valor_vaga[]'].push(old?.['valor_vaga[]'] || (hasOldId ? '0' : ''));
     }
     return payload;
@@ -1195,6 +1201,9 @@
     for (const button of box.querySelectorAll('button[data-action="manual-url"]')) {
       button.addEventListener('click', () => updateItemFromManualUrl(button));
     }
+    for (const button of box.querySelectorAll('button[data-action="confirm-item"]')) {
+      button.addEventListener('click', () => confirmPlanItem(button));
+    }
   }
 
   function variantOptionLabel(v) {
@@ -1231,6 +1240,7 @@
       : item.tournamentId
         ? [{ tournamentId: item.tournamentId, actualName: item.tournamentName || `人工入力 ${item.tournamentId}` }]
         : [];
+    const showManualUrl = !item.tournamentId;
     return `
       <div class="pwpp-card">
         <div class="pwpp-title">${escapeHtml(item.inputName)} ${item.manual ? '<span class="warn">人工修正</span>' : ''}</div>
@@ -1239,15 +1249,16 @@
           <option value="">候補なし</option>
           ${urlCandidates.map(c => `<option value="${escapeHtml(c.tournamentId)}" ${String(c.tournamentId) === String(item.tournamentId) ? 'selected' : ''}>${escapeHtml(c.actualName)} / ${c.tournamentId}</option>`).join('')}
         </select>
-        <div style="display:flex;gap:6px;margin-top:6px;">
+        ${showManualUrl ? `<div style="display:flex;gap:6px;margin-top:6px;">
           <input data-manual-url="${escapeHtml(item.id)}" placeholder="PokerWeb ID または URL" value="">
           <button data-action="manual-url" data-id="${escapeHtml(item.id)}" style="background:#e5e7eb;color:#111827;white-space:nowrap;">URL入力</button>
-        </div>
+        </div>` : ''}
         <label>使用Prize</label>
         <select data-action="variant" data-id="${escapeHtml(item.id)}">
           <option value="">選択してください</option>
           ${variants.map(v => `<option value="${escapeHtml(v.id)}" ${v.id === item.variantId ? 'selected' : ''}>${escapeHtml(variantOptionLabel(v))}</option>`).join('')}
         </select>
+        ${item.planJudgement === '要確認' ? `<button data-action="confirm-item" data-id="${escapeHtml(item.id)}" style="margin-top:8px;background:#e5e7eb;color:#111827;">この内容で人工確認</button>` : ''}
         <div class="pwpp-note">判定: ${escapeHtml(item.planJudgement)} / Total: ${escapeHtml(yen(item.total))} / ${escapeHtml(item.planNote || '')}</div>
       </div>
     `;
@@ -1282,6 +1293,22 @@
     }
     item.manual = true;
     if (item.tournamentId && item.variantId && item.rows?.length) item.planJudgement = '人工確認';
+    saveState(state);
+    renderPlan(plan);
+  }
+
+  function confirmPlanItem(button) {
+    const state = loadState();
+    const plan = state.plan;
+    const item = plan?.items?.find(i => i.id === button.dataset.id);
+    if (!item) return;
+    if (!item.tournamentId || !item.url) return alert('PokerWeb大会を選択してください。');
+    if (!item.variantId || !item.rows?.length) return alert('使用Prizeを選択してください。');
+    item.urlConfirmRequired = false;
+    item.variantConfirmRequired = false;
+    item.manual = true;
+    item.planJudgement = '人工確認';
+    item.planNote = [item.planNote, 'この内容で人工確認'].filter(Boolean).join(' / ');
     saveState(state);
     renderPlan(plan);
   }
@@ -1370,7 +1397,7 @@
     panel.id = APP.panelId;
     panel.innerHTML = `
       <div class="head">
-        <strong>PW Prize Plan v2</strong>
+        <strong>PW Prize Plan 書込・確認</strong>
         <button id="pwPrizeMin" style="background:#374151;color:white;">Min</button>
       </div>
       <div class="body">

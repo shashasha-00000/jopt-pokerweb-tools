@@ -1,8 +1,10 @@
 // ==UserScript==
-// @name         PW Tournament Double Check v2.0
+// @name         PW Tournament Double Check
 // @namespace    pw-tournament-double-check
 // @version      2.0.5
 // @description  3つの入力（大会名 / Portal Tournament / 受付Portal Ticket Link）から、Start・EN・RE・TE・Chips・Ticket Link・USDTを一括DC
+// @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-double-check.user.js
+// @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-double-check.user.js
 // @author       xhpc007 + ChatGPT
 // @match        https://japanopt.pokerweb.com.br/cb/*
 // @match        https://japanopt.pokerweb.com.br/*

@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         PW Main Event Ticket Checker v1.1
-// @namespace    pw-main-event-ticket-checker
+// @name         PW Main Event Ticket Check
+// @namespace    pw-main-event-ticket-check
 // @version      1.1.0
-// @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-main-event-ticket-checker.user.js
-// @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-main-event-ticket-checker.user.js
+// @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-main-event-ticket-check.user.js
+// @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-main-event-ticket-check.user.js
 // @description  单个GameID按票名自动解析Main Event ticket group，并区分当前持有与已使用记录。
 // @author       xhpc007 + Codex
 // @match        https://japanopt.pokerweb.com.br/cb/*

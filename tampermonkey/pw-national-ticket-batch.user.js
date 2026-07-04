@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         PW ナショナルチケット批量付与 正式版 v1.2.2
+// @name         PW National Ticket Batch
 // @namespace    pw-national-ticket-batch-safe
 // @version      1.2.2
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js

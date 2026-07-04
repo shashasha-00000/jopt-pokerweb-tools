@@ -1,10 +1,10 @@
 ﻿// ==UserScript==
-// @name         PW Receipt Full Auto v6.0
-// @version      6.0.2
+// @name         PW Receipt Full Auto
+// @version      7.0.0
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-full-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-full-auto.user.js
-// @description  申請管理から申請キー単位で読み、PDF管理庫で重複防止する統合版
-// @description  SheetからGame IDとイベント設定を読み、PW APIで参加大会・支払い情報を取得してReceiverへ送信する統合版
+// @description  申請管理から申請キー単位で読み、システム設定のreceiverUrlへ送信する正式版
+// @description  イベント設定シートには依存しない、複数Event同時処理対応版
 // @match        https://japanopt.pokerweb.com.br/*
 // @grant        GM_registerMenuCommand
 // @grant        GM_xmlhttpRequest
@@ -20,10 +20,10 @@
   "use strict";
 
   const LS_KEYS = {
-    sheetId: "PW_RECEIPT_FULL_AUTO_V5_SHEET_ID",
-    autoEnabled: "PW_RECEIPT_FULL_AUTO_V5_AUTO_ENABLED",
-    runStatus: "PW_RECEIPT_FULL_AUTO_V5_RUN_STATUS",
-    panelCollapsed: "PW_RECEIPT_FULL_AUTO_V5_PANEL_COLLAPSED"
+    sheetId: "PW_RECEIPT_FULL_AUTO_V7_SHEET_ID",
+    autoEnabled: "PW_RECEIPT_FULL_AUTO_V7_AUTO_ENABLED",
+    runStatus: "PW_RECEIPT_FULL_AUTO_V7_RUN_STATUS",
+    panelCollapsed: "PW_RECEIPT_FULL_AUTO_V7_PANEL_COLLAPSED"
   };
 
   const CONFIG = {
@@ -32,17 +32,15 @@
     sheetNames: {
       applications: "申請管理",
       system: "システム設定",
-      gameIds: "Game ID入力",
-      eventConfig: "イベント設定",
       urlCacheDefault: "大会URL一覧"
     },
 
     fetchInformacoes: true,
-    autoWatchIntervalMs: 180000,
+    autoWatchIntervalMs: 60000,
 
-    betweenPlayersDelay: 300,
-    betweenTournamentsDelay: 200,
-    betweenDetailFetchMs: 80
+    betweenPlayersDelay: 120,
+    betweenTournamentsDelay: 80,
+    betweenDetailFetchMs: 30
   };
 
   const STATE = {
@@ -266,56 +264,13 @@
     return out;
   }
 
-  async function readInputData() {
-    const eventRows = await fetchSheetCsv(CONFIG.sheetNames.eventConfig);
-    const eventConfig = readKeyValue(eventRows);
-
-    const gameIdRows = await fetchSheetCsv(CONFIG.sheetNames.gameIds);
-
-    const eventName = eventConfig.eventName || "";
-    const namePrefix = eventConfig.namePrefix || "";
-    const dateRange = eventConfig.dateRange || "";
-    const urlCacheSheet = eventConfig.urlCacheSheet || CONFIG.sheetNames.urlCacheDefault;
-    const receiverUrl = eventConfig.receiverUrl || "";
-
-    if (!eventName) throw new Error("PW_EVENT_CONFIG eventName が空です");
-    if (!namePrefix) throw new Error("PW_EVENT_CONFIG namePrefix が空です");
-    if (!dateRange) throw new Error("PW_EVENT_CONFIG dateRange が空です");
-    if (!receiverUrl) throw new Error("PW_EVENT_CONFIG receiverUrl が空です");
-
-    const cacheRowsRaw = await fetchSheetCsv(urlCacheSheet);
-
-    const gameIds = getSingleColumnValues(gameIdRows).map(cleanGameId).filter(Boolean);
-    const cacheRows = rowsToObjects(cacheRowsRaw);
-
-    if (!cacheRows.length) throw new Error(`${urlCacheSheet} が空です`);
-
-    return {
-      gameIds,
-      eventConfig: {
-        eventName,
-        namePrefix,
-        dateRange,
-        urlCacheSheet,
-        receiverUrl
-      },
-      cacheRows
-    };
-  }
-
   async function readApplicationInputData() {
     const applicationRowsRaw = await fetchSheetCsv(CONFIG.sheetNames.applications);
     const applicationRows = rowsToObjects(applicationRowsRaw);
     const systemRows = await fetchSheetCsv(CONFIG.sheetNames.system).catch(() => []);
     const systemConfig = systemRows.length ? readKeyValue(systemRows) : {};
 
-    let receiverUrl = systemConfig.receiverUrl || "";
-
-    if (!receiverUrl) {
-      const eventRows = await fetchSheetCsv(CONFIG.sheetNames.eventConfig).catch(() => []);
-      const eventConfig = eventRows.length ? readKeyValue(eventRows) : {};
-      receiverUrl = eventConfig.receiverUrl || "";
-    }
+    const receiverUrl = systemConfig.receiverUrl || "";
 
     if (!receiverUrl) throw new Error("システム設定 receiverUrl が空です");
 
@@ -372,33 +327,18 @@
   }
 
   function makeInputHash(inputData) {
-    if (inputData.applications) {
-      return simpleHash(JSON.stringify({
-        applications: inputData.applications.map(app => ({
-          applicationKey: app.applicationKey,
-          gameId: app.gameId,
-          email: app.email,
-          recipient: app.recipient,
-          eventName: app.eventName,
-          namePrefix: app.namePrefix,
-          dateRange: app.dateRange,
-          status: app.status
-        }))
-      }));
-    }
-
-    const payload = {
-      gameIds: inputData.gameIds,
-      eventConfig: inputData.eventConfig,
-      cacheRows: inputData.cacheRows.map(r => ({
-        Name: r.Name || "",
-        TournamentId: r.TournamentId || "",
-        URL: r.URL || "",
-        Actual_Name: r.Actual_Name || ""
+    return simpleHash(JSON.stringify({
+      applications: (inputData.applications || []).map(app => ({
+        applicationKey: app.applicationKey,
+        gameId: app.gameId,
+        email: app.email,
+        recipient: app.recipient,
+        eventName: app.eventName,
+        namePrefix: app.namePrefix,
+        dateRange: app.dateRange,
+        status: app.status
       }))
-    };
-
-    return simpleHash(JSON.stringify(payload));
+    }));
   }
 
   function loadRunStatus() {
@@ -448,9 +388,9 @@
   }
 
   function updatePanelCollapsed() {
-    const panel = document.getElementById("pw-full-auto-v5-panel");
-    const body = document.getElementById("pw-full-auto-v5-panel-body");
-    const toggle = document.getElementById("pw-full-auto-v5-minimize");
+    const panel = document.getElementById("pw-full-auto-v7-panel");
+    const body = document.getElementById("pw-full-auto-v7-panel-body");
+    const toggle = document.getElementById("pw-full-auto-v7-minimize");
 
     if (!panel || !body || !toggle) return;
 
@@ -1542,19 +1482,7 @@ discoveredRows.push({
             }
 
             if (d.status === "NO_CASH_RECORD") {
-              needCheckRows.push({
-                "Game ID": d.raw_game_id,
-                "購入時間": "",
-                "大会名": cleanTournamentName(d.tournamentName),
-                "確認区分": "購入明細なし",
-                "確認内容": "大会のプレイヤー一覧には存在しますが、購入・支払い明細がありません。",
-                __tournamentId: d.tournamentId,
-                __unique_key: `${d.raw_game_id}_${d.tournamentId}_NO_CASH_RECORD`,
-                __targetIndex: d.targetIndex,
-                __sortTime: 999999999999,
-                __sortTournamentNo: d.tournamentNo
-              });
-              tournamentNeedCheck++;
+              tournamentIgnored++;
               continue;
             }
 
@@ -1605,6 +1533,8 @@ discoveredRows.push({
 
       if (tournamentNeedCheck > 0) {
         note = `確認必要：${tournamentNeedCheck}件`;
+      } else if (tournamentPaste === 0 && tournamentIgnored > 0) {
+        note = "PDF対象なし（購入明細なしは対象外として無視）";
       }
 
       reportRows.push({
@@ -1636,7 +1566,7 @@ discoveredRows.push({
         },
         data: JSON.stringify(payload),
         onload: res => {
-          console.log("[PW-FULL-AUTO-v5.1] receiver response", res.status, res.responseText);
+          console.log("[PW-FULL-AUTO-v7]", "receiver response", res.status, res.responseText);
 
           if (res.status < 200 || res.status >= 300) {
             reject(new Error(`Receiver HTTP ${res.status}: ${res.responseText}`));
@@ -1660,7 +1590,7 @@ discoveredRows.push({
           resolve(json);
         },
         onerror: err => {
-          console.error("[PW-FULL-AUTO-v5.1] receiver error", err);
+          console.error("[PW-FULL-AUTO-v7]", "receiver error", err);
           reject(new Error("Receiver POST failed"));
         }
       });
@@ -1679,7 +1609,7 @@ discoveredRows.push({
     updateStatusDisplay();
 
     try {
-      setStatus(mode === "auto" ? "自動実行開始..." : "手動実行開始...");
+      setStatus(mode === "auto" ? "自動実行を開始しました..." : "人工実行を開始しました...");
 
       const inputData = options.inputData || await readApplicationInputData();
 
@@ -1729,7 +1659,7 @@ discoveredRows.push({
 
         if (!eventConfig.eventName || !eventConfig.namePrefix || !eventConfig.dateRange) {
           await postFullAutoToReceiver(inputData.receiverUrl, {
-            type: "full_auto_v6",
+            type: "full_auto_v7",
             applications: [app],
             discoveredRows: [{
               "申請キー": app.applicationKey,
@@ -1766,7 +1696,7 @@ discoveredRows.push({
         }
 
         await postFullAutoToReceiver(inputData.receiverUrl, {
-          type: "full_auto_v6",
+          type: "full_auto_v7",
           applications: [app],
           discoveredRows,
           pasteRows: payment.pasteRowsForReceiver,
@@ -1875,7 +1805,7 @@ discoveredRows.push({
       });
 
     } catch (e) {
-      console.error("[PW-FULL-AUTO-v5.1] auto watch error", e);
+      console.error("[PW-FULL-AUTO-v7]", "auto watch error", e);
       setStatus("自動監視 ERROR: " + e.message);
     }
 
@@ -1913,13 +1843,13 @@ discoveredRows.push({
   }
 
   function setStatus(text) {
-    const el = document.getElementById("pw-full-auto-v5-status");
+    const el = document.getElementById("pw-full-auto-v7-status");
     if (el) el.textContent = text;
-    console.log("[PW-FULL-AUTO-v5.1]", text);
+    console.log("[PW-FULL-AUTO-v7]", text);
   }
 
   function updateAutoButton() {
-    const btn = document.getElementById("pw-full-auto-v5-auto");
+    const btn = document.getElementById("pw-full-auto-v7-auto");
 
     if (!btn) return;
 
@@ -1935,7 +1865,7 @@ discoveredRows.push({
   }
 
   function updateStatusDisplay() {
-    const el = document.getElementById("pw-full-auto-v5-run-status");
+    const el = document.getElementById("pw-full-auto-v7-run-status");
     if (!el) return;
 
     const s = loadRunStatus();
@@ -1958,10 +1888,10 @@ discoveredRows.push({
   }
 
   function addPanel() {
-    if (document.getElementById("pw-full-auto-v5-panel")) return;
+    if (document.getElementById("pw-full-auto-v7-panel")) return;
 
     const panel = document.createElement("div");
-    panel.id = "pw-full-auto-v5-panel";
+    panel.id = "pw-full-auto-v7-panel";
     panel.style.position = "fixed";
     panel.style.zIndex = "999999";
     panel.style.top = "80px";
@@ -1981,11 +1911,11 @@ discoveredRows.push({
     header.style.gap = "8px";
 
     const title = document.createElement("div");
-    title.textContent = "PW Receipt Full Auto";
+    title.textContent = "PW Receipt Full Auto V7";
     title.style.fontWeight = "bold";
 
     const minimizeBtn = document.createElement("button");
-    minimizeBtn.id = "pw-full-auto-v5-minimize";
+    minimizeBtn.id = "pw-full-auto-v7-minimize";
     minimizeBtn.textContent = "最小化";
     minimizeBtn.style.padding = "4px 8px";
     minimizeBtn.style.cursor = "pointer";
@@ -1998,19 +1928,19 @@ discoveredRows.push({
     header.appendChild(minimizeBtn);
 
     const body = document.createElement("div");
-    body.id = "pw-full-auto-v5-panel-body";
+    body.id = "pw-full-auto-v7-panel-body";
     body.style.marginTop = "8px";
 
     const manualBtn = document.createElement("button");
-    manualBtn.id = "pw-full-auto-v5-run";
-    manualBtn.textContent = "手動：Full Auto 実行";
+    manualBtn.id = "pw-full-auto-v7-run";
+    manualBtn.textContent = "人工実行";
     manualBtn.style.width = "100%";
     manualBtn.style.padding = "8px";
     manualBtn.style.cursor = "pointer";
     manualBtn.style.marginBottom = "6px";
 
     const autoBtn = document.createElement("button");
-    autoBtn.id = "pw-full-auto-v5-auto";
+    autoBtn.id = "pw-full-auto-v7-auto";
     autoBtn.textContent = "自動監視 ON";
     autoBtn.style.width = "100%";
     autoBtn.style.padding = "8px";
@@ -2020,14 +1950,14 @@ discoveredRows.push({
     autoBtn.style.borderRadius = "4px";
 
     const status = document.createElement("div");
-    status.id = "pw-full-auto-v5-status";
+    status.id = "pw-full-auto-v7-status";
     status.textContent = "ready";
     status.style.marginTop = "8px";
     status.style.color = "#9fe";
     status.style.whiteSpace = "pre-wrap";
 
     const runStatus = document.createElement("div");
-    runStatus.id = "pw-full-auto-v5-run-status";
+    runStatus.id = "pw-full-auto-v7-run-status";
     runStatus.textContent = "";
     runStatus.style.marginTop = "8px";
     runStatus.style.color = "#ddd";
@@ -2067,13 +1997,13 @@ discoveredRows.push({
   }
 
   function boot() {
-    console.log("[PW-FULL-AUTO-v5.1] loaded");
+    console.log("[PW-FULL-AUTO-v7] loaded");
     addPanel();
   }
 
-  GM_registerMenuCommand("PW Full Auto 実行", () => runFullAuto({ mode: "manual" }).catch(() => {}));
-  GM_registerMenuCommand("PW Full Auto 自動監視 ON/OFF", () => setAutoEnabled(!isAutoEnabled()));
-  GM_registerMenuCommand("PW Full Auto Sheet ID リセット", resetSheetId);
+  GM_registerMenuCommand("PW Full Auto V7 人工実行", () => runFullAuto({ mode: "manual" }).catch(() => {}));
+  GM_registerMenuCommand("PW Full Auto V7 自動監視 ON/OFF", () => setAutoEnabled(!isAutoEnabled()));
+  GM_registerMenuCommand("PW Full Auto V7 Sheet ID リセット", resetSheetId);
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", boot);
