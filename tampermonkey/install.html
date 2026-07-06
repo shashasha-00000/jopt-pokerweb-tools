@@ -140,15 +140,15 @@
 </head>
 <body>
   <main>
-    <h1>JOPT PokerWeb Tampermonkey Installer</h1>
+    <h1>JOPT PokerWeb Tampermonkey インストーラー</h1>
     <p class="note">
-      <code>scripts.json</code> から自動で一覧を作ります。新增 <code>.user.js</code> 后，运行
-      <code>tools/update-tampermonkey-manifest.ps1</code> 再 push，就会出现在这里。
+      <code>scripts.json</code> から自動で一覧を作ります。新しい <code>.user.js</code> を追加した後、
+      <code>tools/update-tampermonkey-manifest.ps1</code> を実行して push すると、ここに表示されます。
     </p>
 
     <div class="toolbar">
-      <button id="reload" type="button">重新读取清单</button>
-      <span id="status" class="status">loading...</span>
+      <button id="reload" type="button">一覧を再読み込み</button>
+      <span id="status" class="status">読み込み中...</span>
     </div>
 
     <div id="list" class="list"></div>
@@ -185,7 +185,7 @@
       list.innerHTML = "";
 
       if (!items.length) {
-        list.innerHTML = '<div class="error">No scripts found in scripts.json.</div>';
+        list.innerHTML = '<div class="error">scripts.json にスクリプトがありません。</div>';
         return;
       }
 
@@ -200,8 +200,8 @@
           </div>
           <div class="desc">${escapeHtml(item.description || item.file)}</div>
           <div class="actions">
-            <a class="button primary" href="${escapeHtml(rawUrl)}" target="_blank" rel="noopener">Raw 更新/安装</a>
-            <button type="button" data-copy="${escapeHtml(rawUrl)}">复制 raw URL</button>
+            <a class="button primary" href="${escapeHtml(rawUrl)}" target="_blank" rel="noopener">Raw 更新/インストール</a>
+            <button type="button" data-copy="${escapeHtml(rawUrl)}">Raw URLをコピー</button>
             <span><code>${escapeHtml(item.file)}</code></span>
           </div>
         `;
@@ -211,7 +211,7 @@
     }
 
     async function loadManifest() {
-      setStatus("loading scripts.json...");
+      setStatus("scripts.json を読み込み中...");
 
       try {
         let res;
@@ -224,12 +224,12 @@
         }
         scripts = await res.json();
         render(scripts);
-        setStatus(`${scripts.length} scripts loaded`);
+        setStatus(`${scripts.length} 件を読み込みました`);
       } catch (error) {
         scripts = [];
         document.querySelector("#list").innerHTML =
-          `<div class="error">scripts.json を読めませんでした。GitHub Pages 或本地服务器上打开这个页面。<br>${escapeHtml(error.message || error)}</div>`;
-        setStatus("manifest load failed");
+          `<div class="error">scripts.json を読めませんでした。GitHub Pages またはローカルサーバー上でこのページを開いてください。<br>${escapeHtml(error.message || error)}</div>`;
+        setStatus("読み込み失敗");
       }
     }
 
@@ -241,9 +241,9 @@
       const value = btn.getAttribute("data-copy");
       try {
         await navigator.clipboard.writeText(value);
-        setStatus("raw URL copied");
+        setStatus("Raw URLをコピーしました");
       } catch (_) {
-        prompt("Copy raw URL", value);
+        prompt("Raw URLをコピー", value);
       }
     });
 

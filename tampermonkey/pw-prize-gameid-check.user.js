@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         PW プライズ GameID チェック
+// @name         PW・シーズン プライズGameID照合
 // @namespace    https://japanopt.pokerweb.com.br/
 // @version      0.1.0
-// @description  読み取り専用：プライズ行を読み込み、記録タブからGameIDを照合します。
+// @description  読み取り専用：PWプライズ行のGameIDをシーズンDBと照合します。
 // @match        https://japanopt.pokerweb.com.br/*
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-gameid-check.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-gameid-check.user.js
@@ -13,7 +13,7 @@
   'use strict';
 
   const APP = {
-    name: 'PW-プライズGameIDチェック',
+    name: 'PW・シーズン プライズGameID照合',
     panelId: 'pw-prize-gameid-test-panel'
   };
 
