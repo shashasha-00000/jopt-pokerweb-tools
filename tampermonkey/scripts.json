@@ -36,6 +36,15 @@
         "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-batch-manual.user.js"
     },
     {
+        "file":  "pw-prize-gameid-check.user.js",
+        "name":  "PW プライズ GameID チェック",
+        "version":  "0.1.0",
+        "description":  "読み取り専用：プライズ行を読み込み、記録タブからGameIDを照合します。",
+        "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-gameid-check.user.js",
+        "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-gameid-check.user.js",
+        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-gameid-check.user.js"
+    },
+    {
         "file":  "pw-receipt-full-auto.user.js",
         "name":  "PW 領収書 Full Auto",
         "version":  "7.0.0",
@@ -52,6 +61,15 @@
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js",
         "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js",
         "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js"
+    },
+    {
+        "file":  "pw-sprinter-chip-leader-award.user.js",
+        "name":  "PW Sprinter・Chip Leader 追加",
+        "version":  "0.1.0",
+        "description":  "Sprinter / Chip Leader の特殊賞を既存Prize末尾に追加・確認します。",
+        "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-sprinter-chip-leader-award.user.js",
+        "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-sprinter-chip-leader-award.user.js",
+        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-sprinter-chip-leader-award.user.js"
     },
     {
         "file":  "pw-ticket-link-semi-auto.user.js",

@@ -5,7 +5,7 @@
  *   installNationalTicketTsvMenu()
  *
  * 実行:
- *   buildNationalTicketTsv()
+ *   メニュー「ナショナルチケットTSV」から対象イベントを選択する。
  *
  * ルール:
  * - D列「対象プロモ」が A: Millions + PPC
@@ -20,6 +20,10 @@
 const NTB_CONFIG = {
   OUTPUT_SHEET_NAME: 'ナショナルチケット付与TSV',
   HEADER_ROW: 1,
+  OUTPUT_HEADERS: ['GameID', 'チケット名']
+};
+
+const NTB_TOKYO_2026_02 = {
   REQUIRED_COLUMN_HEADERS: {
     3: 'Game ID',
     4: '対象プロモ',
@@ -27,9 +31,17 @@ const NTB_CONFIG = {
     10: 'PPC',
     11: 'WeChat送信'
   },
-  OUTPUT_HEADERS: ['GameID', 'チケット名'],
   MILLIONS_TICKET: '【JOPT 2026 Tokyo #02】NLH Millions Voucher / -2026.07.31 (海外対応分)',
   PPC_TICKET: '【JOPT 2026 Tokyo #02】NLH Poker Players Championship Voucher / -2026.07.31 (海外対応分)'
+};
+
+const NTB_FUKUOKA_2026_01 = {
+  REQUIRED_COLUMN_HEADERS: {
+    3: 'Game ID',
+    9: 'Main Event'
+  },
+  // TODO: PokerWebの正式なナショナルチケット名が決まり次第、ここに貼り付ける。
+  MAIN_TICKET: ''
 };
 
 function installNationalTicketTsvMenu() {
@@ -48,7 +60,8 @@ function NTB_addMenu_() {
   try {
     SpreadsheetApp.getUi()
     .createMenu('ナショナルチケットTSV')
-    .addItem('現在のシートからTSV生成', 'buildNationalTicketTsv')
+    .addItem('Tokyo #02 TSV生成', 'buildTokyo02NationalTicketTsv')
+    .addItem('2026 Fukuoka #01 Main Ticket TSV生成', 'buildFukuoka01NationalTicketTsv')
     .addToUi();
   } catch (error) {
     throw new Error(
@@ -59,17 +72,26 @@ function NTB_addMenu_() {
 }
 
 function buildNationalTicketTsv() {
+  buildTokyo02NationalTicketTsv();
+}
+
+function buildTokyo02NationalTicketTsv() {
   try {
-    NTB_buildNationalTicketTsv_();
+    NTB_buildTokyo02NationalTicketTsv_();
   } catch (error) {
-    const message = error && error.message ? error.message : String(error);
-    console.error(error && error.stack ? error.stack : error);
-    NTB_alert_('TSV生成を停止しました。\n\n' + message);
-    throw error;
+    NTB_stopWithAlert_(error);
   }
 }
 
-function NTB_buildNationalTicketTsv_() {
+function buildFukuoka01NationalTicketTsv() {
+  try {
+    NTB_buildFukuoka01NationalTicketTsv_();
+  } catch (error) {
+    NTB_stopWithAlert_(error);
+  }
+}
+
+function NTB_buildTokyo02NationalTicketTsv_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) {
     throw new Error('Spreadsheetを取得できません。対象Spreadsheetに紐づいた Apps Script から実行してください。');
@@ -90,7 +112,7 @@ function NTB_buildNationalTicketTsv_() {
   }
 
   const headers = values[NTB_CONFIG.HEADER_ROW - 1].map(NTB_text_);
-  NTB_assertRequiredColumns_(headers);
+  NTB_assertRequiredColumns_(headers, NTB_TOKYO_2026_02.REQUIRED_COLUMN_HEADERS);
 
   const gameIdColumn = 2;
   const promoColumn = 3;
@@ -126,11 +148,11 @@ function NTB_buildNationalTicketTsv_() {
     }
 
     if (!millionsDone) {
-      outputRows.push([gameId, NTB_CONFIG.MILLIONS_TICKET]);
+      outputRows.push([gameId, NTB_TOKYO_2026_02.MILLIONS_TICKET]);
     }
 
     if (promo === 'A' && !ppcDone) {
-      outputRows.push([gameId, NTB_CONFIG.PPC_TICKET]);
+      outputRows.push([gameId, NTB_TOKYO_2026_02.PPC_TICKET]);
     }
   });
 
@@ -142,6 +164,82 @@ function NTB_buildNationalTicketTsv_() {
     );
   }
 
+  NTB_writeOutput_(ss, outputRows);
+
+  NTB_alert_(
+    'TSV出力を更新しました。\n\n' +
+      '未付与タスク: ' + outputRows.length + ' 件\n' +
+      'H列入力によりスキップ: ' + skippedCount + ' 件\n' +
+      '出力シート: ' + NTB_CONFIG.OUTPUT_SHEET_NAME + '\n\n' +
+      'A:B列を表頭ごとコピーして PokerWeb のツールへ貼り付けてください。\n' +
+      '付与完了後、元表の対応する Millons1 / PPC を手動でCHECKしてください。'
+  );
+}
+
+function NTB_buildFukuoka01NationalTicketTsv_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) {
+    throw new Error('Spreadsheetを取得できません。対象Spreadsheetに紐づいた Apps Script から実行してください。');
+  }
+
+  const source = ss.getActiveSheet();
+  if (!source) {
+    throw new Error('現在開いているシートを取得できません。');
+  }
+
+  if (source.getName() === NTB_CONFIG.OUTPUT_SHEET_NAME) {
+    throw new Error('出力シートでは実行できません。元の運用表を開いてから実行してください。');
+  }
+
+  if (!NTB_text_(NTB_FUKUOKA_2026_01.MAIN_TICKET)) {
+    throw new Error('2026 Fukuoka #01 の MAIN_TICKET が未設定です。コード上部の NTB_FUKUOKA_2026_01.MAIN_TICKET に正式なチケット名を貼り付けてください。');
+  }
+
+  const values = source.getDataRange().getValues();
+  if (values.length < 2) {
+    throw new Error('データ行がありません。');
+  }
+
+  const headers = values[NTB_CONFIG.HEADER_ROW - 1].map(NTB_text_);
+  NTB_assertRequiredColumns_(headers, NTB_FUKUOKA_2026_01.REQUIRED_COLUMN_HEADERS);
+
+  const gameIdColumn = 2;
+  const outputRows = [];
+  const errors = [];
+
+  values.slice(NTB_CONFIG.HEADER_ROW).forEach((row, offset) => {
+    const sheetRow = NTB_CONFIG.HEADER_ROW + offset + 1;
+    const rawGameId = NTB_text_(row[gameIdColumn]);
+    if (!rawGameId) return;
+
+    const gameId = NTB_normalizeGameId_(row[gameIdColumn]);
+    if (!gameId) {
+      errors.push(sheetRow + '行目: Game ID が空白または不正です。');
+      return;
+    }
+
+    outputRows.push([gameId, NTB_FUKUOKA_2026_01.MAIN_TICKET]);
+  });
+
+  if (errors.length) {
+    throw new Error(
+      '安全のため出力を更新しませんでした。\n\n' +
+      errors.slice(0, 20).join('\n') +
+      (errors.length > 20 ? '\n...ほか ' + (errors.length - 20) + ' 件' : '')
+    );
+  }
+
+  NTB_writeOutput_(ss, outputRows);
+
+  NTB_alert_(
+    '2026 Fukuoka #01 Main Ticket TSV出力を更新しました。\n\n' +
+      '出力タスク: ' + outputRows.length + ' 件\n' +
+      '出力シート: ' + NTB_CONFIG.OUTPUT_SHEET_NAME + '\n\n' +
+      'A:B列を表頭ごとコピーして PokerWeb のツールへ貼り付けてください。'
+  );
+}
+
+function NTB_writeOutput_(ss, outputRows) {
   const output = NTB_getOrCreateOutputSheet_(ss);
   output.clearContents();
   output.getRange(1, 1, 1, NTB_CONFIG.OUTPUT_HEADERS.length)
@@ -158,15 +256,6 @@ function NTB_buildNationalTicketTsv_() {
   output.setFrozenRows(1);
   output.autoResizeColumns(1, NTB_CONFIG.OUTPUT_HEADERS.length);
   ss.setActiveSheet(output);
-
-  NTB_alert_(
-    'TSV出力を更新しました。\n\n' +
-      '未付与タスク: ' + outputRows.length + ' 件\n' +
-      'H列入力によりスキップ: ' + skippedCount + ' 件\n' +
-      '出力シート: ' + NTB_CONFIG.OUTPUT_SHEET_NAME + '\n\n' +
-      'A:B列を表頭ごとコピーして PokerWeb のツールへ貼り付けてください。\n' +
-      '付与完了後、元表の対応する Millons1 / PPC を手動でCHECKしてください。'
-  );
 }
 
 function NTB_getOrCreateOutputSheet_(ss) {
@@ -174,12 +263,12 @@ function NTB_getOrCreateOutputSheet_(ss) {
     ss.insertSheet(NTB_CONFIG.OUTPUT_SHEET_NAME);
 }
 
-function NTB_assertRequiredColumns_(headers) {
+function NTB_assertRequiredColumns_(headers, requiredColumnHeaders) {
   const differences = [];
 
-  Object.keys(NTB_CONFIG.REQUIRED_COLUMN_HEADERS).forEach(columnText => {
+  Object.keys(requiredColumnHeaders).forEach(columnText => {
     const column = Number(columnText);
-    const expected = NTB_CONFIG.REQUIRED_COLUMN_HEADERS[column];
+    const expected = requiredColumnHeaders[column];
     const actual = headers[column - 1] || '';
     if (actual !== expected) {
       differences.push(column + '列目: 期待=[' + expected + '] 実際=[' + actual + ']');
@@ -217,4 +306,11 @@ function NTB_alert_(message) {
   } catch (_) {
     console.log(message);
   }
+}
+
+function NTB_stopWithAlert_(error) {
+  const message = error && error.message ? error.message : String(error);
+  console.error(error && error.stack ? error.stack : error);
+  NTB_alert_('TSV生成を停止しました。\n\n' + message);
+  throw error;
 }

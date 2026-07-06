@@ -7,11 +7,18 @@
 1. 将脚本加入运营表的 Apps Script 项目。
 2. 手动执行一次 `installNationalTicketTsvMenu()` 并授权。
 3. 打开原始运营表页。
-4. 执行菜单 `ナショナルチケットTSV > 現在のシートからTSV生成`。
+4. 执行菜单 `ナショナルチケットTSV` 下对应比赛的 TSV 生成项。
 5. 从输出页 `ナショナルチケット付与TSV` 复制 A:B 两列，包括表头。
    也可以直接粘贴带表头的 `Player / Game ID / 付与内容 / 枚数` 表；`Player` 会被忽略，`枚数` 大于 1 时会自动展开成多条付与任务。
 
-脚本只输出 `GameID` 和 `チケット名`，规则固定为：
+脚本只输出 `GameID` 和 `チケット名`。当前菜单入口：
+
+- `Tokyo #02 TSV生成`
+- `2026 Fukuoka #01 Main Ticket TSV生成`
+
+### Tokyo #02
+
+规则：
 
 - `D列 対象プロモ = A`：应付与 Millions 和 PPC。
 - `D列 対象プロモ = B / C`：只应付与 Millions。
@@ -22,6 +29,27 @@
 - 为避免读取错误列，脚本会严格检查 `C=Game ID / D=対象プロモ / I=Millons1 / J=PPC / K=WeChat送信`。列结构变化时整批停止。
 
 付与成功后，需要回到原运营表手动勾选对应的 `Millons1 / PPC`。PokerWeb 脚本不会直接读写 Google Sheet。
+
+### 2026 Fukuoka #01
+
+规则：
+
+- 严格检查 `C=Game ID / I=Main Event`。
+- 每个非空 `Game ID` 输出一条固定 Main Ticket。
+- 输出仍写入 `ナショナルチケット付与TSV`，会覆盖上一次输出。
+- 正式 ticket 名称未定时不会生成 TSV，会提示先设置 `MAIN_TICKET`。
+
+设置位置：
+
+- 打开 `apps-script/NationalTicketTsvBuilder.gs`。
+- 找到 `NTB_FUKUOKA_2026_01.MAIN_TICKET`。
+- 将空字符串替换成 PokerWeb 上完全一致的正式 ticket 名称。
+
+维护原则：
+
+- `onOpen()` 只挂当前需要用的比赛入口。
+- 规则相同的新比赛可以在现有函数上小修复用；规则差很多时再新增独立函数。
+- 活动结束后，菜单入口和对应代码可以直接删除，或移到历史目录；历史追溯优先依赖 git。
 
 ## Part 2: PokerWeb 批量付与
 

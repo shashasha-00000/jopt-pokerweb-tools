@@ -24,7 +24,8 @@ body{font-family:"Noto Sans JP",system-ui,sans-serif;background:linear-gradient(
 .card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);border-radius:10px;padding:14px;margin-bottom:14px}
 .card h3{margin:0 0 10px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#8aa0c6;font-weight:600}
 label.lbl{display:block;font-size:11px;color:#9fb1d1;margin:8px 0 4px}
-input,select{width:100%;background:#fff;border:1px solid #cbd2e0;border-radius:7px;padding:8px 10px;font:inherit;font-size:13px;color:#111}
+input,select,textarea{width:100%;background:#fff;border:1px solid #cbd2e0;border-radius:7px;padding:8px 10px;font:inherit;font-size:13px;color:#111}
+textarea{min-height:120px;resize:vertical;line-height:1.45}
 .drop{border:1.5px dashed #4a6299;border-radius:10px;padding:22px 14px;text-align:center;color:#9fb1d1;font-size:13px;cursor:pointer;transition:.15s}
 .drop:hover{border-color:var(--accent);color:#cdd8ec;background:rgba(212,175,55,.05)}
 .drop b{color:#e8edf5}
@@ -58,7 +59,7 @@ input,select{width:100%;background:#fff;border:1px solid #cbd2e0;border-radius:7
 .r .meta{text-align:right;font-size:13px;line-height:1.8}
 .r .meta .no b{font-variant-numeric:tabular-nums;font-size:16px;margin-left:30px}
 .r .meta .dt span{font-variant-numeric:tabular-nums;margin:0 2px}
-.r .to{display:flex;align-items:flex-end;justify-content:space-between;border-bottom:1.5px solid var(--ink);margin:18px 8px 0;padding:0 6px 6px;min-height:30px}
+.r .to{display:flex;align-items:flex-end;justify-content:center;gap:42px;border-bottom:1.5px solid var(--ink);margin:18px 8px 0;padding:0 6px 6px;min-height:30px;text-align:center}
 .r .to .nm{font-size:24px;font-weight:700;letter-spacing:.02em}
 .r .to .sm{font-size:18px;letter-spacing:.1em}
 .r .amt{text-align:center;font-size:30px;font-weight:700;border-bottom:1.5px solid var(--ink);margin:10px 80px 0;padding-bottom:6px;font-variant-numeric:tabular-nums;letter-spacing:.04em}
@@ -113,6 +114,10 @@ input,select{width:100%;background:#fff;border:1px solid #cbd2e0;border-radius:7
       <h3>1. 申請CSVを読み込む</h3>
       <div class="drop" id="drop"><b>CSVをドロップ / クリック</b><br>「トナメ抜き出し」形式</div>
       <input type="file" id="file" accept=".csv" hidden>
+      <label class="lbl">表から貼り付け</label>
+      <textarea id="pasteCsv" placeholder="Google Sheets / Excel から明細行を貼り付け"></textarea>
+      <button class="btn ghost" id="loadPaste" type="button">貼り付けを読み込む</button>
+      <div class="hint">表頭は貼り付けても省略しても読み込めます。</div>
       <div id="stats" style="margin-top:12px;display:none">
         <div class="stat"><span>明細（受領書）件数</span><b id="sCount">0</b></div>
         <div class="stat"><span>現金</span><b id="sCash">¥0</b></div>
@@ -207,7 +212,7 @@ function parseCSV(text){
   const rows=res.data;
   const out=[];
   const missingDates=[];
-  for(let i=1;i<rows.length;i++){            // skip header row
+  for(let i=0;i<rows.length;i++){
     const r=rows[i]; if(!r)continue;
     const tour=(r[COL.tour]||'').trim();
     if(!tour)continue;                        // only detail rows
@@ -383,6 +388,11 @@ function load(text){
 $('drop').addEventListener('click',()=>$('file').click());
 $('file').addEventListener('change',e=>{const f=e.target.files[0];if(f){const rd=new FileReader();rd.onload=()=>{load(rd.result);$('file').value='';};rd.readAsText(f);}});
 ['dragover','dragleave','drop'].forEach(ev=>$('drop').addEventListener(ev,e=>{e.preventDefault();if(ev==='drop'){const f=e.dataTransfer.files[0];if(f){const rd=new FileReader();rd.onload=()=>load(rd.result);rd.readAsText(f);}}}));
+$('loadPaste').addEventListener('click',()=>{
+  const text=$('pasteCsv').value;
+  if(!text.replace(/\s/g,'')){alert('貼り付けデータが空です。');return;}
+  load(text);
+});
 ['search','rangeFrom','rangeTo'].forEach(id=>$(id).addEventListener('input',renderPreviews));
 ['startNo','but','co','event','addr1','addr2','inv'].forEach(id=>$(id).addEventListener('input',renderPreviews));
 
