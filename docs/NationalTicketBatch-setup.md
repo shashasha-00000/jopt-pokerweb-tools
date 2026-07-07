@@ -2,7 +2,12 @@
 
 ## Part 1: Google Sheet TSV 转换
 
-脚本：`apps-script/NationalTicketTsvBuilder.gs`
+脚本：
+
+- `apps-script/TicketGrantTsvMenu.gs`：固定菜单入口。长期主要维护 `onOpen()` / 菜单项。
+- `apps-script/TicketGrantTsvCommon.gs`：共用 TSV 输出、Game ID 清洗、错误提示。
+- `apps-script/TicketGrantTokyo02.gs`：Tokyo #02 的 A/B/C 规则。
+- `apps-script/TicketGrantFukuoka01.gs`：2026 Fukuoka #01 的 Main Ticket 简单规则。
 
 1. 将脚本加入运营表的 Apps Script 项目。
 2. 手动执行一次 `installNationalTicketTsvMenu()` 并授权。
@@ -41,14 +46,14 @@
 
 设置位置：
 
-- 打开 `apps-script/NationalTicketTsvBuilder.gs`。
+- 打开 `apps-script/TicketGrantFukuoka01.gs`。
 - 找到 `NTB_FUKUOKA_2026_01.MAIN_TICKET`。
 - 将空字符串替换成 PokerWeb 上完全一致的正式 ticket 名称。
 
 维护原则：
 
 - `onOpen()` 只挂当前需要用的比赛入口。
-- 规则相同的新比赛可以在现有函数上小修复用；规则差很多时再新增独立函数。
+- 规则相同的新比赛可以复制现有比赛文件后小修复用；规则差很多时再新增独立文件。
 - 活动结束后，菜单入口和对应代码可以直接删除，或移到历史目录；历史追溯优先依赖 git。
 
 ## Part 2: PokerWeb 批量付与

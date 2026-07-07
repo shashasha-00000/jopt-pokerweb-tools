@@ -27,6 +27,15 @@
         "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js"
     },
     {
+        "file":  "pw-panel-drag-helper.user.js",
+        "name":  "PW 共通パネル移動・最小化",
+        "version":  "0.1.0",
+        "description":  "PokerWeb用Tampermonkeyツールの固定パネルをドラッグ移動・最小化できるようにします。",
+        "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-panel-drag-helper.user.js",
+        "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-panel-drag-helper.user.js",
+        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-panel-drag-helper.user.js"
+    },
+    {
         "file":  "pw-prize-batch-manual.user.js",
         "name":  "PW Prize Plan 書込・確認",
         "version":  "2.0.0",
@@ -65,7 +74,7 @@
     {
         "file":  "pw-sprinter-chip-leader-award.user.js",
         "name":  "PW Sprinter・Chip Leader 追加",
-        "version":  "0.1.0",
+        "version":  "0.2.0",
         "description":  "Sprinter / Chip Leader の特殊賞を既存Prize末尾に追加・確認します。",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-sprinter-chip-leader-award.user.js",
         "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-sprinter-chip-leader-award.user.js",

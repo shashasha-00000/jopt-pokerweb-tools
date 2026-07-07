@@ -1159,10 +1159,12 @@
         const actual = readPrizeFromDoc(verifyDoc);
         const diff = compareRows(item.rows, actual.rows);
         const totalOk = Number(item.total || 0) === Number(actual.total || 0);
-        item.writeStatus = (res1.status >= 200 && res1.status < 400 && res2.status >= 200 && res2.status < 400 && !diff.length && totalOk) ? '書込OK' : '書込失敗';
+        const verifyOk = !diff.length && totalOk;
+        item.writeStatus = verifyOk ? '書込OK' : '書込失敗';
         item.writeNote = [
           `Prize HTTP ${res1.status}`,
           `Total HTTP ${res2.status}`,
+          verifyOk ? 'Verify OK' : '',
           !totalOk ? `Verify Total ${yen(actual.total)} != ${yen(item.total)}` : '',
           diff.slice(0, 3).join(' / ')
         ].filter(Boolean).join(' / ');

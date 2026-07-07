@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW Sprinter・Chip Leader 追加
 // @namespace    https://japanopt.pokerweb.com.br/
-// @version      0.1.0
+// @version      0.2.0
 // @description  Sprinter / Chip Leader の特殊賞を既存Prize末尾に追加・確認します。
 // @match        https://japanopt.pokerweb.com.br/*
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-sprinter-chip-leader-award.user.js
@@ -20,7 +20,8 @@
     endpointPrizeList: '/cb/torneio/abas/premiacao/faixas_premiacoes',
     endpointPotTotal: id => `/cb/torneio/abas/premiacao/pot_total/${id}`,
     pageLength: 100,
-    waitMs: 5000
+    waitMs: 25000,
+    pollMs: 300
   };
 
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -97,6 +98,18 @@
       };
       tick();
     });
+  }
+
+  async function waitForInWindow(win, fn, timeoutMs = 18000) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      try {
+        const result = fn(win);
+        if (result) return result;
+      } catch (_) {}
+      await sleep(APP.pollMs);
+    }
+    return null;
   }
 
   function dataTable(win) {
@@ -192,7 +205,7 @@
   }
 
   function tournamentNoFromName(name) {
-    const m = norm(name).match(/[#＃]\s*0*(\d{1,3})/);
+    const m = norm(name).match(/[#\uff03]\s*0*(\d{1,3})/);
     return m ? Number(m[1]) : null;
   }
 
@@ -210,23 +223,30 @@
     return norm(name).replace(/\s*-\s*PokerWeb\s*$/i, '');
   }
 
-  function extractTournamentTitleFromRow(row) {
-    const cells = [...row.children].map(td => norm(td.innerText || td.textContent || ''));
-    const candidates = cells.filter(text => /【[^】]+】/.test(text) || /#\s*\d+/.test(text));
-    const best = candidates.sort((a, b) => b.length - a.length)[0] || norm(row.innerText || row.textContent || '');
-    const m = best.match(/(【[^】]+】\s*#\s*\d+[A-Za-z]?\s+.+)$/);
+  function extractTournamentTitleFromRow(rowText) {
+    let s = norm(rowText);
+    const m = s.match(/(\u3010[^\u3011]+\u3011\s*(?:#\d+[A-Za-z]?|\(s\d+\)|s\d+)\s+.+?)(?:\s+\d{1,2}\/\d{1,2}\/\d{4}|\s+Aberto|\s+Fechado|$)/i);
     if (m) return cleanTournamentName(m[1]);
-    return cleanTournamentName(best.replace(/^アクション\s*/i, ''));
+    const m2 = s.match(/(\u3010[^\u3011]+\u3011.+?)(?:\s+\d{1,2}\/\d{1,2}\/\d{4}|\s+Aberto|\s+Fechado|$)/i);
+    if (m2) return cleanTournamentName(m2[1]);
+    s = s
+      .replace(/^\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}:\d{2}\s+/, '')
+      .replace(/\s+\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}:\d{2}$/, '')
+      .replace(/\s+Aberto$/i, '')
+      .replace(/\s+Fechado$/i, '')
+      .trim();
+    return cleanTournamentName(s);
   }
 
   function extractTournament(row) {
     const html = row.innerHTML || '';
     const match = html.match(/\/cb\/torneio\/painel\/(\d+)/);
     if (!match) return null;
-    const actualName = extractTournamentTitleFromRow(row);
-    const withoutPrefix = actualName.replace(/^【[^】]+】\s*/, '');
+    const rowText = norm(row.innerText || row.textContent || '');
+    const actualName = extractTournamentTitleFromRow(rowText);
+    const withoutPrefix = actualName.replace(/^\u3010[^\u3011]+\u3011\s*/, '');
     const no = tournamentNoFromName(withoutPrefix);
-    const shortName = withoutPrefix.replace(/^[#＃]\s*0*\d+\s*/, '').trim();
+    const shortName = withoutPrefix.replace(/^[#\uff03]\s*0*\d+\s*/, '').trim();
     return {
       tournamentId: match[1],
       url: `/cb/torneio/painel/${match[1]}`,
@@ -234,7 +254,7 @@
       name: shortName,
       no,
       day: dayNumber(actualName),
-      matchedRow: norm(row.innerText || row.textContent || '')
+      matchedRow: rowText
     };
   }
 
@@ -264,14 +284,20 @@
     writeCache(cache);
   }
 
+  async function openListWindow() {
+    const win = window.open(APP.openListPath, `pw_award_url_${Date.now()}`, 'width=1280,height=900');
+    if (!win) throw new Error('Open tournament window could not be opened.');
+    await waitForWindowLoad(win);
+    await waitForInWindow(win, w => dataTable(w) || rowsForRead(w, false).length);
+    await sleep(700);
+    return win;
+  }
+
   async function scanOpenUrls(prefix) {
     const found = [];
     const seen = new Set();
-    const win = window.open(APP.openListPath, `pw_award_url_${Date.now()}`, 'width=1280,height=900');
-    if (!win) throw new Error('オープントーナメント画面を開けません。ポップアップを許可してください。');
+    const win = await openListWindow();
     try {
-      await waitForWindowLoad(win);
-      await sleep(700);
       const dt = await searchTable(win, prefix);
       const info = dt?.page?.info?.();
       const pages = info?.pages || 1;
@@ -417,8 +443,14 @@
     const target = strictAliasKey(group.inputName);
     let candidates = entries.filter(entry => {
       if (isDayOne(entry.actualName)) return false;
-      const key = strictAliasKey(entry.name || entry.actualName);
-      return key.includes(target) || target.includes(key);
+      const keys = [entry.name, entry.actualName, entry.matchedRow]
+        .map(strictAliasKey)
+        .filter(Boolean);
+      return keys.some(key =>
+        key.includes(target) ||
+        target.includes(key) ||
+        (target === 'pokerplayerschampionship' && /ppc|pokerplayers/.test(key))
+      );
     });
     if (/mainevent|millions/.test(target)) {
       const maxDay = Math.max(0, ...candidates.map(c => c.day || 0).filter(d => d > 1));
@@ -468,6 +500,12 @@
       })]);
     }
     return rows.map(row => row.join('\t')).join('\n');
+  }
+
+  function tournamentIdFromInput(value) {
+    const text = norm(value);
+    const m = text.match(/(?:\/painel\/|^)(\d{4,6})(?:\D|$)/);
+    return m ? m[1] : '';
   }
 
   function byNameFromDoc(doc, name) {
@@ -712,17 +750,38 @@
     return `${entry.actualName} / ${entry.tournamentId}`;
   }
 
+  function shouldShowItem(item, showAll) {
+    if (showAll) return true;
+    if (!item.tournamentId || item.planJudgement === '要確認') return true;
+    if (item.writeStatus || item.checkStatus) return true;
+    return false;
+  }
+
   function renderPlan(plan) {
     const box = document.querySelector('#pwAwardConfirm');
     if (!box) return;
     const auto = plan.items.filter(i => i.planJudgement === '候補確定').length;
     const confirm = plan.items.filter(i => i.planJudgement === '要確認').length;
+    const showAll = loadState().showConfirmed === true;
+    const visibleItems = plan.items.filter(item => shouldShowItem(item, showAll));
     box.innerHTML = `
-      <div class="pwap-summary">候補確定 ${auto} / 要確認 ${confirm} / URL ${plan.entries?.length || 0}件</div>
-      ${plan.items.map(itemCardHtml).join('')}
+      <div class="pwap-summary">URLスキャン完了: ${plan.entries?.length || 0}件 / 候補確定 ${auto}件 / 要確認 ${confirm}件</div>
+      ${confirm ? '' : '<div class="pwap-ok">すべて自動確認済みです。PLAN COPYで確認してください。</div>'}
+      ${visibleItems.map(itemCardHtml).join('')}
+      <button data-action="toggle-confirmed" style="margin-top:8px;background:#475569;color:white;">${showAll ? '確認済みを隠す' : '確認済みも表示'}</button>
     `;
     for (const select of box.querySelectorAll('select[data-tournament-select]')) {
       select.addEventListener('change', () => updateItemTournament(select));
+    }
+    for (const button of box.querySelectorAll('button[data-action="manual-url"]')) {
+      button.addEventListener('click', () => updateItemFromManualUrl(button));
+    }
+    const toggle = box.querySelector('button[data-action="toggle-confirmed"]');
+    if (toggle) {
+      toggle.addEventListener('click', () => {
+        saveState({ showConfirmed: !showAll });
+        renderPlan(loadState().plan || plan);
+      });
     }
   }
 
@@ -736,6 +795,10 @@
         <div class="pwap-title">${escapeHtml(item.inputName)}</div>
         <label>PokerWeb大会</label>
         <select data-tournament-select="${escapeHtml(item.id)}">${options}</select>
+        <div style="display:flex;gap:6px;margin-top:6px;">
+          <input data-manual-url="${escapeHtml(item.id)}" placeholder="PokerWeb ID または URL" value="">
+          <button data-action="manual-url" data-id="${escapeHtml(item.id)}" style="background:#e5e7eb;color:#111827;white-space:nowrap;">URL入力</button>
+        </div>
         <div class="pwap-note">判定: ${escapeHtml(item.writeStatus || item.checkStatus || item.planJudgement || '')} / ${escapeHtml(item.writeNote || item.checkNote || item.note || '')}</div>
         <div class="pwap-awards">${rows}</div>
       </div>
@@ -760,6 +823,27 @@
       item.planJudgement = '人工確認';
       item.note = '人工選択';
     }
+    saveState({ plan });
+    renderPlan(plan);
+  }
+
+  async function updateItemFromManualUrl(button) {
+    const plan = loadState().plan;
+    const item = plan?.items?.find(i => i.id === button.getAttribute('data-id'));
+    if (!item) return;
+    const input = document.querySelector(`input[data-manual-url="${CSS.escape(item.id)}"]`);
+    const id = tournamentIdFromInput(input?.value || '');
+    if (!id) return alert('PokerWeb ID または URLを入力してください。');
+    item.tournamentId = id;
+    item.url = `/cb/torneio/painel/${id}`;
+    item.tournamentName = item.tournamentName || `PokerWeb #${id}`;
+    try {
+      const doc = await fetchDoc(item.url);
+      const title = titleOfDoc(doc);
+      if (title) item.tournamentName = title;
+    } catch (_) {}
+    item.planJudgement = '人工確認';
+    item.note = 'URL手入力';
     saveState({ plan });
     renderPlan(plan);
   }
@@ -800,6 +884,7 @@
         #${APP.panelId} label{display:block;margin-top:10px;margin-bottom:5px;font-weight:700}
         .pwap-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
         .pwap-summary{margin:12px 0;font-weight:700;color:#bfdbfe}
+        .pwap-ok{margin:8px 0;padding:10px;border:1px solid #14532d;border-radius:8px;background:#052e16;color:#bbf7d0;font-weight:700}
         .pwap-card{border:1px solid #475569;border-radius:8px;padding:12px;margin:10px 0;background:#0f172a}
         .pwap-title{font-size:18px;font-weight:800;color:#fde68a;margin-bottom:10px}
         .pwap-note{margin:8px 0;color:#cbd5e1}
