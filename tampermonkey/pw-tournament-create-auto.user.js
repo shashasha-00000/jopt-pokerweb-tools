@@ -36,8 +36,8 @@ test7777\t2026/07/02\t13:00\t80000\t1000\t1\t80000\t0\t3\t-74998\t0\t0\t【SPADI
   const DEFAULTS = {
     modo: "0",
     qtd_dias: "1",
-    vaga_geral: "0",
-    vaga_ind: "0",
+    vaga_geral: "1",
+    vaga_ind: "1",
     datasGeradas: "0",
     id_estrutura: "18",
     id_blind: "1",
@@ -53,6 +53,14 @@ test7777\t2026/07/02\t13:00\t80000\t1000\t1\t80000\t0\t3\t-74998\t0\t0\t【SPADI
     reEntryReposicionar: "1",
     ticketReposicionar: "0"
   };
+
+  const GENERAL_SETTINGS = [
+    { campo: "config_imprimirutilizados", status: "1", label: "SALE_TICKET_VIEW" },
+    { campo: "config_imprimirdireto", status: "1", label: "TICKET_PRINT_DIRECT" },
+    { campo: "config_sentarjog", status: "0", label: "DEFAULT_NO_SEAT" },
+    { campo: "ticket_direitoimg", status: "1", label: "TICKET_IMAGE_RIGHTS" },
+    { campo: "vendas_moeda_virtual", status: "1", label: "VIRTUAL_CURRENCY" }
+  ];
 
   const REQUIRED_HEADERS = [
     "大会名",
@@ -256,11 +264,11 @@ test7777\t2026/07/02\t13:00\t80000\t1000\t1\t80000\t0\t3\t-74998\t0\t0\t【SPADI
     return doc;
   }
 
-  async function enableVirtualCurrency(id) {
+  async function setGeneralSetting(id, setting) {
     const body = new URLSearchParams();
-    body.set("campo", "vendas_moeda_virtual");
+    body.set("campo", setting.campo);
     body.set("id_torneio", id);
-    body.set("status", "1");
+    body.set("status", setting.status);
     const res = await fetch("/cb/torneio/abas/configuracao/alterar_campos", {
       method: "POST",
       headers: {
@@ -270,8 +278,16 @@ test7777\t2026/07/02\t13:00\t80000\t1000\t1\t80000\t0\t3\t-74998\t0\t0\t【SPADI
       body: body.toString(),
       credentials: "same-origin"
     });
-    if (!res.ok) throw new Error(`USDT failed status=${res.status}: ${(await res.text()).slice(0, 300)}`);
+    if (!res.ok) throw new Error(`${setting.label} failed status=${res.status}: ${(await res.text()).slice(0, 300)}`);
     return res;
+  }
+
+  async function applyGeneralSettings(id) {
+    for (const setting of GENERAL_SETTINGS) {
+      await setGeneralSetting(id, setting);
+      log(`GENERAL_SETTING_OK ${setting.label} ${setting.campo}=${setting.status}`);
+      await sleep(30);
+    }
   }
 
   function itemData(item) {
@@ -434,8 +450,8 @@ test7777\t2026/07/02\t13:00\t80000\t1000\t1\t80000\t0\t3\t-74998\t0\t0\t【SPADI
     log(`CREATE_OK id=${id} url=${location.origin}/cb/torneio/painel/${id}`);
     await sleep(SPEED.afterCreateMs);
 
-    await enableVirtualCurrency(id);
-    log("USDT_OK");
+    await applyGeneralSettings(id);
+    log("GENERAL_SETTINGS_OK 1/2/4/5=ON 3=OFF");
     await sleep(SPEED.afterUsdtMs);
 
     let doc = await fetchTournamentDoc(id);

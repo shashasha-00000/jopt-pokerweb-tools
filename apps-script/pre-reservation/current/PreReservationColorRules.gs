@@ -57,7 +57,7 @@ function applyPreReservationColorRulesToActiveSheet() {
     const manualAction = preResColorColLetter_(map.manualActionCol);
     rules.push(
       SpreadsheetApp.newConditionalFormatRule()
-        .whenFormulaSatisfied('=OR($' + cancelMailSent + startRow + '=TRUE,$' + manualAction + startRow + '="キャンセル通知済")')
+        .whenFormulaSatisfied('=OR($' + cancelMailSent + startRow + '=TRUE,$' + manualAction + startRow + '="キャンセル通知済",REGEXMATCH($' + manualAction + startRow + ',"(?i)テスト|test|除外|スキップ|skip"))')
         .setBackground(PRE_RES_COLOR_RULES.colors.gray)
         .setRanges([target])
         .build(),

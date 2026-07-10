@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PW 大会 Double Check
 // @namespace    pw-tournament-double-check
-// @version      2.0.5
-// @description  3つの入力（大会名 / Portal Tournament / 受付Portal Ticket Link）から、Start・EN・RE・TE・Chips・Ticket Link・USDTを一括DC
+// @version      2.0.6
+// @description  3つの入力（大会名 / Portal Tournament / 受付Portal Ticket Link）から、Start・EN・RE・TE・Chips・Ticket Link・Settings・USDTを一括DC
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-double-check.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-double-check.user.js
 // @author       xhpc007 + ChatGPT
@@ -37,6 +37,14 @@
     // 深夜扱い：Portalの運用日から翌日にする時刻
     nextDayBeforeHour: 6
   };
+
+  const GENERAL_SETTING_CHECKS = [
+    { key: "Sale_Ticket_View", campo: "config_imprimirutilizados", expected: true, label: "販売チケットを見る" },
+    { key: "Ticket_Print_Direct", campo: "config_imprimirdireto", expected: true, label: "チケット印刷" },
+    { key: "Default_No_Seat", campo: "config_sentarjog", expected: false, label: "配置しない default" },
+    { key: "Ticket_Image_Rights", campo: "ticket_direitoimg", expected: true, label: "画像の権利 statement" },
+    { key: "USDT", campo: "vendas_moeda_virtual", expected: true, label: "USDT" }
+  ];
 
   let running = false;
   let stopRequested = false;
@@ -854,45 +862,44 @@
     return { items, en, re, te };
   }
 
-  function extractUsdt(d) {
-    const keyword = "仮想通貨を使用した販売を許可する";
-    const textNodes = [...d.querySelectorAll("td, th, label, div, span, p")]
-      .filter(el => norm(el.textContent).includes(keyword));
+  function extractGeneralSettings(d) {
+    const byCampo = {};
+    const re = /configGeraisTornStatus\(\s*['"]([^'"]+)['"]/;
 
-    for (const textEl of textNodes) {
-      const tr = textEl.closest("tr");
-      if (tr) {
-        const boxes = [...tr.querySelectorAll('input[type="checkbox"]')];
-        if (boxes.length === 1) {
-          return {
-            found: true,
-            checked: !!boxes[0].checked,
-            id: boxes[0].id || "",
-            text: norm(tr.innerText || tr.textContent)
-          };
-        }
-      }
+    for (const box of [...d.querySelectorAll('input[type="checkbox"]')]) {
+      const onchange = box.getAttribute("onchange") || "";
+      const m = onchange.match(re);
+      if (!m) continue;
 
-      let p = textEl.parentElement;
-      for (let depth = 0; depth < 5 && p; depth++, p = p.parentElement) {
-        const boxes = [...p.querySelectorAll('input[type="checkbox"]')];
-        if (boxes.length === 1) {
-          return {
-            found: true,
-            checked: !!boxes[0].checked,
-            id: boxes[0].id || "",
-            text: norm(p.innerText || p.textContent)
-          };
-        }
-      }
+      const row = box.closest("tr") || box.parentElement;
+      byCampo[m[1]] = {
+        found: true,
+        checked: !!box.checked,
+        id: box.id || "",
+        text: norm(row?.innerText || row?.textContent || "")
+      };
     }
 
-    return {
-      found: false,
-      checked: null,
-      id: "",
-      text: ""
-    };
+    const settings = {};
+    for (const check of GENERAL_SETTING_CHECKS) {
+      settings[check.key] = byCampo[check.campo] || {
+        found: false,
+        checked: null,
+        id: "",
+        text: ""
+      };
+    }
+    return settings;
+  }
+
+  function generalSettingToStatus(setting) {
+    if (!setting?.found) return "CANNOT_READ";
+    return setting.checked ? "ON" : "OFF";
+  }
+
+  function compareGeneralSetting(setting, expected) {
+    if (!setting?.found) return "CHECK";
+    return setting.checked === expected ? "OK" : "CHECK";
   }
 
   function cleanTicketRowText(text) {
@@ -965,7 +972,8 @@
     if (CONFIG.fetchPageMode) {
       const { doc, resolved } = await fetchTournamentDocument(tournamentId, expectedName);
       const prices = extractPriceItems(doc);
-      const usdt = extractUsdt(doc);
+      const generalSettings = extractGeneralSettings(doc);
+      const usdt = generalSettings.USDT;
       const ticketLinks = extractActualTicketLinks(doc, usdt);
 
       return {
@@ -992,6 +1000,7 @@
         usdtFound: usdt.found,
         usdtOn: usdt.checked,
         usdtId: usdt.id,
+        generalSettings,
 
         ticketLinks
       };
@@ -1003,7 +1012,8 @@
       const resolvedUrl = w.__PW_DC_V20_RESOLVED_URL || resolveTournamentUrl(tournamentId, expectedName);
       const d = w.document;
       const prices = extractPriceItems(d);
-      const usdt = extractUsdt(d);
+      const generalSettings = extractGeneralSettings(d);
+      const usdt = generalSettings.USDT;
       const ticketLinks = extractActualTicketLinks(d, usdt);
 
       return {
@@ -1030,6 +1040,7 @@
         usdtFound: usdt.found,
         usdtOn: usdt.checked,
         usdtId: usdt.id,
+        generalSettings,
 
         ticketLinks
       };
@@ -1130,6 +1141,20 @@
     "USDT_Actual",
     "USDT_Check",
     "USDT_Element_Id",
+
+    "General_Settings_Check",
+    "Sale_Ticket_View_Expected",
+    "Sale_Ticket_View_Actual",
+    "Sale_Ticket_View_Check",
+    "Ticket_Print_Direct_Expected",
+    "Ticket_Print_Direct_Actual",
+    "Ticket_Print_Direct_Check",
+    "Default_No_Seat_Expected",
+    "Default_No_Seat_Actual",
+    "Default_No_Seat_Check",
+    "Ticket_Image_Rights_Expected",
+    "Ticket_Image_Rights_Actual",
+    "Ticket_Image_Rights_Check",
 
     "Matrix_Match",
     "Error"
@@ -1254,6 +1279,21 @@
             : actual.usdtOn === CONFIG.expectedUsdt ? "OK" : "CHECK";
           base.USDT_Element_Id = actual.usdtId;
 
+          const generalSettingChecks = [];
+          for (const check of GENERAL_SETTING_CHECKS) {
+            const setting = actual.generalSettings?.[check.key];
+            const expected = check.expected ? "ON" : "OFF";
+            const actualStatus = generalSettingToStatus(setting);
+            const status = compareGeneralSetting(setting, check.expected);
+            if (check.key !== "USDT") {
+              base[`${check.key}_Expected`] = expected;
+              base[`${check.key}_Actual`] = actualStatus;
+              base[`${check.key}_Check`] = status;
+              generalSettingChecks.push(status);
+            }
+          }
+          base.General_Settings_Check = generalSettingChecks.every(x => x === "OK") ? "OK" : "CHECK";
+
           const checks = [
             base.Name_Check,
             base.Start_Check,
@@ -1262,7 +1302,8 @@
             base.RE_Check,
             base.TE_Check,
             base.Ticket_Link_Check,
-            base.USDT_Check
+            base.USDT_Check,
+            base.General_Settings_Check
           ];
 
           base.Overall = checks.includes("CHECK") || checks.includes("NG")
@@ -1281,6 +1322,11 @@
             if (ticketCheck.unexpected.length) errors.push(`TICKET_UNEXPECTED: ${ticketCheck.unexpected.join(", ")}`);
           }
           if (base.USDT_Check === "CHECK") errors.push(`USDT: EXPECTED ${base.USDT_Expected} <> ACTUAL ${base.USDT_Actual}`);
+          for (const check of GENERAL_SETTING_CHECKS.filter(x => x.key !== "USDT")) {
+            if (base[`${check.key}_Check`] === "CHECK") {
+              errors.push(`${check.label}: EXPECTED ${base[`${check.key}_Expected`]} <> ACTUAL ${base[`${check.key}_Actual`]}`);
+            }
+          }
 
           base.Error = joinErrors(errors);
 
@@ -1349,6 +1395,7 @@
     add("RE", row.RE_Check, row.Expected_RE, row.Actual_RE);
     add("TE", row.TE_Check, row.Expected_TE, row.Actual_TE);
     add("Ticket Link", row.Ticket_Link_Check, row.Expected_Ticket_Link_Count, row.Actual_Ticket_Link_Count);
+    add("Settings", row.General_Settings_Check, "1/2/4/5 ON, 3 OFF", settingsDetail(row));
     add("USDT", row.USDT_Check, row.USDT_Expected, row.USDT_Actual);
 
     if (row.Ticket_Missing) lines.push(`Missing ticket: ${row.Ticket_Missing}`);
@@ -1360,7 +1407,7 @@
 
   function buildReadableSummary(results, counts) {
     const title = `Double Check: OK ${counts.ok} / CHECK ${counts.check} / ERROR ${counts.error} / Total ${results.length}`;
-    const headers = ["Overall", "Tournament", "Start", "EN", "RE", "TE", "Chips", "USDT", "Ticket Link", "Notes"];
+    const headers = ["Overall", "Tournament", "Start", "EN", "RE", "TE", "Chips", "Settings", "USDT", "Ticket Link", "Notes"];
     const lines = [
       title,
       "",
@@ -1396,6 +1443,17 @@
     return parts.join(" / ");
   }
 
+  function settingsDetail(row) {
+    const parts = GENERAL_SETTING_CHECKS
+      .filter(x => x.key !== "USDT")
+      .map(check => {
+        const actual = row[`${check.key}_Actual`] || "-";
+        const ok = row[`${check.key}_Check`] === "OK";
+        return `${ok ? "OK" : "CHECK"} ${check.label}:${actual}`;
+      });
+    return parts.join(" / ");
+  }
+
   function humanCell(row, key) {
     if (key === "Overall") return row.Overall || "";
     if (key === "Tournament") return row.Portal_Name || "";
@@ -1404,6 +1462,7 @@
     if (key === "RE") return statusDetail(row.RE_Check, row.Expected_RE, row.Actual_RE);
     if (key === "TE") return statusDetail(row.TE_Check, row.Expected_TE, row.Actual_TE);
     if (key === "Chips") return statusDetail(row.Chips_Check, row.Expected_Chips, row.Actual_EN_Chips);
+    if (key === "Settings") return row.General_Settings_Check === "OK" ? `OK ${settingsDetail(row)}` : `CHECK ${settingsDetail(row)}`;
     if (key === "USDT") return statusDetail(row.USDT_Check, row.USDT_Expected, row.USDT_Actual);
     if (key === "Ticket Link") return ticketLinkDetail(row);
     if (key === "Notes") return buildIssueLines(row).join(" / ");
@@ -1411,7 +1470,7 @@
   }
 
   function humanTableHtml(results) {
-    const headers = ["Overall", "Tournament", "Start", "EN", "RE", "TE", "Chips", "USDT", "Ticket Link"];
+    const headers = ["Overall", "Tournament", "Start", "EN", "RE", "TE", "Chips", "Settings", "USDT", "Ticket Link"];
     return `
       <table style="width:100%;border-collapse:collapse;font-size:12px;">
         <thead>

@@ -5,6 +5,7 @@
  * - Read existing Gmail compose hyperlinks from the current control sheet.
  * - Extract subject/body/bcc without touching the colleague-maintained sheet.
  * - Build our own reusable template source sheet for later draft/send automation.
+ * - Refresh templates for the current source/event so old hyperlink contents do not pile up.
  */
 
 const PRE_RES_TEMPLATE_EXTRACTOR = {
@@ -29,7 +30,7 @@ const PRE_RES_TEMPLATE_EXTRACTOR = {
 function openPreReservationTemplateExtractorMenu() {
   SpreadsheetApp.getUi()
     .createMenu(PRE_RES_TEMPLATE_EXTRACTOR.menuName)
-    .addItem('現在の表からメールテンプレートを抽出', 'extractPreReservationTemplatesFromActiveSheet')
+    .addItem('メール変更時だけ：現在の表からテンプレート再抽出', 'extractPreReservationTemplatesFromActiveSheet')
     .addToUi();
 }
 
@@ -73,9 +74,15 @@ function extractPreReservationTemplatesFromActiveSheet() {
   }
 
   const outputSheet = preResTemplateGetOrCreateOutputSheet_(ss);
-  preResTemplateAppendRows_(outputSheet, rows);
+  const removed = preResTemplateRefreshRows_(outputSheet, rows, sheet.getName(), eventName);
   outputSheet.activate();
-  SpreadsheetApp.getUi().alert('テンプレートを ' + rows.length + ' 件抽出しました。');
+  SpreadsheetApp.getUi().alert(
+    'テンプレートを更新しました。\n\n' +
+    '追加: ' + rows.length + '件\n' +
+    '削除した旧テンプレート: ' + removed + '件\n\n' +
+    '初期設定はこちらで完了済みです。\n' +
+    'メール本文・件名を変更したい場合のみ、元の表の Gmail hyperlink を修正してから再実行してください。'
+  );
 }
 
 function preResTemplateGetOrCreateOutputSheet_(ss) {
@@ -92,12 +99,32 @@ function preResTemplateGetOrCreateOutputSheet_(ss) {
   return sheet;
 }
 
-function preResTemplateAppendRows_(sheet, rows) {
-  const startRow = sheet.getLastRow() + 1;
-  sheet.getRange(startRow, 1, rows.length, PRE_RES_TEMPLATE_EXTRACTOR.outputHeaders.length)
-    .setValues(rows)
-    .setWrap(true);
+function preResTemplateRefreshRows_(sheet, rows, sourceSheetName, eventName) {
+  const width = PRE_RES_TEMPLATE_EXTRACTOR.outputHeaders.length;
+  const existing = sheet.getLastRow() > 1
+    ? sheet.getRange(2, 1, sheet.getLastRow() - 1, width).getValues()
+    : [];
+  const kept = existing.filter(row =>
+    preResTemplateText_(row[1]) !== sourceSheetName &&
+    preResTemplateText_(row[3]) !== eventName
+  );
+  const removed = existing.length - kept.length;
+
+  sheet.clear();
+  sheet.getRange(1, 1, 1, width)
+    .setValues([PRE_RES_TEMPLATE_EXTRACTOR.outputHeaders])
+    .setFontWeight('bold')
+    .setBackground('#fff2cc');
+  sheet.setFrozenRows(1);
+
+  const output = kept.concat(rows);
+  if (output.length) {
+    sheet.getRange(2, 1, output.length, width)
+      .setValues(output)
+      .setWrap(true);
+  }
   sheet.autoResizeColumns(1, PRE_RES_TEMPLATE_EXTRACTOR.outputHeaders.length);
+  return removed;
 }
 
 function preResTemplateEventName_(sheet) {

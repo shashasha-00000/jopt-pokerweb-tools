@@ -281,7 +281,6 @@ function PPT_buildPokerPlusTicketTsv_() {
   const dataRowCount = lastRow - PPT_CONFIG.HEADER_ROW;
   const outputRows = [];
   const errors = [];
-  const firstRowsByGameId = {};
   const colorCounts = {};
   let matchingColorRows = 0;
   let matchingUniqueIdRows = 0;
@@ -332,14 +331,6 @@ function PPT_buildPokerPlusTicketTsv_() {
         return;
       }
 
-      if (firstRowsByGameId[gameId]) {
-        errors.push(
-          sheetRow + '行目: GameID [' + gameId + '] が重複しています。' +
-          '最初の対象行は ' + firstRowsByGameId[gameId] + ' 行目です。'
-        );
-        return;
-      }
-
       const ticketCount = PPT_parsePositiveInteger_(displayRow[countColumn - 1]);
       if (!ticketCount) {
         errors.push(
@@ -349,7 +340,6 @@ function PPT_buildPokerPlusTicketTsv_() {
         return;
       }
 
-      firstRowsByGameId[gameId] = sheetRow;
       for (let ticketNo = 0; ticketNo < ticketCount; ticketNo++) {
         outputRows.push([gameId, PPT_CONFIG.TICKET_NAME]);
       }
