@@ -20,7 +20,7 @@
     {
         "file":  "pw-national-ticket-batch.user.js",
         "name":  "PW ナショナルチケット Batch",
-        "version":  "1.2.3",
+        "version":  "1.2.4",
         "description":  "任意のPokerWeb管理画面からGameID・チケット名TSVを厳密検証し、ナショナルチケットを安全に一件ずつ付与する正式版",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js",
         "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js",
