@@ -10,6 +10,7 @@ Scripts under `legacy/`, `private/`, `experimental/`, and `test-scripts/` are no
 | `pw-tournament-create-auto.user.js` | PW Tournament Create Auto | New tournament create flow | API-first create, USDT, items, and Ticket Link. |
 | `pw-tournament-blind-manual.user.js` | PW Tournament Blind Manual | Existing tournament blind setup | Usable, pending safer template/preview upgrade. Rules are currently hardcoded. |
 | `pw-ticket-link-semi-auto.user.js` | PW Ticket Link Semi Auto | Existing tournament Ticket Link | Confirmed URL flow, background fetch, then POST Ticket Link. |
+| `pw-existing-item-fee-patch.user.js` | PW Existing Item Fee Patch | Existing tournament item fee patch | Minimal TSV patch tool. Uses pasted URL/TournamentId or resolves open tournaments, then updates only listed item fee fields. |
 | `pw-prize-batch-manual.user.js` | PW Prize Plan Semi Auto | Prize Plan check/write | File name kept for the recently shared install URL. |
 | `pw-national-ticket-batch.user.js` | PW National Ticket Batch | National ticket issue flow | Batch issue by Game ID and ticket name. |
 | `pw-receipt-full-auto.user.js` | PW Receipt Full Auto | Receipt full-auto flow | Current V7 line; old V6 is in `legacy/`. |

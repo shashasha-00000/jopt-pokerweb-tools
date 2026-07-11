@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         PW ナショナルチケット Batch
 // @namespace    pw-national-ticket-batch-safe
-// @version      1.2.2
+// @version      1.2.3
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
-// @description  任意のPokerWeb后台页からGameID・チケット名TSVを厳密検証し、ナショナルチケットを安全に一件ずつ付与する正式版
+// @description  任意のPokerWeb管理画面からGameID・チケット名TSVを厳密検証し、ナショナルチケットを安全に一件ずつ付与する正式版
 // @author       xhpc007 + Codex
 // @match        https://japanopt.pokerweb.com.br/cb/*
 // @grant        GM_setClipboard
@@ -32,12 +32,12 @@
   };
 
   const PREVIEW_HEADERS = [
-    '行号', 'GameID', 'チケット名', 'grupo', 'groupURL',
-    'id_jogador', '准备使用的 ticket_id', '状态', '错误理由'
+    '行', 'GameID', 'チケット名', 'grupo', 'groupURL',
+    'id_jogador', '使用予定 ticket_id', 'ステータス', 'エラー理由'
   ];
 
   const LOG_HEADERS = [
-    '行号', 'GameID', 'チケット名', 'grupo', 'ticket_id',
+    '行', 'GameID', 'チケット名', 'grupo', 'ticket_id',
     'id_jogador', '結果', '時刻', 'response'
   ];
 
@@ -216,7 +216,7 @@
       idJogador: '',
       ticketId: '',
       codbloq: '',
-      status: '未验证',
+      status: '未検証',
       error: ''
     };
   }
@@ -718,7 +718,7 @@
       throw new Error(`付与直前確認で ticket_id が未発行在庫にありません: ${task.ticketId}`);
     }
 
-    // POSTを開始した時点で防重台帳へ記録する。結果不明でも同じタスクを再試行しない。
+    // POSTを開始した時点で二重実行防止台帳へ記録する。結果不明でも同じタスクを再試行しない。
     state.emittedTicketIds.add(task.ticketId);
     state.completedTaskKeys.add(key);
     saveLedger();
@@ -772,7 +772,7 @@
 
   function appendLog(task, result, response) {
     state.logs.push({
-      行号: task.lineNo,
+      行: task.lineNo,
       GameID: task.gameId,
       チケット名: task.ticketName,
       grupo: task.grupo,
@@ -806,7 +806,7 @@
     try {
       for (let i = 0; i < remaining.length; i++) {
         const task = remaining[i];
-        setStatus(`正式付与 ${i + 1}/${remaining.length}: 行号 ${task.lineNo}`);
+        setStatus(`正式付与 ${i + 1}/${remaining.length}: 行 ${task.lineNo}`);
         await emitOne(task, 'OK');
         if (i < remaining.length - 1) {
           const delay = Math.floor(APP.minDelayMs + Math.random() * (APP.maxDelayMs - APP.minDelayMs + 1));
@@ -834,15 +834,15 @@
 
   function previewRows() {
     return state.tasks.map(task => ({
-      行号: task.lineNo,
+      行: task.lineNo,
       GameID: task.gameId,
       チケット名: task.ticketName,
       grupo: task.grupo,
       groupURL: task.groupURL,
       id_jogador: task.idJogador,
-      '准备使用的 ticket_id': task.ticketId,
-      状态: task.status,
-      错误理由: task.error
+      '使用予定 ticket_id': task.ticketId,
+      ステータス: task.status,
+      エラー理由: task.error
     }));
   }
 
@@ -894,7 +894,7 @@
     renderPreview();
     renderLog();
     updateButtons();
-    setStatus('输入 TSV 已变更。之前的 DRY RUN / 1件测试状态已失效，请重新验证。', true);
+    setStatus('入力TSVが変更されました。以前のDRY RUN結果は無効です。再度DRY RUNを実行してください。', true);
   }
 
   function outputLog() {
@@ -919,22 +919,22 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <strong>PW ナショナルチケット批量付与 正式版 v1.2.2</strong>
+        <strong>PW ナショナルチケット一括付与 正式版 v1.2.3</strong>
         <div><button id="pwnt-min">Min</button> <button id="pwnt-close">x</button></div>
       </div>
       <div id="pwnt-body" style="overflow:auto;margin-top:8px;">
         <div style="font-size:11px;color:#f6d365;line-height:1.45;margin-bottom:8px;">
-          任意のPokerWeb后台页で使用可能。一覧ページは后台取得。正式付与は DRY RUN 成功後に解锁されます。
+          任意のPokerWeb管理画面で使用できます。チケット一覧はバックグラウンドで取得します。正式付与はDRY RUN成功後に有効になります。
         </div>
-        <div style="font-weight:bold;">输入 TSV: GameID+チケット名 / Game ID+付与内容+枚数</div>
+        <div style="font-weight:bold;">入力TSV: GameID+チケット名 / Game ID+付与内容+枚数</div>
         <textarea id="pwnt-input" style="width:100%;box-sizing:border-box;height:115px;background:#111;color:#fff;border:1px solid #555;padding:8px;font-family:Consolas,monospace;"></textarea>
         <div style="display:flex;gap:6px;margin-top:8px;">
-          <button id="pwnt-read" style="flex:1;padding:8px;background:#eee;">读取TSV</button>
-          <button id="pwnt-dry-run" style="flex:1;padding:8px;background:#ffe08a;">验证・预览 / DRY RUN</button>
+          <button id="pwnt-read" style="flex:1;padding:8px;background:#eee;">TSV読取</button>
+          <button id="pwnt-dry-run" style="flex:1;padding:8px;background:#ffe08a;">検証・プレビュー / DRY RUN</button>
           <button id="pwnt-run-all" style="flex:1;padding:8px;background:#ff7675;color:#fff;font-weight:bold;">正式付与</button>
           <button id="pwnt-output-log" style="flex:1;padding:8px;background:#bff0c2;">ログ出力</button>
         </div>
-        <div style="font-weight:bold;margin-top:8px;">预览表</div>
+        <div style="font-weight:bold;margin-top:8px;">プレビュー表</div>
         <textarea id="pwnt-preview" readonly style="width:100%;box-sizing:border-box;height:190px;background:#111;color:#fff;border:1px solid #555;padding:8px;font-family:Consolas,monospace;font-size:11px;"></textarea>
         <div style="font-weight:bold;margin-top:8px;">付与ログ TSV</div>
         <textarea id="pwnt-log" readonly style="width:100%;box-sizing:border-box;height:130px;background:#111;color:#9fe;border:1px solid #555;padding:8px;font-family:Consolas,monospace;font-size:11px;"></textarea>

@@ -20,8 +20,8 @@
     {
         "file":  "pw-national-ticket-batch.user.js",
         "name":  "PW ナショナルチケット Batch",
-        "version":  "1.2.2",
-        "description":  "任意のPokerWeb后台页からGameID・チケット名TSVを厳密検証し、ナショナルチケットを安全に一件ずつ付与する正式版",
+        "version":  "1.2.3",
+        "description":  "任意のPokerWeb管理画面からGameID・チケット名TSVを厳密検証し、ナショナルチケットを安全に一件ずつ付与する正式版",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js",
         "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js",
         "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js"
@@ -79,6 +79,15 @@
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-sprinter-chip-leader-award.user.js",
         "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-sprinter-chip-leader-award.user.js",
         "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-sprinter-chip-leader-award.user.js"
+    },
+    {
+        "file":  "pw-existing-item-fee-patch.user.js",
+        "name":  "PW Existing Item Fee Patch",
+        "version":  "0.1.0",
+        "description":  "Minimal TSVで既存大会のEntry/Re/Ticket手数料だけを修正。URL/TournamentId貼り付け対応、未指定時だけOPEN大会一覧でURL解決し、后台fetchでitem_editarをPOST。",
+        "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-item-fee-patch.user.js",
+        "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-item-fee-patch.user.js",
+        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-item-fee-patch.user.js"
     },
     {
         "file":  "pw-ticket-link-semi-auto.user.js",
