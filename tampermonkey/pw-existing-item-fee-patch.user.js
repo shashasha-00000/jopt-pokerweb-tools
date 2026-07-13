@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PW Existing Tournament Patch
 // @namespace    pw-existing-item-fee-patch
-// @version      0.2.2
-// @description  Patch existing tournament item fees and/or tournament names from TSV. Uses pasted URL/TournamentId when present, otherwise resolves open tournaments by name.
+// @version      0.2.3
+// @description  Patch existing tournament item fees and/or tournament names from TSV. Uses pasted URL/TournamentId, Shared Cache, then OPEN/CLOSED URL pool.
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-item-fee-patch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-item-fee-patch.user.js
 // @author       xhpc007 + ChatGPT
@@ -83,6 +83,15 @@
     const s = norm(value);
     if (!s) return "";
     return s.replace(/[￥¥,\s]/g, "");
+  }
+
+  function getEventPrefixFromTournamentName(name) {
+    const m = norm(name).match(/【[^】]+】/);
+    return m ? m[0] : "";
+  }
+
+  function uniqueArray(values) {
+    return [...new Set((values || []).filter(Boolean))];
   }
 
   function amountDisplay(value) {
@@ -279,7 +288,7 @@
     if (unique.length === 1) return { status: "OK_CACHE", row: unique[0], reason: "" };
     if (unique.length > 1) return { status: "URL_AMBIGUOUS", row: null, reason: `${unique.length} cache rows matched: ${unique.map(x => x.tournamentId).join(",")}` };
     if (badRows.length) return { status: "URL_CACHE_BAD_ROW", row: null, reason: badRows.join(" / ") };
-    return { status: "URL未解決", row: null, reason: "OPEN大会一覧でURL検索してください" };
+    return { status: "URL未解決", row: null, reason: "URL pool検索してください" };
   }
 
   function parsePatchInput(raw) {
@@ -682,37 +691,139 @@
     throw new Error("window load timeout");
   }
 
-  async function openTournamentListWindow() {
-    const win = window.open("/cb/torneio/abertos", `pw_fee_patch_open_${Date.now()}`, "width=1280,height=900");
-    if (!win) throw new Error("open tournaments: popup blocked");
+  async function openTournamentListWindow(path, label) {
+    const win = window.open(path, `pw_fee_patch_${label}_${Date.now()}`, "width=1280,height=900");
+    if (!win) throw new Error(`${label} tournaments: popup blocked`);
     await waitForWindowLoad(win, 25000);
     const dt = await waitForDataTableReadyInWindow(win, 15000);
-    if (!dt) throw new Error("open tournaments: DataTable not found");
+    if (!dt) throw new Error(`${label} tournaments: DataTable not found`);
     return win;
   }
 
-  async function searchTournamentInOpenWindow(win, name) {
-    const dt = await waitForDataTableReadyInWindow(win, 15000);
-    if (!dt) throw new Error("DataTable not found");
+  function getDataTablePageInfo(dt) {
+    try {
+      if (!dt) return { page: 0, pages: 1, length: 100, recordsDisplay: null };
+      const info = dt.page.info();
+      return {
+        page: Number(info.page || 0),
+        pages: Math.max(1, Number(info.pages || 1)),
+        length: Number(info.length || 100),
+        recordsDisplay: typeof info.recordsDisplay === "number" ? info.recordsDisplay : null
+      };
+    } catch (_) {
+      return { page: 0, pages: 1, length: 100, recordsDisplay: null };
+    }
+  }
 
-    let lastFound = null;
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      if (stopRequested) return null;
-      try {
-        setStatus(`OPEN URL検索 ${attempt}/2: ${name}`);
-        await dataTableSearchAndWait(win, dt, name);
-        const found = findTournamentFromCurrentDataTablePage(win, dt, name);
-        if (found) {
-          lastFound = found;
-          break;
-        }
-        await sleep(250);
-      } catch (e) {
-        console.warn("[PW-FEE-PATCH] URL search failed", e);
-        await sleep(400);
+  async function goDataTablePageAndWait(win, dt, pageIndex) {
+    if (!dt) return;
+    try {
+      dt.page(pageIndex).draw("page");
+    } catch (_) {
+      return;
+    }
+
+    const start = Date.now();
+    while (Date.now() - start < CONFIG.searchWaitTimeoutMs) {
+      if (!win || win.closed) throw new Error("WINDOW_CLOSED");
+      const info = getDataTablePageInfo(dt);
+      if (info.page === pageIndex) return;
+      await sleep(150);
+    }
+  }
+
+  function extractTournamentFromPoolRow(row) {
+    const rowText = norm(row.innerText || "");
+    const actualName = extractTournamentTitleFromRow(rowText);
+
+    const links = Array.from(row.querySelectorAll("a[href]"));
+    const panelLink =
+      links.find(a => String(a.getAttribute("href") || "").includes("/cb/torneio/painel/")) ||
+      links.find(a => String(a.href || "").includes("/cb/torneio/painel/"));
+
+    const href = panelLink ? (panelLink.getAttribute("href") || panelLink.href) : row.innerHTML;
+    const id = extractTournamentIdFromUrl(href);
+    if (!id) return null;
+
+    return {
+      tournamentId: id,
+      url: getTournamentUrl(id),
+      actualName,
+      matchedRow: rowText
+    };
+  }
+
+  function collectUrlPoolFromCurrentPage(win, dt, prefix, source) {
+    const compactPrefix = compact(prefix);
+    const rows = getDataTableTbodyRows(win, dt);
+    const out = [];
+
+    for (const row of rows) {
+      const item = extractTournamentFromPoolRow(row);
+      if (!item) continue;
+
+      const hay = `${item.actualName || ""} ${item.matchedRow || ""}`;
+      if (prefix && !norm(hay).includes(prefix) && !compact(hay).includes(compactPrefix)) continue;
+
+      out.push({ ...item, source });
+    }
+
+    return out;
+  }
+
+  async function collectUrlPoolInWindow(win, label, prefix) {
+    const dt = await waitForDataTableReadyInWindow(win, 15000);
+    if (!dt) throw new Error(`${label}: DataTable not found`);
+
+    await dataTableSearchAndWait(win, dt, prefix);
+    const info = getDataTablePageInfo(dt);
+    const pages = info.pages || 1;
+    const found = [];
+    const seen = new Set();
+
+    logLine(`URL_POOL_PAGE_INFO ${label} ${prefix} pages=${pages} records=${info.recordsDisplay ?? "?"}`);
+
+    for (let page = 0; page < pages; page++) {
+      if (stopRequested) break;
+      if (page > 0) await goDataTablePageAndWait(win, dt, page);
+
+      const rows = collectUrlPoolFromCurrentPage(win, dt, prefix, label);
+      logLine(`URL_POOL_PAGE ${label} ${prefix} ${page + 1}/${pages} rows=${rows.length}`);
+
+      for (const row of rows) {
+        const key = row.tournamentId || row.url;
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        found.push(row);
       }
     }
-    return lastFound;
+
+    return found;
+  }
+
+  function getPrefixesForUrlPool(rows) {
+    return uniqueArray((rows || [])
+      .map(row => getEventPrefixFromTournamentName(row["大会名"] || ""))
+      .filter(Boolean));
+  }
+
+  function matchUrlPoolByName(pool, name) {
+    const target = compact(cleanTournamentName(name));
+    const matches = (pool || []).filter(item =>
+      compact(cleanTournamentName(item.actualName || "")) === target
+    );
+
+    const seen = new Map();
+    for (const item of matches) {
+      const id = String(item.tournamentId || extractTournamentIdFromUrl(item.url || "") || "");
+      if (!id) continue;
+      if (!seen.has(id)) seen.set(id, item);
+    }
+
+    const unique = [...seen.values()];
+    if (unique.length === 1) return unique[0];
+    if (unique.length > 1) return { error: "AMBIGUOUS", candidates: unique };
+    return null;
   }
 
   async function resolveUrlForCandidates() {
@@ -727,19 +838,57 @@
     );
 
     if (!targets.length) return alert("URL未解決候補はありません。");
-    if (!confirm(`URL未解決候補を OPEN 大会一覧だけで検索します。\n\n対象: ${targets.length}件\n\n続行しますか？`)) return;
+    const prefixes = getPrefixesForUrlPool(targets);
+    if (!prefixes.length) {
+      return alert("Event Prefix を取得できません。URL / TournamentId をTSVに入れてください。");
+    }
+    if (!confirm(
+      `URL未解決候補を URL pool 方式で検索します。\n\n` +
+      `対象: ${targets.length}件\n` +
+      `Event Prefix: ${prefixes.join(" / ")}\n` +
+      `検索: OPEN / CLOSED をPrefix単位で一括収集\n\n続行しますか？`
+    )) return;
 
     running = true;
     stopRequested = false;
     let openWin = null;
+    let closedWin = null;
     let okCount = 0;
     let ngCount = 0;
     let ambiguousCount = 0;
 
     try {
       clearReport();
-      logLine(`[${nowText()}] OPEN URL SEARCH`);
-      openWin = await openTournamentListWindow();
+      logLine(`[${nowText()}] URL POOL SEARCH`);
+      setStatus("OPEN / CLOSED大会一覧を開いています...");
+      closedWin = await openTournamentListWindow("/cb/torneio/fechados", "closed");
+      openWin = await openTournamentListWindow("/cb/torneio/abertos", "open");
+
+      const pool = [];
+      const poolSeen = new Set();
+      for (const prefix of prefixes) {
+        if (stopRequested) break;
+        logLine(`URL_POOL_SCAN ${prefix}`);
+
+        for (const item of [
+          { win: closedWin, label: "closed" },
+          { win: openWin, label: "open" }
+        ]) {
+          try {
+            const rows = await collectUrlPoolInWindow(item.win, item.label, prefix);
+            for (const row of rows) {
+              const key = row.tournamentId || row.url;
+              if (!key || poolSeen.has(key)) continue;
+              poolSeen.add(key);
+              pool.push(row);
+            }
+          } catch (e) {
+            console.warn("[PW-FEE-PATCH] URL pool failed", e);
+            logLine(`URL_POOL_ERROR ${item.label} ${prefix} ${e.message || e}`);
+          }
+        }
+      }
+      logLine(`URL_POOL_COLLECTED ${pool.length}`);
 
       for (let i = 0; i < candidates.length; i++) {
         if (stopRequested) break;
@@ -751,13 +900,13 @@
         }
 
         const name = cleanTournamentName(row["大会名"]);
-        logLine(`${i + 1}/${candidates.length} SEARCH ${name}`);
-        const found = await searchTournamentInOpenWindow(openWin, name);
+        logLine(`${i + 1}/${candidates.length} POOL_MATCH ${name}`);
+        const found = matchUrlPoolByName(pool, name);
 
         if (!found) {
           row["本次处理"] = "不使用";
           row["判定"] = "URL_NOT_FOUND";
-          row["理由"] = "OPEN大会一覧検索で見つかりません";
+          row["理由"] = "URL poolに完全一致がありません";
           ngCount++;
           logLine(`   NOT_FOUND`);
           continue;
@@ -776,14 +925,14 @@
         row["本次处理"] = "使用";
         row["TournamentId"] = found.tournamentId;
         row["URL"] = found.url;
-        row["判定"] = "OK_SEARCH_OPEN";
+        row["判定"] = found.source === "closed" ? "OK_POOL_CLOSED" : "OK_POOL_OPEN";
         row["理由"] = "";
         setSharedCacheItem(name, {
           tournamentId: found.tournamentId,
           url: found.url,
           actualName: found.actualName || name,
           matchedRow: found.matchedRow || "",
-          source: "fee-patch-open"
+          source: `fee-patch-pool-${found.source || "unknown"}`
         });
         okCount++;
         logLine(`   OK ${found.url}`);
@@ -797,6 +946,7 @@
       logLine(`ERROR ${e.message || e}`);
       alert("ERROR: " + (e.message || String(e)));
     } finally {
+      try { if (closedWin && !closedWin.closed) closedWin.close(); } catch (_) {}
       try { if (openWin && !openWin.closed) openWin.close(); } catch (_) {}
       running = false;
       stopRequested = false;
@@ -1026,7 +1176,7 @@
 
     const unresolved = rows.filter(row => !row["TournamentId"] || !row["URL"]);
     if (unresolved.length) {
-      return alert(`URL未解決の使用対象があります: ${unresolved.length}件。先にOPEN URL検索してください。`);
+      return alert(`URL未解決の使用対象があります: ${unresolved.length}件。先にURL pool検索してください。`);
     }
 
     const summary = rows.map((row, i) => {
@@ -1160,7 +1310,7 @@
       <textarea id="pw-fee-patch-input" style="width:100%;height:92px;box-sizing:border-box;background:#fff;color:#111;font:12px Consolas,monospace;"></textarea>
       <div style="display:flex;gap:6px;margin:8px 0;flex-wrap:wrap;">
         <button id="pw-fee-patch-preview" type="button" style="flex:1;padding:7px;cursor:pointer;">Preview</button>
-        <button id="pw-fee-patch-resolve" type="button" style="flex:1;padding:7px;cursor:pointer;background:#dbeafe;">OPEN URL検索</button>
+        <button id="pw-fee-patch-resolve" type="button" style="flex:1;padding:7px;cursor:pointer;background:#dbeafe;">URL pool検索</button>
         <button id="pw-fee-patch-execute" type="button" style="flex:1;padding:7px;cursor:pointer;background:#fef3c7;">EXECUTE</button>
         <button id="pw-fee-patch-stop" type="button" style="padding:7px;cursor:pointer;background:#fecaca;">Stop</button>
         <button id="pw-fee-patch-copy" type="button" style="padding:7px;cursor:pointer;">Copy Report</button>

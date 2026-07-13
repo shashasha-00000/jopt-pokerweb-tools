@@ -1,10 +1,10 @@
 ﻿// ==UserScript==
 // @name         PW URL Cache Manager
 // @namespace    pw-shared-url-cache-manager
-// @version      0.7.0
+// @version      0.7.2
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-url-cache-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-url-cache-manager.user.js
-// @description  PW大会URL共用缓存管理工具。大会名リスト検索 / イベントPrefix全ページ収集 / 汚染チェック・修復 / Sheet用TSV出力。
+// @description  PW大会URL共用Cache管理ツール。大会名リスト検索 / イベントPrefix全ページ収集 / 汚染チェック・修復 / Sheet用TSV出力・整庫置換。
 // @author       xhpc007 + ChatGPT
 // @match        https://japanopt.pokerweb.com.br/cb/*
 // @match        https://japanopt.pokerweb.com.br/*
@@ -24,6 +24,7 @@
     inputKey: "PW_URL_CACHE_MANAGER_INPUT_V02",
     prefixKey: "PW_URL_CACHE_MANAGER_PREFIX_V02",
     reportKey: "PW_URL_CACHE_MANAGER_REPORT_V02",
+    collapsedKey: "PW_URL_CACHE_MANAGER_COLLAPSED_V01",
 
     searchTimeoutMs: 25000,
     searchPollMs: 300,
@@ -530,6 +531,114 @@
 
     alert(`Import 完了\nOK: ${okCount}\nNG: ${ngCount}`);
     setStatus(`Import done: OK ${okCount} / NG ${ngCount}`);
+  }
+
+  function parseCacheRowsForReplace(raw) {
+    const parsed = parseInput(raw);
+    const valid = [];
+    const invalid = [];
+    const seen = new Set();
+
+    for (const r of parsed.rows) {
+      const name = cleanTournamentName(r.name || r.actualName || "");
+      const { id, url } = normalizeUrlAndId(r);
+      const actualName = cleanTournamentName(r.actualName || name);
+
+      if (!name || !id || !url) {
+        invalid.push({ row: r, reason: "name/id/url不足" });
+        continue;
+      }
+
+      if (!/^\d+$/.test(id)) {
+        invalid.push({ row: r, reason: `TournamentId不正: ${id}` });
+        continue;
+      }
+
+      const finalUrl = `/cb/torneio/painel/${id}`;
+      const key = `${name}||${id}`;
+      if (seen.has(key)) {
+        invalid.push({ row: r, reason: `重複: ${key}` });
+        continue;
+      }
+      seen.add(key);
+
+      valid.push({
+        key,
+        item: {
+          name,
+          tournamentId: id,
+          url: finalUrl,
+          actualName,
+          matchedRow: String(r.matchedRow || ""),
+          savedAt: nowText(),
+          source: String(r.source || "replace-tsv-v0.7.2")
+        }
+      });
+    }
+
+    return { valid, invalid, total: parsed.rows.length };
+  }
+
+  function copyEditableFullCacheTsv() {
+    const tsv = cacheToFullTsv("");
+    const output = document.querySelector("#pw-url-cache-output");
+    if (output) output.value = tsv;
+    copyText(tsv);
+    appendReport("COPY_EDIT_FULL", `${cacheToRows("").length} 件`);
+    setStatus(`Full Cache TSV copied: ${cacheToRows("").length} 件`);
+    alert(`Full Cache TSV copied\n\n${cacheToRows("").length} 件\n\nGoogle Sheetで編集して、Inputへ貼り戻してください。`);
+  }
+
+  function replaceAllCacheFromTsv() {
+    const input = document.querySelector("#pw-url-cache-input")?.value || "";
+    const output = document.querySelector("#pw-url-cache-output")?.value || "";
+    const raw = norm(input) ? input : output;
+
+    if (!norm(raw)) {
+      alert("Input または Output に TSV を貼ってください。");
+      return;
+    }
+
+    const parsed = parseCacheRowsForReplace(raw);
+    const sampleInvalid = parsed.invalid
+      .slice(0, 8)
+      .map((x, i) => `${i + 1}. ${x.reason}: ${x.row.rawLine || JSON.stringify(x.row)}`)
+      .join("\n");
+
+    const currentCount = getCacheCount();
+    const ok = confirm(
+      `共有URL Cacheを TSV の内容で全置換します。\n\n` +
+      `現在のCache: ${currentCount} 件\n` +
+      `TSV行数: ${parsed.total} 件\n` +
+      `取込OK: ${parsed.valid.length} 件\n` +
+      `取込NG: ${parsed.invalid.length} 件\n\n` +
+      (sampleInvalid ? `NG例:\n${sampleInvalid}\n\n` : "") +
+      `この操作では、TSVに存在しない既存Cacheは削除されます。\n続行しますか？`
+    );
+
+    if (!ok) return;
+
+    if (parsed.invalid.length) {
+      const okWithInvalid = confirm(
+        `NG行が ${parsed.invalid.length} 件あります。\n\n` +
+        `NG行は取り込まず、OK行 ${parsed.valid.length} 件だけで全置換します。\n` +
+        `本当に続行しますか？`
+      );
+      if (!okWithInvalid) return;
+    }
+
+    const next = {};
+    for (const row of parsed.valid) {
+      next[row.key] = row.item;
+    }
+
+    saveCache(next);
+    localStorage.setItem(CONFIG.inputKey, raw);
+    showCache("");
+
+    appendReport("REPLACE_ALL", `before=${currentCount} / after=${parsed.valid.length} / ng=${parsed.invalid.length}`);
+    setStatus(`Replace done: ${parsed.valid.length} 件 / NG ${parsed.invalid.length} 件`);
+    alert(`Replace 完了\n\nBefore: ${currentCount}\nAfter: ${parsed.valid.length}\nNG: ${parsed.invalid.length}`);
   }
 
   function waitForWindowLoad(win, timeoutMs = 25000) {
@@ -1871,6 +1980,36 @@
     setStatus("停止要求を出しました");
   }
 
+  function applyPanelCollapsed(collapsed) {
+    const panel = document.querySelector("#pw-url-cache-panel");
+    const body = document.querySelector("#pw-url-cache-body");
+    const btn = document.querySelector("#pw-url-cache-minimize");
+    const title = document.querySelector("#pw-url-cache-title");
+    if (!panel || !body || !btn) return;
+
+    body.style.display = collapsed ? "none" : "block";
+    btn.textContent = collapsed ? "Open" : "Min";
+    panel.dataset.collapsed = collapsed ? "1" : "0";
+
+    if (collapsed) {
+      panel.style.width = "168px";
+      panel.style.padding = "7px 8px";
+      panel.style.gap = "0";
+      panel.style.borderRadius = "7px";
+      panel.style.maxHeight = "none";
+      if (title) title.textContent = "URL Cache";
+    } else {
+      panel.style.width = "680px";
+      panel.style.padding = "12px";
+      panel.style.gap = "8px";
+      panel.style.borderRadius = "8px";
+      panel.style.maxHeight = "94vh";
+      if (title) title.textContent = "PW URL Cache Manager v0.7.2";
+    }
+
+    localStorage.setItem(CONFIG.collapsedKey, collapsed ? "1" : "0");
+  }
+
   function addPanel() {
     if (document.querySelector("#pw-url-cache-panel")) return;
 
@@ -1906,7 +2045,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-      <div style="font-weight:bold;">PW URL Cache Manager v0.7.0</div>
+      <div id="pw-url-cache-title" style="font-weight:bold;white-space:nowrap;">PW URL Cache Manager v0.7.2</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-url-cache-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-url-cache-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>
@@ -1995,6 +2134,18 @@
         </div>
 
         <div style="display:flex;gap:6px;margin-top:6px;">
+          <button id="pw-url-cache-copy-edit-full"
+            style="flex:1;padding:7px;cursor:pointer;background:#d9ecff;border:1px solid #88a;">
+            Copy/Edit Full Cache TSV
+          </button>
+
+          <button id="pw-url-cache-replace-all"
+            style="flex:1;padding:7px;cursor:pointer;background:#ffb4b4;border:1px solid #c88;font-weight:bold;">
+            Replace All Cache From TSV
+          </button>
+        </div>
+
+        <div style="display:flex;gap:6px;margin-top:6px;">
           <button id="pw-url-cache-clear-event"
             style="flex:1;padding:7px;cursor:pointer;background:#f6d365;border:1px solid #caa;">
             Clear Current Event Cache
@@ -2075,6 +2226,10 @@
       alert(`Full Cache TSV copied: ${getCacheCount()} 件`);
     };
 
+    document.querySelector("#pw-url-cache-copy-edit-full").onclick = () => copyEditableFullCacheTsv();
+
+    document.querySelector("#pw-url-cache-replace-all").onclick = () => replaceAllCacheFromTsv();
+
     document.querySelector("#pw-url-cache-stop").onclick = () => stopRun();
 
     document.querySelector("#pw-url-cache-clear-event").onclick = () => {
@@ -2092,13 +2247,8 @@
     document.querySelector("#pw-url-cache-clear-report").onclick = () => clearReport();
 
     document.querySelector("#pw-url-cache-minimize").onclick = () => {
-      const body = document.querySelector("#pw-url-cache-body");
-      const btn = document.querySelector("#pw-url-cache-minimize");
-      if (!body || !btn) return;
-
-      const hidden = body.style.display === "none";
-      body.style.display = hidden ? "block" : "none";
-      btn.textContent = hidden ? "Min" : "Open";
+      const panelEl = document.querySelector("#pw-url-cache-panel");
+      applyPanelCollapsed(panelEl?.dataset.collapsed !== "1");
     };
 
     document.querySelector("#pw-url-cache-close").onclick = () => {
@@ -2108,11 +2258,12 @@
 
     showCache(getEventPrefixInput());
     renderManualReview();
+    applyPanelCollapsed(localStorage.getItem(CONFIG.collapsedKey) !== "0");
   }
 
   function boot() {
     addPanel();
-    document.documentElement.dataset.pwUrlManagerVersion = "0.7.0";
+    document.documentElement.dataset.pwUrlManagerVersion = "0.7.2";
     document.addEventListener("PW_URL_MANAGER_RESOLVE_REQUEST", handleResolveBridgeRequest);
 
     const publicApi = {
@@ -2122,6 +2273,8 @@
       setCacheItem,
       cacheToSheetTsv,
       cacheToFullTsv,
+      copyEditableFullCacheTsv,
+      replaceAllCacheFromTsv,
       showCache,
       resolveTournamentNames,
       buildCacheByNames,

@@ -1,10 +1,10 @@
 ﻿// ==UserScript==
 // @name         PW Ticket Link Semi Auto
 // @namespace    pw-ticket-link-semi-auto
-// @version      1.0.3
+// @version      1.0.4
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
-// @description  TicketLink用ルール表から候補作成 → URL厳密確認 → 已确认比赛へ后台fetchでTicket Link実行。URL検索はOPEN/CLOSED両方、Ticket optionはtn_のみ。
+// @description  TicketLink用ルール表から候補作成 → Shared Cache / URL poolでURL厳密確認 → 已确认比赛へ后台fetchでTicket Link実行。Ticket optionはtn_のみ。
 // @author       xhpc007 + ChatGPT
 // @match        https://japanopt.pokerweb.com.br/*
 // @grant        GM_setClipboard
@@ -1082,6 +1082,27 @@
     };
   }
 
+  function extractTournamentFromRow(row) {
+    const rowText = norm(row.innerText || "");
+    const rowHtml = row.innerHTML || "";
+    const actualName = extractTournamentTitleFromRow(rowText);
+    const links = Array.from(row.querySelectorAll("a[href]"));
+    const panelLink =
+      links.find(a => String(a.getAttribute("href") || "").includes("/cb/torneio/painel/")) ||
+      links.find(a => String(a.href || "").includes("/cb/torneio/painel/"));
+
+    const href = panelLink ? (panelLink.getAttribute("href") || panelLink.href) : rowHtml;
+    const m = String(href).match(/\/cb\/torneio\/painel\/(\d+)/);
+    if (!m) return null;
+
+    return {
+      tournamentId: m[1],
+      url: getTournamentUrl(m[1]),
+      actualName,
+      matchedRow: rowText
+    };
+  }
+
   function getDataTableInWindow(win) {
     try {
       if (!win || win.closed || !win.jQuery || !win.jQuery.fn || !win.jQuery.fn.dataTable) return null;
@@ -1248,6 +1269,94 @@
     if (unique.length > 1) return { error: "AMBIGUOUS", candidates: unique };
     return null;
   }
+
+  function getDataTablePageInfo(dt) {
+    try {
+      return dt?.page?.info?.() || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function goDataTablePageAndWait(win, dt, pageIndex) {
+    if (!dt) return false;
+    const drawPromise = waitForNextDraw(win, dt, CONFIG.searchWaitTimeoutMs);
+    try {
+      dt.page(pageIndex).draw("page");
+    } catch (_) {
+      return false;
+    }
+    await drawPromise;
+    await waitForProcessingGone(win, dt, CONFIG.searchWaitTimeoutMs);
+    await sleep(120);
+    return true;
+  }
+
+  function collectUrlPoolFromCurrentPage(win, dt, prefix, source) {
+    const rows = getDataTableTbodyRows(win, dt);
+    const out = [];
+    const compactPrefix = compact(prefix);
+
+    for (const row of rows) {
+      const found = extractTournamentFromRow(row);
+      if (!found) continue;
+
+      const hay = `${found.actualName || ""} ${found.matchedRow || ""}`;
+      if (!hay.includes(prefix) && !compact(hay).includes(compactPrefix)) continue;
+      out.push({ ...found, source });
+    }
+
+    return out;
+  }
+
+  async function collectUrlPoolInWindow(win, label, prefix) {
+    const dt = await waitForDataTableReadyInWindow(win, 15000);
+    if (!dt) throw new Error(`${label}: DataTable not found`);
+
+    await dataTableSearchAndWait(win, dt, prefix);
+    const info = getDataTablePageInfo(dt);
+    const pages = info && info.pages ? info.pages : 1;
+    const found = [];
+    const seen = new Set();
+
+    for (let page = 0; page < pages; page++) {
+      if (stopRequested) break;
+      if (page > 0) await goDataTablePageAndWait(win, dt, page);
+
+      const rows = collectUrlPoolFromCurrentPage(win, dt, prefix, label);
+      log(`URL pool ${label} ${prefix} page ${page + 1}/${pages}: ${rows.length}`);
+
+      for (const row of rows) {
+        if (!row.url || seen.has(row.url)) continue;
+        seen.add(row.url);
+        found.push(row);
+      }
+    }
+
+    return found;
+  }
+
+  function matchUrlPoolByName(pool, name) {
+    const cleanName = cleanTournamentName(name);
+    const matches = (pool || []).filter(row => isSameTournamentExactSafe(cleanName, row.actualName));
+    const seen = new Set();
+    const unique = matches.filter(row => {
+      const key = row.tournamentId || row.url;
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    if (unique.length === 1) return unique[0];
+    if (unique.length > 1) return { error: "AMBIGUOUS", candidates: unique };
+    return null;
+  }
+
+  function getPrefixesForUrlPool(rows) {
+    return uniqueArray((rows || [])
+      .map(row => getEventPrefixFromTournamentName(row["大会名"]))
+      .filter(Boolean));
+  }
   async function waitForWindowLoad(win, timeoutMs = 25000) {
     const start = Date.now();
 
@@ -1332,9 +1441,19 @@
       return;
     }
 
+    const prefixes = getPrefixesForUrlPool(targets);
+
+    if (!prefixes.length) {
+      alert("Event Prefix を認識できません。URL ManagerでURLを補完するか、CandidatesにURL/TournamentIdを貼ってください。");
+      return;
+    }
+
     if (!confirm(
-      `URL未解決・疑似汚染候補を OPEN / CLOSED 両方の大会一覧で検索します。\n\n` +
-      `対象：${targets.length}件\n\n続行しますか？`
+      `URL未解決・疑似汚染候補を URL pool 方式で検索します。\n\n` +
+      `対象：${targets.length}件\n` +
+      `Event Prefix：${prefixes.join(" / ")}\n` +
+      `検索：OPEN / CLOSED 両方をPrefix単位で一括収集\n\n` +
+      `続行しますか？`
     )) return;
 
     running = true;
@@ -1345,6 +1464,7 @@
     let okCount = 0;
     let ngCount = 0;
     let ambiguousCount = 0;
+    const pool = [];
 
     try {
       log("CLOSED大会一覧を開いています...");
@@ -1352,6 +1472,31 @@
 
       log("OPEN大会一覧を開いています...");
       openWin = await openTournamentListWindow("/cb/torneio/abertos", "open");
+
+      const poolSeen = new Set();
+      for (const prefix of prefixes) {
+        if (stopRequested) break;
+        log(`URL pool scan: ${prefix}`);
+
+        for (const item of [
+          { win: closedWin, label: "closed" },
+          { win: openWin, label: "open" }
+        ]) {
+          try {
+            const rows = await collectUrlPoolInWindow(item.win, item.label, prefix);
+            for (const row of rows) {
+              const key = row.tournamentId || row.url;
+              if (!key || poolSeen.has(key)) continue;
+              poolSeen.add(key);
+              pool.push(row);
+            }
+          } catch (e) {
+            console.warn(`${item.label} pool search error`, e);
+          }
+        }
+      }
+
+      log(`URL pool collected: ${pool.length}`);
 
       for (let i = 0; i < candidates.length; i++) {
         if (stopRequested) break;
@@ -1364,31 +1509,14 @@
         }
 
         const name = cleanTournamentName(row["大会名"]);
-        log(`URL検索 ${i + 1}/${candidates.length}: ${name}`);
+        log(`URL pool match ${i + 1}/${candidates.length}: ${name}`);
 
-        let found = null;
-        let source = "";
-
-        try {
-          found = await searchTournamentInListWindow(closedWin, name);
-          source = "closed";
-        } catch (e) {
-          console.warn("closed search error", e);
-        }
-
-        if (!found) {
-          try {
-            found = await searchTournamentInListWindow(openWin, name);
-            source = "open";
-          } catch (e) {
-            console.warn("open search error", e);
-          }
-        }
+        const found = matchUrlPoolByName(pool, name);
 
         if (!found) {
           row["本次处理"] = "不使用";
           row["判定"] = "URL_NOT_FOUND";
-          row["理由"] = "OPEN/CLOSED大会一覧検索で見つかりません";
+          row["理由"] = "URL poolに完全一致がありません";
           ngCount++;
           continue;
         }
@@ -1405,7 +1533,7 @@
         row["本次处理"] = "使用";
         row["TournamentId"] = found.tournamentId;
         row["URL"] = found.url;
-        row["判定"] = source === "closed" ? "OK_SEARCH_CLOSED" : "OK_SEARCH_OPEN";
+        row["判定"] = found.source === "closed" ? "OK_POOL_CLOSED" : "OK_POOL_OPEN";
         row["理由"] = "";
 
         setSharedCacheItem(name, {
@@ -1413,7 +1541,7 @@
           url: found.url,
           actualName: found.actualName || name,
           matchedRow: found.matchedRow || "",
-          source: `ticket-link-v1.0-${source}`
+          source: `ticket-link-v1.0-pool-${found.source || "unknown"}`
         });
 
         okCount++;
@@ -1796,7 +1924,7 @@
   }
 
   function isSafeUrlStatus(status) {
-    return ["OK_CACHE", "OK_SEARCH_CLOSED", "OK_SEARCH_OPEN", "OK_MANUAL"].includes(norm(status));
+    return ["OK_CACHE", "OK_POOL_CLOSED", "OK_POOL_OPEN", "OK_SEARCH_CLOSED", "OK_SEARCH_OPEN", "OK_MANUAL"].includes(norm(status));
   }
 
   function getFlowState() {
@@ -2091,7 +2219,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <div style="font-weight:bold;">PW Ticket Link 人工確認版 v1.0.2</div>
+        <div style="font-weight:bold;">PW Ticket Link Semi Auto v1.0.4</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-ticket-link-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-ticket-link-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>
@@ -2100,7 +2228,7 @@
 
       <div id="pw-ticket-link-body" style="overflow-y:auto;padding-right:2px;">
         <div style="font-size:11px;color:#ccc;line-height:1.35;margin-bottom:6px;">
-          流れ：候補作成 → URL未解決検索 → 已确认比赛へ后台fetchでTicket Link<br>
+          流れ：候補作成 → URL pool検索 → 已确认比赛へ后台fetchでTicket Link<br>
           URLは完整大会名で厳密照合。Ticket optionは value=tn_ のみ対象。ページ遷移/Config/Modalクリックなし。
         </div>
 
@@ -2160,7 +2288,7 @@ Satellite	s01"
 
         <div style="display:flex;gap:6px;margin-top:8px;">
           <button id="pw-ticket-link-build" style="flex:1;padding:7px;cursor:pointer;background:#ffe08a;border:1px solid #c99;">1. 候補作成</button>
-          <button id="pw-ticket-link-resolve" style="flex:1;padding:7px;cursor:pointer;background:#d9ecff;border:1px solid #88a;">2. URL未解決検索</button>
+          <button id="pw-ticket-link-resolve" style="flex:1;padding:7px;cursor:pointer;background:#d9ecff;border:1px solid #88a;">2. URL pool検索</button>
           <button id="pw-ticket-link-execute" style="flex:1;padding:7px;cursor:pointer;background:#bff0c2;border:1px solid #8a8;">3. 已确认比赛执行Link</button>
         </div>
 

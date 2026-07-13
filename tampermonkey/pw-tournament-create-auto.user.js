@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW 大会作成 Auto
 // @namespace    pw-tournament-create-auto
-// @version      0.1.0
+// @version      0.1.1
 // @description  API-first tournament create flow from fixed TSV: create, USDT, items, and Ticket Link without page-step pipeline.
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js
@@ -36,8 +36,8 @@ test7777\t2026/07/02\t13:00\t80000\t1000\t1\t80000\t0\t3\t-74998\t0\t0\t【SPADI
   const DEFAULTS = {
     modo: "0",
     qtd_dias: "1",
-    vaga_geral: "1",
-    vaga_ind: "1",
+    vaga_geral: "0",
+    vaga_ind: "0",
     datasGeradas: "0",
     id_estrutura: "18",
     id_blind: "1",
@@ -392,9 +392,6 @@ test7777\t2026/07/02\t13:00\t80000\t1000\t1\t80000\t0\t3\t-74998\t0\t0\t【SPADI
     if (compact.length === 1) return { option: compact[0], matchType: "COMPACT" };
     if (compact.length > 1) throw new Error(`Ticket ambiguous compact: ${ticketName}`);
 
-    const includes = options.filter(x => compactTicketText(x.text).includes(compactTarget));
-    if (includes.length === 1) return { option: includes[0], matchType: "INCLUDES_WARN" };
-    if (includes.length > 1) throw new Error(`Ticket ambiguous includes: ${ticketName}`);
     throw new Error(`Ticket not found: ${ticketName}`);
   }
 
