@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW ナショナルチケット Batch
 // @namespace    pw-national-ticket-batch-safe
-// @version      1.2.4
+// @version      1.3.2
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
 // @description  任意のPokerWeb管理画面からGameID・チケット名TSVを厳密検証し、ナショナルチケットを安全に一件ずつ付与する正式版
@@ -24,6 +24,7 @@
     emitUrl: '/cb/vagas/emitir_ticket',
     ticketHistoryUrl: '/cb/vagas/historico_ticket',
     playerSearchUrl: '/cb/jogadores/search',
+    defaultStoreName: 'JOPT - Japan Open Poker Tour',
     groupPathPattern: /\/painel_grupo_tickets\/(\d+)/,
     ticketListTextPattern: /ナショナル\s*チケット|national\s*ticket/i,
     minDelayMs: 30,
@@ -33,12 +34,12 @@
   };
 
   const PREVIEW_HEADERS = [
-    '行', 'GameID', 'チケット名', 'grupo', 'groupURL',
+    '行', 'GameID', 'チケット名', '店舗', 'grupo', 'groupURL',
     'id_jogador', '使用予定 ticket_id', 'ステータス', 'エラー理由'
   ];
 
   const LOG_HEADERS = [
-    '行', 'GameID', 'チケット名', 'grupo', 'ticket_id',
+    '行', 'GameID', 'チケット名', '店舗', 'grupo', 'ticket_id',
     'id_jogador', '結果', '時刻', 'response'
   ];
 
@@ -212,6 +213,7 @@
       lineNo,
       gameId,
       ticketName,
+      store: '',
       grupo: '',
       groupURL: '',
       idJogador: '',
@@ -378,10 +380,25 @@
     return { resolved, listPage };
   }
 
-  function parseGroupPage(html, expectedGrupo) {
+  function extractStoreName(ticketElement) {
+    const row = ticketElement.closest('tr');
+    if (!row) return '';
+    const cells = [...row.querySelectorAll('td, th')];
+    const statusIndex = cells.findIndex(cell => norm(cell.textContent) === '未発行');
+    if (statusIndex > 0) return norm(cells[statusIndex - 1].textContent);
+
+    const table = row.closest('table');
+    const headers = [...(table?.querySelectorAll('thead th') || [])].map(th => norm(th.textContent));
+    const storeIndex = headers.findIndex(header => header === '店舗');
+    return storeIndex >= 0 && cells[storeIndex] ? norm(cells[storeIndex].textContent) : '';
+  }
+
+  function parseGroupPage(html, expectedGrupo, selectedStoreName = '') {
     const doc = parseHtml(html);
     const codbloq = extractCodbloq(doc, html);
     const ticketIds = [];
+    const eligibleTicketIds = [];
+    const ticketStores = new Map();
 
     for (const el of doc.querySelectorAll('[data-ticket_id]')) {
       const ticketId = norm(el.getAttribute('data-ticket_id'));
@@ -392,17 +409,37 @@
 
       if (ticketId && looksUnissued && (!grupo || grupo === String(expectedGrupo))) {
         ticketIds.push(ticketId);
+        const store = extractStoreName(el) || 'UNKNOWN';
+        const previousStore = ticketStores.get(ticketId);
+        if (!previousStore || previousStore === 'UNKNOWN') ticketStores.set(ticketId, store);
+        if (selectedStoreName && store === selectedStoreName) eligibleTicketIds.push(ticketId);
       }
     }
 
+    const uniqueTicketIds = [...new Set(ticketIds)];
+    const uniqueEligibleTicketIds = [...new Set(eligibleTicketIds)];
+    const storeCounts = new Map();
+    uniqueTicketIds.forEach(ticketId => {
+      const store = ticketStores.get(ticketId) || 'UNKNOWN';
+      storeCounts.set(store, (storeCounts.get(store) || 0) + 1);
+    });
+
     return {
       codbloq,
-      ticketIds: [...new Set(ticketIds)],
+      // ticketIds はPOST後確認用の全未発行在庫。店舗フィルタをかけない。
+      ticketIds: uniqueTicketIds,
+      // 正式付与へ分配できるのはUIで選択した単一店舗の未発行在庫だけ。
+      eligibleTicketIds: uniqueEligibleTicketIds,
+      ticketStores,
       diagnostics: {
         title: norm(doc.title),
         forms: doc.querySelectorAll('form').length,
         codbloqNamedElements: doc.querySelectorAll('[name="codbloq"]').length,
         emitirButtons: doc.querySelectorAll('[data-ticket_id]').length,
+        unissuedTicketIds: uniqueTicketIds.length,
+        selectedStoreName,
+        eligibleSelectedStoreTicketIds: uniqueEligibleTicketIds.length,
+        storeCounts: Object.fromEntries(storeCounts),
         htmlLength: String(html || '').length
       }
     };
@@ -443,9 +480,9 @@
     return '';
   }
 
-  async function fetchGroupPage(group, requireCodbloq = true) {
+  async function fetchGroupPage(group, requireCodbloq = true, selectedStoreName = '') {
     const { text } = await requestText(group.groupURL, { method: 'GET', cache: 'no-store' });
-    const parsed = parseGroupPage(text, group.grupo);
+    const parsed = parseGroupPage(text, group.grupo, selectedStoreName);
     if (!parsed.codbloq && verifiedTicketListCodbloq) {
       parsed.codbloq = verifiedTicketListCodbloq;
       parsed.diagnostics.codbloqSource = 'verified-ticket-list-page';
@@ -488,36 +525,68 @@
     throw new Error(`GameID ${gameId}: 検索結果が不唯一 (${unique.map(x => x.internalId).join(',')})`);
   }
 
-  function askGameIdAction(gameId, errorMessage) {
-    const wantsRetry = confirm(
-      `GameID ${gameId} のプレイヤー検索に失敗しました:\n${errorMessage}\n\n` +
-      `[OK] 別のGameIDを入力して再試行します。\n[キャンセル] このGameIDに関連するタスクをスキップします。`
-    );
-    if (!wantsRetry) return { action: 'skip' };
+  function askToSkipGameIdErrors(gameIdErrors, tasks) {
+    const errorLines = [...gameIdErrors.entries()].map(([gameId, error]) => {
+      const lineNumbers = tasks
+        .filter(task => task.gameId === gameId)
+        .map(task => task.lineNo)
+        .join(',');
+      return `行 ${lineNumbers} / GameID ${gameId} / ${error}`;
+    });
 
-    const input = prompt('新しいGameIDを入力してください（8桁の数字）:', gameId);
-    if (input === null) return { action: 'skip' };
+    return new Promise(resolve => {
+      document.querySelector('#pwnt-gameid-error-modal')?.remove();
+      const overlay = document.createElement('div');
+      overlay.id = 'pwnt-gameid-error-modal';
+      overlay.style.cssText = `
+        position:fixed;inset:0;z-index:1000001;background:rgba(0,0,0,.72);
+        display:flex;align-items:center;justify-content:center;padding:24px;
+      `;
 
-    const normalized = normalizeGameId(input);
-    if (!normalized) {
-      alert('GameID の形式が不正です（8桁の数字が必要）。このタスクはスキップされます。');
-      return { action: 'skip' };
-    }
-    return { action: 'retry', gameId: normalized };
-  }
+      const dialog = document.createElement('div');
+      dialog.style.cssText = `
+        width:min(900px,94vw);max-height:88vh;overflow:auto;background:#202020;color:#fff;
+        border:2px solid #ffcc66;border-radius:12px;padding:18px;
+        box-shadow:0 8px 32px rgba(0,0,0,.65);font-family:Arial,"Yu Gothic",Meiryo,sans-serif;
+      `;
 
-  async function resolvePlayerForGameId(gameId) {
-    let currentGameId = gameId;
-    while (true) {
-      try {
-        const internalId = await searchInternalId(currentGameId);
-        return { resolvedGameId: currentGameId, internalId };
-      } catch (error) {
-        const decision = askGameIdAction(currentGameId, error.message || String(error));
-        if (decision.action === 'skip') return null;
-        currentGameId = decision.gameId;
-      }
-    }
+      const title = document.createElement('div');
+      title.textContent = `GameID検索エラー: ${gameIdErrors.size}人`;
+      title.style.cssText = 'font-size:18px;font-weight:bold;color:#ffcc66;margin-bottom:8px;';
+
+      const message = document.createElement('div');
+      message.textContent = '以下の人をスキップして、見つかった人だけでDRY RUNを続行しますか？';
+      message.style.cssText = 'margin-bottom:10px;';
+
+      const details = document.createElement('textarea');
+      details.readOnly = true;
+      details.value = errorLines.join('\n');
+      details.style.cssText = `
+        width:100%;box-sizing:border-box;height:min(420px,52vh);background:#111;color:#fff;
+        border:1px solid #666;padding:10px;font-family:Consolas,"Yu Gothic",monospace;font-size:12px;
+      `;
+
+      const buttons = document.createElement('div');
+      buttons.style.cssText = 'display:flex;gap:12px;justify-content:flex-end;margin-top:14px;';
+      const stopButton = document.createElement('button');
+      stopButton.textContent = '停止して入力を修正';
+      stopButton.style.cssText = 'padding:10px 18px;background:#ddd;color:#222;';
+      const skipButton = document.createElement('button');
+      skipButton.textContent = 'スキップして続行';
+      skipButton.style.cssText = 'padding:10px 18px;background:#ff9f43;color:#111;font-weight:bold;';
+
+      const finish = decision => {
+        overlay.remove();
+        resolve(decision);
+      };
+      stopButton.onclick = () => finish(false);
+      skipButton.onclick = () => finish(true);
+
+      buttons.append(stopButton, skipButton);
+      dialog.append(title, message, details, buttons);
+      overlay.append(dialog);
+      document.body.append(overlay);
+    });
   }
 
   async function dryRun() {
@@ -528,6 +597,8 @@
 
     try {
       const input = document.querySelector('#pwnt-input')?.value || '';
+      const selectedStoreName = norm(document.querySelector('#pwnt-store-name')?.value);
+      if (!selectedStoreName) throw new Error('発行店舗名を入力してください。');
       localStorage.setItem(APP.inputKey, input);
       const tasks = parseInput(input);
       state.tasks = tasks;
@@ -541,30 +612,60 @@
         const name = neededNames[i];
         setStatus(`DRY RUN: group 読取 ${i + 1}/${neededNames.length}`);
         const group = groupMap.get(name);
-        inventoryMap.set(name, await fetchGroupPage(group));
+        inventoryMap.set(name, await fetchGroupPage(group, true, selectedStoreName));
       }
 
-      const neededCounts = new Map();
-      tasks.forEach(task => neededCounts.set(task.ticketName, (neededCounts.get(task.ticketName) || 0) + 1));
-      neededCounts.forEach((count, name) => {
-        const stock = inventoryMap.get(name)?.ticketIds.length || 0;
-        if (stock < count) throw new Error(`未発行 ticket_id 数量不足: ${name} / 必要=${count} / 在庫=${stock}`);
-      });
+      const inventorySummary = neededNames.map(name => {
+        const diagnostics = inventoryMap.get(name).diagnostics;
+        return `${name}: 選択店舗=${selectedStoreName}, ` +
+          `使用可能=${diagnostics.eligibleSelectedStoreTicketIds}, ` +
+          `店舗別=${JSON.stringify(diagnostics.storeCounts)}`;
+      }).join('\n');
 
       const playerMap = new Map();
       const gameIdResolution = new Map();
+      const gameIdErrors = new Map();
       const gameIds = [...new Set(tasks.map(task => task.gameId))];
       for (let i = 0; i < gameIds.length; i++) {
         const originalGameId = gameIds[i];
         setStatus(`DRY RUN: GameID 検索 ${i + 1}/${gameIds.length} / ${originalGameId}`);
-        const resolved = await resolvePlayerForGameId(originalGameId);
-        if (!resolved) {
-          gameIdResolution.set(originalGameId, null);
-          continue;
+        try {
+          const internalId = await searchInternalId(originalGameId);
+          playerMap.set(originalGameId, internalId);
+          gameIdResolution.set(originalGameId, originalGameId);
+        } catch (error) {
+          gameIdErrors.set(originalGameId, error.message || String(error));
         }
-        playerMap.set(resolved.resolvedGameId, resolved.internalId);
-        gameIdResolution.set(originalGameId, resolved.resolvedGameId);
       }
+
+      if (gameIdErrors.size) {
+        const shouldSkip = await askToSkipGameIdErrors(gameIdErrors, tasks);
+        if (!shouldSkip) {
+          tasks.forEach(task => {
+            const error = gameIdErrors.get(task.gameId);
+            task.status = error ? 'ERROR' : 'PLAYER_OK';
+            task.error = error || '他のGameIDエラーによりDRY RUN全体を停止';
+          });
+          throw new Error(`GameID検索エラー ${gameIdErrors.size}人。入力TSVを修正してください。`);
+        }
+        gameIdErrors.forEach((error, gameId) => gameIdResolution.set(gameId, null));
+      }
+
+      const neededCounts = new Map();
+      tasks.forEach(task => {
+        if (gameIdResolution.get(task.gameId) === null) return;
+        neededCounts.set(task.ticketName, (neededCounts.get(task.ticketName) || 0) + 1);
+      });
+      neededCounts.forEach((count, name) => {
+        const inventory = inventoryMap.get(name);
+        const stock = inventory?.eligibleTicketIds.length || 0;
+        if (stock < count) {
+          throw new Error(
+            `選択店舗の未発行 ticket_id 数量不足: ${name} / 店舗=${selectedStoreName} / ` +
+            `必要=${count} / 在庫=${stock} / 店舗別=${JSON.stringify(inventory?.diagnostics.storeCounts || {})}`
+          );
+        }
+      });
 
       const inventoryCursor = new Map();
       const assignedIds = new Set();
@@ -572,14 +673,13 @@
         const resolvedGameId = gameIdResolution.get(task.gameId);
         if (resolvedGameId === null) {
           task.status = 'SKIPPED';
-          task.error = `GameID ${task.gameId} のプレイヤーが見つからず、ユーザー操作によりスキップされました。`;
+          task.error = `${gameIdErrors.get(task.gameId)} / ユーザー確認によりスキップ`;
           return;
         }
-
         const group = groupMap.get(task.ticketName);
         const inventory = inventoryMap.get(task.ticketName);
         const cursor = inventoryCursor.get(task.ticketName) || 0;
-        const ticketId = inventory.ticketIds[cursor];
+        const ticketId = inventory.eligibleTicketIds[cursor];
 
         if (!ticketId || assignedIds.has(ticketId)) {
           throw new Error(`ticket_id 分配失敗または重複: ${task.ticketName}`);
@@ -592,6 +692,7 @@
         task.groupURL = group.groupURL;
         task.idJogador = playerMap.get(resolvedGameId);
         task.ticketId = ticketId;
+        task.store = inventory.ticketStores.get(ticketId) || '';
         task.codbloq = inventory.codbloq;
         task.status = 'OK';
 
@@ -603,11 +704,16 @@
       state.dryRunOk = true;
       savePreview();
       renderPreview();
-      setStatus(`DRY RUN 成功: ${tasks.length} 件。POST は実行していません。`);
+      const skippedCount = tasks.filter(task => task.status === 'SKIPPED').length;
+      setStatus(
+        `DRY RUN 成功: 付与対象=${tasks.length - skippedCount}件 / ` +
+        `SKIPPED=${skippedCount}件。POST は実行していません。\n` +
+        `バックグラウンド取得在庫:\n${inventorySummary}`
+      );
     } catch (error) {
       state.dryRunOk = false;
       state.tasks.forEach(task => {
-        if (task.status !== 'OK' && task.status !== 'SKIPPED') {
+        if (task.status === '未検証') {
           task.status = 'ERROR';
           task.error = error.message || String(error);
         }
@@ -714,9 +820,17 @@
       throw new Error(`ticket_id 重複実行を検出: ${task.ticketId}`);
     }
 
-    const fresh = await fetchGroupPage({ grupo: task.grupo, groupURL: task.groupURL });
-    if (!fresh.ticketIds.includes(task.ticketId)) {
-      throw new Error(`付与直前確認で ticket_id が未発行在庫にありません: ${task.ticketId}`);
+    const fresh = await fetchGroupPage(
+      { grupo: task.grupo, groupURL: task.groupURL },
+      true,
+      task.store
+    );
+    if (!fresh.eligibleTicketIds.includes(task.ticketId)) {
+      const currentStore = fresh.ticketStores.get(task.ticketId) || '未発行在庫なし';
+      throw new Error(
+        `付与直前確認で ticket_id が選択店舗の未発行在庫にありません: ` +
+        `${task.ticketId} / 選択店舗=${task.store} / 現在店舗=${currentStore}`
+      );
     }
 
     // POSTを開始した時点で二重実行防止台帳へ記録する。結果不明でも同じタスクを再試行しない。
@@ -776,6 +890,7 @@
       行: task.lineNo,
       GameID: task.gameId,
       チケット名: task.ticketName,
+      店舗: task.store,
       grupo: task.grupo,
       ticket_id: task.ticketId,
       id_jogador: task.idJogador,
@@ -790,6 +905,7 @@
   async function runAll() {
     if (state.running || !state.dryRunOk) return;
     const remaining = state.tasks.filter(task => task.status === 'OK');
+    const skipped = state.tasks.filter(task => task.status === 'SKIPPED');
 
     if (!remaining.length) {
       alert('残りの付与タスクはありません。');
@@ -798,7 +914,10 @@
 
     if (!confirm(
       `正式付与を開始します。\n\n` +
-      `付与予定: ${remaining.length}件\n間隔: ${APP.minDelayMs}-${APP.maxDelayMs}ms\n\n` +
+      `発行店舗: ${remaining[0].store}\n` +
+      `付与予定: ${remaining.length}件\n` +
+      `スキップ: ${skipped.length}件${skipped.length ? ` / GameID=${[...new Set(skipped.map(task => task.gameId))].join(',')}` : ''}\n` +
+      `間隔: ${APP.minDelayMs}-${APP.maxDelayMs}ms\n\n` +
       `ticket_id を一件ずつ確認し、不明または未発行のままなら即時停止します。実行しますか？`
     )) return;
 
@@ -838,6 +957,7 @@
       行: task.lineNo,
       GameID: task.gameId,
       チケット名: task.ticketName,
+      店舗: task.store,
       grupo: task.grupo,
       groupURL: task.groupURL,
       id_jogador: task.idJogador,
@@ -920,13 +1040,15 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <strong>PW ナショナルチケット一括付与 正式版 v1.2.4</strong>
+        <strong>PW ナショナルチケット一括付与 正式版 v1.3.2</strong>
         <div><button id="pwnt-min">Min</button> <button id="pwnt-close">x</button></div>
       </div>
       <div id="pwnt-body" style="overflow:auto;margin-top:8px;">
         <div style="font-size:11px;color:#f6d365;line-height:1.45;margin-bottom:8px;">
           任意のPokerWeb管理画面で使用できます。チケット一覧はバックグラウンドで取得します。正式付与はDRY RUN成功後に有効になります。
         </div>
+        <div style="font-weight:bold;">発行店舗名（この店舗だけを使用）</div>
+        <input id="pwnt-store-name" type="text" value="${APP.defaultStoreName}" style="width:100%;box-sizing:border-box;margin:4px 0 8px;background:#111;color:#fff;border:1px solid #555;padding:7px;">
         <div style="font-weight:bold;">入力TSV: GameID+チケット名 / Game ID+付与内容+枚数</div>
         <textarea id="pwnt-input" style="width:100%;box-sizing:border-box;height:115px;background:#111;color:#fff;border:1px solid #555;padding:8px;font-family:Consolas,monospace;"></textarea>
         <div style="display:flex;gap:6px;margin-top:8px;">
@@ -950,6 +1072,7 @@
 
     document.querySelector('#pwnt-read').onclick = readTsv;
     document.querySelector('#pwnt-input').addEventListener('input', invalidatePreparedState);
+    document.querySelector('#pwnt-store-name').addEventListener('input', invalidatePreparedState);
     document.querySelector('#pwnt-dry-run').onclick = dryRun;
     document.querySelector('#pwnt-run-all').onclick = runAll;
     document.querySelector('#pwnt-output-log').onclick = outputLog;
