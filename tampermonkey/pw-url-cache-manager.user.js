@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW URL Cache Manager
 // @namespace    pw-shared-url-cache-manager
-// @version      0.6.3
+// @version      0.7.0
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-url-cache-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-url-cache-manager.user.js
 // @description  PW大会URL共用缓存管理工具。大会名リスト検索 / イベントPrefix全ページ収集 / 汚染チェック・修復 / Sheet用TSV出力。
@@ -9,6 +9,7 @@
 // @match        https://japanopt.pokerweb.com.br/cb/*
 // @match        https://japanopt.pokerweb.com.br/*
 // @grant        GM_setClipboard
+// @grant        unsafeWindow
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -16,6 +17,8 @@
   "use strict";
 
   const SHARED_CACHE_KEY = "PW_SHARED_TOURNAMENT_URL_CACHE_V1";
+  const RESOLVE_REQUEST_KEY = "PW_URL_MANAGER_RESOLVE_REQUEST_V1";
+  const RESOLVE_RESPONSE_KEY = "PW_URL_MANAGER_RESOLVE_RESPONSE_V1";
 
   const CONFIG = {
     inputKey: "PW_URL_CACHE_MANAGER_INPUT_V02",
@@ -105,14 +108,14 @@
   }
 
   function setStatus(text) {
-    console.log("[PW-URL-CACHE-v0.6]", text);
+    console.log("[PW-URL-CACHE-v0.7]", text);
     const box = document.querySelector("#pw-url-cache-status");
     if (box) box.textContent = text;
   }
 
   function appendReport(type, msg) {
     const line = `[${nowText()}] ${type}  ${msg}`;
-    console.log("[PW-URL-CACHE-v0.6]", line);
+    console.log("[PW-URL-CACHE-v0.7]", line);
 
     const box = document.querySelector("#pw-url-cache-report");
     if (box) {
@@ -1605,6 +1608,147 @@
     }
   }
 
+  function findExactCacheCandidates(name) {
+    const target = compact(cleanTournamentName(name));
+    if (!target) return [];
+
+    const seen = new Set();
+    return Object.values(loadCache())
+      .filter((item) => {
+        const names = [item?.name, item?.actualName]
+          .map((value) => compact(cleanTournamentName(value)))
+          .filter(Boolean);
+        return names.includes(target);
+      })
+      .map((item) => ({
+        tournamentId: String(item.tournamentId || "").trim(),
+        url: String(item.url || "").trim(),
+        actualName: cleanTournamentName(item.actualName || item.name || name),
+        matchedRow: String(item.matchedRow || ""),
+        source: String(item.source || "shared-cache")
+      }))
+      .filter((item) => {
+        const id = item.tournamentId || String(item.url).match(/\/cb\/torneio\/painel\/(\d+)/)?.[1] || "";
+        if (!id || seen.has(id)) return false;
+        seen.add(id);
+        item.tournamentId = id;
+        item.url = item.url || `/cb/torneio/painel/${id}`;
+        return true;
+      });
+  }
+
+  async function resolveTournamentNames(inputNames) {
+    if (running) throw new Error("URL Manager is already running");
+
+    const names = Array.from(new Set((inputNames || []).map(norm).filter(Boolean)));
+    if (!names.length) return { results: [], ok: 0, notFound: 0, ambiguous: 0 };
+
+    const resultMap = new Map();
+    const unresolved = [];
+
+    for (const name of names) {
+      const cached = findExactCacheCandidates(name);
+      if (cached.length === 1) {
+        resultMap.set(name, { name, status: "OK", ...cached[0], source: `cache:${cached[0].source}` });
+      } else if (cached.length > 1) {
+        resultMap.set(name, { name, status: "AMBIGUOUS", candidates: cached, source: "shared-cache" });
+      } else {
+        unresolved.push(name);
+      }
+    }
+
+    let wins = [];
+    running = true;
+    stopRequested = false;
+    try {
+      if (unresolved.length) wins = await openListWindows();
+
+      for (let i = 0; i < unresolved.length; i++) {
+        if (stopRequested) break;
+        const name = unresolved[i];
+        setStatus(`API大会名検索 ${i + 1}/${unresolved.length}: ${name}`);
+        appendReport("API_SEARCH", `${i + 1}/${unresolved.length} ${name}`);
+
+        const candidates = [];
+        for (const item of wins) {
+          try {
+            const found = await searchNameInWindow(item, name);
+            if (!found) continue;
+            const items = found.error === "AMBIGUOUS" ? found.candidates : [found];
+            for (const candidate of items) candidates.push({ ...candidate, source: item.label });
+          } catch (e) {
+            appendReport("API_SEARCH_ERROR", `${item.label}: ${name} / ${e.message || String(e)}`);
+          }
+        }
+
+        const seen = new Set();
+        const unique = candidates.filter((candidate) => {
+          const id = String(candidate.tournamentId || "");
+          if (!id || seen.has(id)) return false;
+          seen.add(id);
+          return true;
+        });
+
+        if (unique.length === 1) {
+          const found = unique[0];
+          setCacheItem(name, {
+            tournamentId: found.tournamentId,
+            url: found.url,
+            actualName: found.actualName || name,
+            matchedRow: found.matchedRow || "",
+            source: `url-manager-api-${found.source}`
+          });
+          resultMap.set(name, { name, status: "OK", ...found });
+          appendReport("API_SEARCH_OK", `${name} → ${found.url} (${found.source})`);
+        } else if (unique.length > 1) {
+          resultMap.set(name, { name, status: "AMBIGUOUS", candidates: unique, source: "search" });
+          appendReport("API_AMBIGUOUS", `${name} / ${unique.length} candidates`);
+        } else {
+          resultMap.set(name, { name, status: "NOT_FOUND", source: "search" });
+          appendReport("API_NOT_FOUND", name);
+        }
+      }
+    } finally {
+      closeListWindows(wins);
+      running = false;
+      stopRequested = false;
+    }
+
+    const results = names.map((name) => resultMap.get(name) || { name, status: "STOPPED" });
+    return {
+      results,
+      ok: results.filter((item) => item.status === "OK").length,
+      notFound: results.filter((item) => item.status === "NOT_FOUND").length,
+      ambiguous: results.filter((item) => item.status === "AMBIGUOUS").length,
+      stopped: results.filter((item) => item.status === "STOPPED").length
+    };
+  }
+
+  async function handleResolveBridgeRequest() {
+    let request = null;
+    try {
+      request = JSON.parse(localStorage.getItem(RESOLVE_REQUEST_KEY) || "null");
+      if (!request?.requestId || !Array.isArray(request.names)) return;
+
+      const result = await resolveTournamentNames(request.names);
+      localStorage.setItem(RESOLVE_RESPONSE_KEY, JSON.stringify({
+        requestId: request.requestId,
+        ok: true,
+        result,
+        finishedAt: Date.now()
+      }));
+    } catch (e) {
+      localStorage.setItem(RESOLVE_RESPONSE_KEY, JSON.stringify({
+        requestId: request?.requestId || "",
+        ok: false,
+        error: e.message || String(e),
+        finishedAt: Date.now()
+      }));
+    } finally {
+      document.dispatchEvent(new Event("PW_URL_MANAGER_RESOLVE_RESPONSE"));
+    }
+  }
+
   async function buildCacheByEventPrefix(options = {}) {
     if (running) {
       alert("処理中です");
@@ -1762,7 +1906,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-      <div style="font-weight:bold;">PW URL Cache Manager v0.6.3</div>
+      <div style="font-weight:bold;">PW URL Cache Manager v0.7.0</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-url-cache-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-url-cache-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>
@@ -1968,8 +2112,10 @@
 
   function boot() {
     addPanel();
+    document.documentElement.dataset.pwUrlManagerVersion = "0.7.0";
+    document.addEventListener("PW_URL_MANAGER_RESOLVE_REQUEST", handleResolveBridgeRequest);
 
-    window.PWUrlCacheManagerV06 = {
+    const publicApi = {
       SHARED_CACHE_KEY,
       loadCache,
       saveCache,
@@ -1977,6 +2123,7 @@
       cacheToSheetTsv,
       cacheToFullTsv,
       showCache,
+      resolveTournamentNames,
       buildCacheByNames,
       buildCacheByEventPrefix,
       importCacheFromTsv,
@@ -1988,6 +2135,11 @@
       clearCurrentEventCache,
       clearAllCache
     };
+
+    window.PWUrlCacheManagerV06 = publicApi;
+    try {
+      if (typeof unsafeWindow !== "undefined") unsafeWindow.PWUrlCacheManagerV06 = publicApi;
+    } catch (_) {}
 
     window.PWUrlCacheManagerV05 = window.PWUrlCacheManagerV06;
 

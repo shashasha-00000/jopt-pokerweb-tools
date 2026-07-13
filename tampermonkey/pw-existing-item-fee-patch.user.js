@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         PW Existing Item Fee Patch
+// @name         PW Existing Tournament Patch
 // @namespace    pw-existing-item-fee-patch
-// @version      0.1.0
-// @description  Patch only existing tournament item fees from minimal TSV. Uses pasted URL/TournamentId when present, otherwise resolves open tournaments by name.
+// @version      0.2.2
+// @description  Patch existing tournament item fees and/or tournament names from TSV. Uses pasted URL/TournamentId when present, otherwise resolves open tournaments by name.
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-item-fee-patch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-item-fee-patch.user.js
 // @author       xhpc007 + ChatGPT
@@ -24,8 +24,8 @@
     afterItemMs: 50
   };
 
-  const DEFAULT_INPUT = `大会名\tURL\tEN手数料
-【Test】NLH Main Event / Day 1A\t\t0`;
+  const DEFAULT_INPUT = `大会名\tURL\t新大会名\tEN手数料
+【Test】NLH Main Event / Day 1A\t\t\t0`;
 
   const PATCH_FIELDS = [
     { header: "EN手数料", key: "EN", nome: "Entry", siglas: "En", label: "Entry/En" },
@@ -36,6 +36,7 @@
   const CANDIDATE_HEADERS = [
     "本次处理",
     "大会名",
+    "新大会名",
     "Patch",
     "TournamentId",
     "URL",
@@ -288,7 +289,7 @@
     const tasks = [];
 
     if (!rows.length) {
-      errors.push("入力が空です。大会名 + 手数料列のTSVを貼ってください。");
+      errors.push("入力が空です。大会名 + 新大会名または手数料列のTSVを貼ってください。");
       return { tasks, errors, warnings };
     }
 
@@ -297,8 +298,9 @@
     if (!headers.includes("大会名")) errors.push("必須列がありません: 大会名");
 
     const activeFields = PATCH_FIELDS.filter(f => headers.includes(f.header));
-    if (!activeFields.length) {
-      errors.push("修正列がありません: EN手数料 / RE手数料 / TE手数料 のどれかを入れてください。");
+    const hasNewNameField = headers.includes("新大会名");
+    if (!activeFields.length && !hasNewNameField) {
+      errors.push("修正列がありません: 新大会名 / EN手数料 / RE手数料 / TE手数料 のどれかを入れてください。");
     }
 
     if (errors.length) return { tasks, errors, warnings };
@@ -360,12 +362,13 @@
         });
       }
 
-      if (!patches.length) {
+      const newName = hasNewNameField ? cleanTournamentName(row["新大会名"]) : "";
+      if (!patches.length && !newName) {
         warnings.push(`Row ${rowNo}: 修正値が空なのでSKIP: ${name}`);
         continue;
       }
 
-      tasks.push({ rowNo, name, patches, tournamentId, url });
+      tasks.push({ rowNo, name, newName, patches, tournamentId, url });
     }
 
     if (!tasks.length && !errors.length) errors.push("実行対象がありません。");
@@ -405,6 +408,7 @@
         return {
           "本次处理": "使用",
           "大会名": task.name,
+          "新大会名": task.newName,
           "Patch": buildPatchText(task.patches),
           "TournamentId": task.tournamentId,
           "URL": task.url,
@@ -418,6 +422,7 @@
       return {
         "本次处理": row ? "使用" : "不使用",
         "大会名": task.name,
+        "新大会名": task.newName,
         "Patch": buildPatchText(task.patches),
         "TournamentId": row ? row.tournamentId : "",
         "URL": row ? row.url : "",
@@ -930,7 +935,90 @@
     };
   }
 
-  async function executeFeePatch() {
+  function extractCodbloqFromRawHtml(html) {
+    const source = String(html || "");
+    const patterns = [
+      /name\s*=\s*["']codbloq["'][^>]*value\s*=\s*["']([^"']+)["']/i,
+      /value\s*=\s*["']([^"']+)["'][^>]*name\s*=\s*["']codbloq["']/i,
+      /["']codbloq["']\s*:\s*["']([^"']+)["']/i,
+      /\bcodbloq\s*=\s*["']([^"']+)["']/i
+    ];
+
+    for (const pattern of patterns) {
+      const match = source.match(pattern);
+      if (match) return norm(match[1]);
+    }
+    return "";
+  }
+
+  function readTournamentRenameContext(doc, id) {
+    let sourceDoc = doc;
+    let form = sourceDoc.querySelector('form[action*="/cb/torneio/alterar_nome"]');
+    let codbloq = norm(
+      form?.querySelector('[name="codbloq"]')?.value ||
+      sourceDoc.querySelector('[name="codbloq"]')?.value ||
+      extractCodbloqFromRawHtml(sourceDoc.__pwFeePatchRawHtml) ||
+      ""
+    );
+
+    const currentPageId = extractTournamentIdFromUrl(location.href);
+    if (!codbloq && currentPageId === String(id)) {
+      sourceDoc = document;
+      form = sourceDoc.querySelector('form[action*="/cb/torneio/alterar_nome"]');
+      codbloq = norm(
+        form?.querySelector('[name="codbloq"]')?.value ||
+        sourceDoc.querySelector('[name="codbloq"]')?.value ||
+        ""
+      );
+    }
+
+    const painel = norm(
+      form?.querySelector('[name="painel"]')?.value ||
+      sourceDoc.querySelector('[name="painel"]')?.value ||
+      "1"
+    );
+
+    return {
+      form,
+      codbloq,
+      painel,
+      action: form?.getAttribute("action") || "/cb/torneio/alterar_nome"
+    };
+  }
+
+  async function patchTournamentNameByHtml(id, doc, currentName, newName) {
+    const targetName = cleanTournamentName(newName);
+    if (!targetName) throw new Error("New tournament name is empty");
+    if (isSameTournamentExactSafe(currentName, targetName)) {
+      return { status: "SKIP", currentName, targetName, message: "already target" };
+    }
+
+    const context = readTournamentRenameContext(doc, id);
+    if (!context.codbloq) {
+      throw new Error("Tournament rename codbloq not found in tournament page");
+    }
+
+    const fd = context.form ? new FormData(context.form) : new FormData();
+    fd.set("nome_caixa_input", targetName);
+    fd.set("codbloq", context.codbloq);
+    fd.set("id_torneio", id);
+    fd.set("painel", context.painel || "1");
+
+    const res = await fetch(context.action, {
+      method: "POST",
+      body: fd,
+      credentials: "same-origin",
+      redirect: "follow"
+    });
+
+    if (!res.ok) {
+      throw new Error(`Tournament rename failed status=${res.status}: ${(await res.text()).slice(0, 300)}`);
+    }
+
+    return { status: "OK", currentName, targetName };
+  }
+
+  async function executeTournamentPatch() {
     if (running) return alert("処理中です");
 
     const rows = getUseCandidateRows();
@@ -941,13 +1029,18 @@
       return alert(`URL未解決の使用対象があります: ${unresolved.length}件。先にOPEN URL検索してください。`);
     }
 
-    const summary = rows.map((row, i) => `${i + 1}. ${row["大会名"]}\n   ${row["Patch"]}\n   ${row["URL"]}`).join("\n\n");
-    if (!confirm(`既存大会の手数料だけを修正します。\n\n対象: ${rows.length}大会\n\n${summary}\n\n続行しますか？`)) return;
+    const summary = rows.map((row, i) => {
+      const changes = [];
+      if (row["Patch"]) changes.push(`Item: ${row["Patch"]}`);
+      if (row["新大会名"]) changes.push(`大会名: ${row["大会名"]} -> ${row["新大会名"]}`);
+      return `${i + 1}. ${row["大会名"]}\n   ${changes.join("\n   ")}\n   ${row["URL"]}`;
+    }).join("\n\n");
+    if (!confirm(`既存大会の設定を修正します。Item修正の後、最後に大会名を変更します。\n\n対象: ${rows.length}大会\n\n${summary}\n\n続行しますか？`)) return;
 
     running = true;
     stopRequested = false;
     clearReport();
-    logLine(`[${nowText()}] EXECUTE Fee Patch`);
+    logLine(`[${nowText()}] EXECUTE Tournament Patch`);
 
     let ok = 0;
     let skip = 0;
@@ -959,6 +1052,7 @@
 
         const row = rows[i];
         const name = cleanTournamentName(row["大会名"]);
+        const newName = cleanTournamentName(row["新大会名"]);
         const id = row["TournamentId"] || extractTournamentIdFromUrl(row["URL"]);
         const patches = parsePatchText(row["Patch"]);
 
@@ -973,9 +1067,9 @@
           continue;
         }
 
-        if (!patches.length) {
+        if (!patches.length && !newName) {
           error++;
-          logLine("   ERROR Patch empty");
+          logLine("   ERROR Item patch and new tournament name are both empty");
           continue;
         }
 
@@ -995,6 +1089,18 @@
               logLine(`   OK ${patch.label} id_item=${result.id_item} taxa ${amountDisplay(result.currentTaxa)} -> ${amountDisplay(result.targetTaxa)}`);
             }
             await sleep(CONFIG.afterItemMs);
+          }
+
+          if (newName) {
+            const currentName = nameCheck.actual || name;
+            const result = await patchTournamentNameByHtml(id, doc, currentName, newName);
+            if (result.status === "SKIP") {
+              skip++;
+              logLine(`   SKIP 大会名 already target: ${result.targetName}`);
+            } else {
+              ok++;
+              logLine(`   OK 大会名 ${result.currentName} -> ${result.targetName}`);
+            }
           }
         } catch (e) {
           error++;
@@ -1044,7 +1150,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">
-        <strong>PW Existing Item Fee Patch</strong>
+        <strong>PW Existing Tournament Patch</strong>
         <div style="display:flex;gap:6px;align-items:center;">
           <span id="pw-fee-patch-status" style="color:#bae6fd;">idle</span>
           <button id="pw-fee-patch-min" type="button" style="cursor:pointer;">Min</button>
@@ -1083,7 +1189,7 @@
     });
     $("#pw-fee-patch-preview").addEventListener("click", previewBuildCandidates);
     $("#pw-fee-patch-resolve").addEventListener("click", resolveUrlForCandidates);
-    $("#pw-fee-patch-execute").addEventListener("click", executeFeePatch);
+    $("#pw-fee-patch-execute").addEventListener("click", executeTournamentPatch);
     $("#pw-fee-patch-stop").addEventListener("click", stopRun);
     $("#pw-fee-patch-copy").addEventListener("click", () => {
       copyText($("#pw-fee-patch-report")?.value || "");
@@ -1105,7 +1211,7 @@
     const btn = document.createElement("button");
     btn.id = "pw-fee-patch-launcher";
     btn.type = "button";
-    btn.textContent = "Fee Patch";
+    btn.textContent = "Tournament Patch";
     btn.style.cssText = [
       "position:fixed",
       "right:18px",

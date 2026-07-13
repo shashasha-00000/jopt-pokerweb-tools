@@ -82,9 +82,9 @@
     },
     {
         "file":  "pw-existing-item-fee-patch.user.js",
-        "name":  "PW Existing Item Fee Patch",
-        "version":  "0.1.0",
-        "description":  "Minimal TSVで既存大会のEntry/Re/Ticket手数料だけを修正。URL/TournamentId貼り付け対応、未指定時だけOPEN大会一覧でURL解決し、后台fetchでitem_editarをPOST。",
+        "name":  "PW Existing Tournament Patch",
+        "version":  "0.2.2",
+        "description":  "Minimal TSVで既存大会の大会名とEntry/Re/Ticket手数料を修正。URL/TournamentId貼り付け対応、未指定時だけOPEN大会一覧でURL解決し、后台fetchで対象項目をPOST。",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-item-fee-patch.user.js",
         "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-item-fee-patch.user.js",
         "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-item-fee-patch.user.js"
