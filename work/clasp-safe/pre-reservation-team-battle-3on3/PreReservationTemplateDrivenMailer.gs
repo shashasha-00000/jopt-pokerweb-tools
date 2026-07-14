@@ -33,7 +33,9 @@ const PRE_RES_TEMPLATE_MAILER = {
     '送信ステータス',
     '送信日時'
   ],
-  templateTypes: ['coin_payment', 'livepocket_payment', 'contract_confirmed', 'day_guide', 'cancel']
+  templateTypes: ['coin_payment', 'livepocket_payment', 'contract_confirmed', 'day_guide', 'cancel'],
+  manualActionOptions: ['キャンセル', 'キャンセル通知済', 'テスト', '重複', 'スキップ'],
+  manualSkipPattern: /テスト|test|重複|除外|スキップ|skip/i
 };
 
 const PRE_RES_SOURCE_HEADER_ALIASES = {
@@ -54,13 +56,58 @@ const PRE_RES_SOURCE_HEADER_ALIASES = {
 function openPreReservationTemplateDrivenMailMenu() {
   SpreadsheetApp.getUi()
     .createMenu(PRE_RES_TEMPLATE_MAILER.menuName)
-    .addItem('REPORT作成', 'buildPreReservationTemplateDrivenMailReport')
+    .addItem('手動指示の選択肢を設定', 'applyPreReservationManualActionDropdown')
+    .addSeparator()
+    .addItem('REPORT作成：全対象', 'buildPreReservationTemplateDrivenMailReport')
+    .addSeparator()
+    .addItem('REPORT作成：COIN支払案内', 'buildPreReservationCoinPaymentReport')
+    .addItem('REPORT作成：LivePocket支払案内', 'buildPreReservationLivePocketPaymentReport')
+    .addItem('REPORT作成：選手契約履行 当日案内', 'buildPreReservationContractConfirmedReport')
+    .addItem('REPORT作成：当日案内', 'buildPreReservationDayGuideReport')
+    .addItem('REPORT作成：キャンセル通知', 'buildPreReservationCancelReport')
+    .addSeparator()
     .addItem('REPORTのGmail下書きを作成', 'createDraftsFromPreReservationTemplateDrivenMailReport')
     .addItem('REPORTの送信OKメールを送信', 'sendApprovedPreReservationTemplateDrivenMailReport')
     .addToUi();
 }
 
+function applyPreReservationManualActionDropdown() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ctx = preResMailerResolveContext_(ss);
+  const appliedRows = preResMailerApplyManualActionValidation_(ctx.sourceSheet, ctx.sourceMap);
+  SpreadsheetApp.getUi().alert(
+    '手動指示の選択肢を設定しました。\n\n' +
+    '対象シート: ' + ctx.sourceSheet.getName() + '\n' +
+    '候補: ' + PRE_RES_TEMPLATE_MAILER.manualActionOptions.join(' / ') + '\n' +
+    '適用行数: ' + appliedRows + '行'
+  );
+}
+
 function buildPreReservationTemplateDrivenMailReport() {
+  preResMailerBuildReport_('', '全対象');
+}
+
+function buildPreReservationCoinPaymentReport() {
+  preResMailerBuildReport_('coin_payment', 'COIN支払案内');
+}
+
+function buildPreReservationLivePocketPaymentReport() {
+  preResMailerBuildReport_('livepocket_payment', 'LivePocket支払案内');
+}
+
+function buildPreReservationContractConfirmedReport() {
+  preResMailerBuildReport_('contract_confirmed', '選手契約履行 当日案内');
+}
+
+function buildPreReservationDayGuideReport() {
+  preResMailerBuildReport_('day_guide', '当日案内');
+}
+
+function buildPreReservationCancelReport() {
+  preResMailerBuildReport_('cancel', 'キャンセル通知');
+}
+
+function preResMailerBuildReport_(mailTypeFilter, reportLabel) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const ctx = preResMailerResolveContext_(ss);
   const templates = preResMailerLoadTemplates_(ss, ctx);
@@ -72,6 +119,7 @@ function buildPreReservationTemplateDrivenMailReport() {
   latestRows.forEach(row => {
     const mailType = preResMailerMailTypeForRow_(row);
     if (!mailType) return;
+    if (mailTypeFilter && mailType !== mailTypeFilter) return;
 
     const template = templates[mailType];
     if (!template) return;
@@ -125,6 +173,7 @@ function buildPreReservationTemplateDrivenMailReport() {
 
   SpreadsheetApp.getUi().alert(
     'REPORTを作成しました。\n\n' +
+    '種別: ' + reportLabel + '\n' +
     '対象: ' + output.length + '件\n' +
     '元シート: ' + ctx.sourceSheet.getName()
   );
@@ -296,6 +345,24 @@ function preResMailerFindSourceColumnMap_(sheet) {
   throw new Error('必要な見出しが見つかりませんでした。');
 }
 
+function preResMailerApplyManualActionValidation_(sheet, map) {
+  if (!map.manualActionCol) {
+    throw new Error('手動指示列が見つかりませんでした。');
+  }
+
+  const startRow = map.headerRow + 1;
+  const rowCount = Math.max(sheet.getMaxRows() - map.headerRow, 1);
+  const range = sheet.getRange(startRow, map.manualActionCol, rowCount, 1);
+  const rule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(PRE_RES_TEMPLATE_MAILER.manualActionOptions, true)
+    .setAllowInvalid(true)
+    .build();
+
+  range.clearDataValidations();
+  range.setDataValidation(rule);
+  return rowCount;
+}
+
 function preResMailerFindHeader_(headers, patterns) {
   for (let i = 0; i < headers.length; i++) {
     for (let j = 0; j < patterns.length; j++) {
@@ -456,7 +523,8 @@ function preResMailerParseSourceRow_(values, sourceRow, map) {
 function preResMailerKeepLatestRows_(rows) {
   const filtered = rows.filter(row =>
     (row.email || row.gameId) &&
-    !/重複申請/.test(row.manualAction)
+    !/重複申請/.test(row.manualAction) &&
+    !preResMailerIsManualSkip_(row.manualAction)
   );
   if (!filtered.length) return [];
 
@@ -499,6 +567,7 @@ function preResMailerKeepLatestRows_(rows) {
 function preResMailerMailTypeForRow_(row) {
   if (!row.email) return '';
   if (row.voucherAnswer) return '';
+  if (preResMailerIsManualSkip_(row.manualAction)) return '';
   if (/キャンセル通知済/.test(row.manualAction)) return '';
   if (/キャンセル/.test(row.manualAction) && !row.cancelMailSent) return 'cancel';
   if (row.cancelMailSent) return '';
@@ -507,6 +576,10 @@ function preResMailerMailTypeForRow_(row) {
   if (!row.paymentInviteSent && !row.paymentConfirmed && preResMailerIsCoin_(row.paymentMethod)) return 'coin_payment';
   if (!row.paymentInviteSent && !row.paymentConfirmed && preResMailerIsLivePocket_(row.paymentMethod)) return 'livepocket_payment';
   return '';
+}
+
+function preResMailerIsManualSkip_(value) {
+  return PRE_RES_TEMPLATE_MAILER.manualSkipPattern.test(preResMailerText_(value));
 }
 
 function preResMailerBuildMail_(template, row, ctx) {

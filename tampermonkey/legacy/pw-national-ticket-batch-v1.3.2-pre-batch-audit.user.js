@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW ナショナルチケット Batch
 // @namespace    pw-national-ticket-batch-safe
-// @version      1.3.3
+// @version      1.3.2
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
 // @description  任意のPokerWeb管理画面からGameID・チケット名TSVを厳密検証し、ナショナルチケットを安全に一件ずつ付与する正式版
@@ -220,10 +220,7 @@
       ticketId: '',
       codbloq: '',
       status: '未検証',
-      error: '',
-      postResultStatus: '',
-      postResultSummary: '',
-      auditResult: ''
+      error: ''
     };
   }
 
@@ -857,79 +854,35 @@
       };
     }
 
-    task.postResultStatus = responseResult.status;
-    task.postResultSummary = responseResult.summary;
-    task.auditResult = '';
-    task.status = responseResult.status === 'POST_EXCEPTION'
-      ? 'POST例外・監査待ち'
-      : `${resultLabel}_POST完了`;
-    task.error = '';
-
-    appendLog(task, task.status, `${responseResult.status} / ${responseResult.summary}`);
-    savePreview();
-    renderPreview();
-  }
-
-  async function auditOne(task) {
     const verification = await verifyTicketEmitted(task);
     if (verification.status === 'STILL_UNISSUED') {
-      task.status = '監査NG';
-      task.auditResult = 'STILL_UNISSUED';
-      task.error =
+      throw new Error(
         `POST後も ticket_id が未発行在庫に残っています: ${task.ticketId} / ` +
-        `response=${task.postResultStatus}: ${task.postResultSummary}`;
-      appendLog(task, 'AUDIT_STILL_UNISSUED', `attempts=${verification.attempts} / ${task.error}`);
-      return { ok: false, result: 'STILL_UNISSUED' };
+        `response=${responseResult.status}: ${responseResult.summary}`
+      );
     }
     if (verification.status === 'UNKNOWN') {
-      task.status = '監査NG';
-      task.auditResult = 'UNKNOWN';
-      task.error =
-        `POST後の ticket_id 状態を確認できません: ${task.ticketId} / ` +
-        `確認エラー=${verification.error} / response=${task.postResultStatus}: ${task.postResultSummary}`;
-      appendLog(task, 'AUDIT_UNKNOWN', `attempts=${verification.attempts} / ${task.error}`);
-      return { ok: false, result: 'UNKNOWN' };
+      throw new Error(
+        `POST後の ticket_id 状態を確認できません。自動再試行禁止: ${task.ticketId} / ` +
+        `確認エラー=${verification.error} / response=${responseResult.status}: ${responseResult.summary}`
+      );
     }
 
     const recipientHistory = await verifyTicketRecipient(task);
-    task.status = task.postResultStatus === 'POST_EXCEPTION'
-      ? '監査OK(POST例外後確認)'
-      : '監査OK';
-    task.auditResult = 'OK';
+    const finalResult = responseResult.status === 'POST_EXCEPTION'
+      ? 'OK_TICKET_ID_CONFIRMED_AFTER_POST_ERROR'
+      : resultLabel;
+    task.status = finalResult;
     task.error = '';
 
     appendLog(
       task,
-      task.status,
-      `${task.postResultStatus} / ticket_id消失+受取GameID履歴確認 attempts=${verification.attempts} / ` +
-      `${task.postResultSummary} / history=${recipientHistory}`
+      finalResult,
+      `${responseResult.status} / ticket_id消失+受取GameID履歴確認 attempts=${verification.attempts} / ` +
+      `${responseResult.summary} / history=${recipientHistory}`
     );
-    return { ok: true, result: 'OK' };
-  }
-
-  async function auditPostedTasks(tasks) {
-    let ok = 0;
-    let errors = 0;
-
-    for (let i = 0; i < tasks.length; i++) {
-      const task = tasks[i];
-      setStatus(`最終監査 ${i + 1}/${tasks.length}: 行 ${task.lineNo}`);
-      try {
-        const result = await auditOne(task);
-        if (result.ok) ok++;
-        else errors++;
-      } catch (error) {
-        task.status = '監査NG';
-        task.auditResult = 'ERROR';
-        task.error = error.message || String(error);
-        appendLog(task, 'AUDIT_ERROR', task.error);
-        errors++;
-      }
-      savePreview();
-      renderPreview();
-    }
-
-    return { ok, errors };
+    savePreview();
+    renderPreview();
   }
 
   function appendLog(task, result, response) {
@@ -965,7 +918,7 @@
       `付与予定: ${remaining.length}件\n` +
       `スキップ: ${skipped.length}件${skipped.length ? ` / GameID=${[...new Set(skipped.map(task => task.gameId))].join(',')}` : ''}\n` +
       `間隔: ${APP.minDelayMs}-${APP.maxDelayMs}ms\n\n` +
-      `発行前の ticket_id 確認は逐件行います。発行後の監査は最後にまとめて実行します。実行しますか？`
+      `ticket_id を一件ずつ確認し、不明または未発行のままなら即時停止します。実行しますか？`
     )) return;
 
     state.running = true;
@@ -980,21 +933,10 @@
           await sleep(delay);
         }
       }
-      setStatus(`正式付与POST完了: ${remaining.length} 件。最終監査を開始します。`);
-      const auditSummary = await auditPostedTasks(remaining);
-      setStatus(`正式付与+最終監査完了: 監査OK=${auditSummary.ok} / 監査NG=${auditSummary.errors}`);
-      alert(
-        `正式付与と最終監査が完了しました。\n\n` +
-        `POST対象: ${remaining.length}件\n` +
-        `監査OK: ${auditSummary.ok}件\n` +
-        `監査NG: ${auditSummary.errors}件`
-      );
+      setStatus(`正式付与完了: 残り ${remaining.length} 件`);
+      alert('正式付与が完了しました。ログを確認してください。');
     } catch (error) {
-      const task = remaining.find(item =>
-        item.status === 'OK' ||
-        item.status === 'OK_POST完了' ||
-        item.status === 'POST例外・監査待ち'
-      );
+      const task = remaining.find(item => item.status === 'OK');
       if (task) {
         task.status = 'ERROR';
         task.error = error.message || String(error);
