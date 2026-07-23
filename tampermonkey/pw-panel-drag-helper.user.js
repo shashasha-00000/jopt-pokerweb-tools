@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PW 共通パネル移動・最小化
 // @namespace    https://japanopt.pokerweb.com.br/
-// @version      0.1.0
-// @description  PokerWeb用Tampermonkeyツールの固定パネルをドラッグ移動・最小化できるようにします。
+// @version      0.1.1
+// @description  PokerWeb用Tampermonkeyツールの固定パネルをドラッグ移動・最小化し、URL Cache Managerとの重なりを避けます。
 // @match        https://japanopt.pokerweb.com.br/*
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-panel-drag-helper.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-panel-drag-helper.user.js
@@ -13,6 +13,10 @@
   'use strict';
 
   const STATE_PREFIX = 'PW_PANEL_DRAG_HELPER_V1:';
+  const URL_MANAGER_ID = 'pw-url-cache-panel';
+  const PANEL_GAP = 12;
+  const VIEWPORT_PADDING = 6;
+  let reflowScheduled = false;
 
   function loadState(id) {
     try {
@@ -27,9 +31,126 @@
     localStorage.setItem(STATE_PREFIX + id, JSON.stringify(next));
   }
 
+  function isVisible(el) {
+    if (!(el instanceof HTMLElement)) return false;
+    const style = getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+    return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+  }
+
+  function overlaps(a, b) {
+    return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+  }
+
+  function clamp(value, min, max) {
+    return Math.min(Math.max(value, min), Math.max(min, max));
+  }
+
+  function rectAt(left, top, width, height) {
+    return { left, top, right: left + width, bottom: top + height, width, height };
+  }
+
+  function candidatePositions(panelRect, managerRect) {
+    const maxLeft = window.innerWidth - panelRect.width - VIEWPORT_PADDING;
+    const maxTop = window.innerHeight - panelRect.height - VIEWPORT_PADDING;
+    const currentTop = clamp(panelRect.top, VIEWPORT_PADDING, maxTop);
+    const currentLeft = clamp(panelRect.left, VIEWPORT_PADDING, maxLeft);
+    return [
+      {
+        left: managerRect.left - panelRect.width - PANEL_GAP,
+        top: currentTop
+      },
+      {
+        left: currentLeft,
+        top: managerRect.top - panelRect.height - PANEL_GAP
+      },
+      {
+        left: managerRect.right + PANEL_GAP,
+        top: currentTop
+      },
+      {
+        left: currentLeft,
+        top: managerRect.bottom + PANEL_GAP
+      }
+    ].filter(position => {
+      const candidate = rectAt(position.left, position.top, panelRect.width, panelRect.height);
+      return candidate.left >= VIEWPORT_PADDING &&
+        candidate.top >= VIEWPORT_PADDING &&
+        candidate.right <= window.innerWidth - VIEWPORT_PADDING &&
+        candidate.bottom <= window.innerHeight - VIEWPORT_PADDING &&
+        !overlaps(candidate, managerRect);
+    });
+  }
+
+  function avoidUrlManager(panel) {
+    if (panel.dataset.pwPanelDragging === '1') return false;
+    const manager = document.getElementById(URL_MANAGER_ID);
+    if (!isVisible(panel) || !isVisible(manager)) return false;
+
+    const panelRect = panel.getBoundingClientRect();
+    const managerRect = manager.getBoundingClientRect();
+    if (!overlaps(panelRect, managerRect)) return false;
+
+    const candidates = candidatePositions(panelRect, managerRect)
+      .sort((a, b) => {
+        const distanceA = Math.abs(a.left - panelRect.left) + Math.abs(a.top - panelRect.top);
+        const distanceB = Math.abs(b.left - panelRect.left) + Math.abs(b.top - panelRect.top);
+        return distanceA - distanceB;
+      });
+
+    if (!candidates.length && manager.dataset.collapsed !== '1') {
+      const minimize = manager.querySelector('#pw-url-cache-minimize');
+      if (minimize instanceof HTMLElement) {
+        minimize.click();
+        scheduleReflow();
+        return true;
+      }
+    }
+
+    const target = candidates[0] || {
+      left: VIEWPORT_PADDING,
+      top: VIEWPORT_PADDING
+    };
+    panel.style.left = `${Math.round(target.left)}px`;
+    panel.style.top = `${Math.round(target.top)}px`;
+    panel.style.right = 'auto';
+    panel.style.bottom = 'auto';
+    saveState(panel.id, { left: Math.round(target.left), top: Math.round(target.top) });
+    return true;
+  }
+
+  function reflowManagedPanels() {
+    document.querySelectorAll('[data-pw-panel-drag-helper="1"]').forEach(panel => {
+      avoidUrlManager(panel);
+    });
+  }
+
+  function scheduleReflow() {
+    if (reflowScheduled) return;
+    reflowScheduled = true;
+    requestAnimationFrame(() => {
+      reflowScheduled = false;
+      reflowManagedPanels();
+    });
+  }
+
+  function watchUrlManager() {
+    const manager = document.getElementById(URL_MANAGER_ID);
+    if (!(manager instanceof HTMLElement) || manager.dataset.pwPanelAvoidWatch === '1') return;
+    manager.dataset.pwPanelAvoidWatch = '1';
+    if (typeof ResizeObserver === 'function') {
+      new ResizeObserver(scheduleReflow).observe(manager);
+    }
+    manager.addEventListener('click', event => {
+      if (event.target.closest('#pw-url-cache-minimize')) setTimeout(scheduleReflow, 0);
+    });
+    scheduleReflow();
+  }
+
   function isToolPanel(el) {
     if (!(el instanceof HTMLElement)) return false;
     if (el.dataset.pwPanelDragHelper === '1') return false;
+    if (el.id === URL_MANAGER_ID) return false;
     if (!/^pw/i.test(el.id || '')) return false;
     const style = getComputedStyle(el);
     return style.position === 'fixed';
@@ -94,6 +215,7 @@
         const next = panel.dataset.pwPanelMinimized !== '1';
         setMinimized(panel, bar, next);
         saveState(id, { minimized: next });
+        scheduleReflow();
       });
       bar.appendChild(min);
     }
@@ -115,6 +237,7 @@
       panel.style.top = `${rect.top}px`;
       panel.style.right = 'auto';
       panel.style.bottom = 'auto';
+      panel.dataset.pwPanelDragging = '1';
       bar.setPointerCapture(event.pointerId);
       event.preventDefault();
     });
@@ -128,18 +251,31 @@
     bar.addEventListener('pointerup', event => {
       if (!dragging) return;
       dragging = null;
+      panel.dataset.pwPanelDragging = '0';
+      avoidUrlManager(panel);
       const rect = panel.getBoundingClientRect();
       saveState(id, { left: Math.round(rect.left), top: Math.round(rect.top) });
       try { bar.releasePointerCapture(event.pointerId); } catch (_) {}
     });
+    bar.addEventListener('pointercancel', event => {
+      dragging = null;
+      panel.dataset.pwPanelDragging = '0';
+      scheduleReflow();
+      try { bar.releasePointerCapture(event.pointerId); } catch (_) {}
+    });
+
+    scheduleReflow();
   }
 
   function scan() {
+    watchUrlManager();
     document.querySelectorAll('[id^="pw"],[id^="PW"]').forEach(el => {
       if (isToolPanel(el)) attach(el);
     });
+    scheduleReflow();
   }
 
   scan();
   new MutationObserver(scan).observe(document.documentElement, { childList: true, subtree: true });
+  window.addEventListener('resize', scheduleReflow);
 })();

@@ -80,10 +80,21 @@ const RSA_CONFIG = {
     day: 10,
     tournament: 11,
     type: 12,
+    total: 13,
     cash: 14,
     creditCard: 15,
     points: 16,
     usdt: 17,
+    tax: 18,
+    taxExcluded: 19,
+    exportTotal: 20,
+    exportCash: 21,
+    exportCreditCard: 22,
+    exportPoints: 23,
+    exportUsdt: 24,
+    exportTax: 25,
+    exportTaxExcluded: 26,
+    imageTitle: 27,
     imageNumber: 28
   },
 
@@ -591,6 +602,9 @@ function RSA_runBuild_(previewOnly) {
     RSA_addExistingMailWarnings_(mailSheet, mailRows, checkRows);
 
     const nukidashiAppend = RSA_prepareNukidashiAppend_(nukidashiSheet, nukidashiRows);
+    nukidashiRows.forEach((row, index) => {
+      aiItems[index].imageNo = row.imageNo;
+    });
     const placeholderAiRows = aiItems.map(() => new Array(RSA_CONFIG.AI_CSV_HEADERS.length).fill(''));
     const aiAppend = RSA_prepareAppend_(aiSheet, placeholderAiRows, RSA_CONFIG.AI_CSV_HEADERS.length);
     const mailAppend = RSA_prepareAppend_(mailSheet, mailRows, RSA_CONFIG.MAIL_HEADERS.length);
@@ -935,6 +949,7 @@ function RSA_prepareNukidashiAppend_(sheet, rows) {
   }
 
   RSA_assertNukidashiInputRangeEmpty_(sheet, startRow, rows.length);
+  RSA_applyNukidashiComputedValues_(sheet, rows, startRow);
 
   return {
     sheet: sheet,
@@ -971,10 +986,109 @@ function RSA_commitNukidashiAppend_(prepared) {
   RSA_writeNukidashiColumn_(sheet, startRow, c.day, prepared.rows.map(row => row.day));
   RSA_writeNukidashiColumn_(sheet, startRow, c.tournament, prepared.rows.map(row => row.tournament));
   RSA_writeNukidashiColumn_(sheet, startRow, c.type, prepared.rows.map(row => row.type));
+  RSA_writeNukidashiColumn_(sheet, startRow, c.total, prepared.rows.map(row => row.total));
   RSA_writeNukidashiColumn_(sheet, startRow, c.cash, prepared.rows.map(row => row.cash));
   RSA_writeNukidashiColumn_(sheet, startRow, c.creditCard, prepared.rows.map(row => row.creditCard));
   RSA_writeNukidashiColumn_(sheet, startRow, c.points, prepared.rows.map(row => row.points));
   RSA_writeNukidashiColumn_(sheet, startRow, c.usdt, prepared.rows.map(row => row.usdt));
+  RSA_writeNukidashiColumn_(sheet, startRow, c.tax, prepared.rows.map(row => row.tax));
+  RSA_writeNukidashiColumn_(sheet, startRow, c.taxExcluded, prepared.rows.map(row => row.taxExcluded));
+  RSA_writeNukidashiColumn_(sheet, startRow, c.exportTotal, prepared.rows.map(row => row.total));
+  RSA_writeNukidashiColumn_(sheet, startRow, c.exportCash, prepared.rows.map(row => row.cash));
+  RSA_writeNukidashiColumn_(sheet, startRow, c.exportCreditCard, prepared.rows.map(row => row.creditCard));
+  RSA_writeNukidashiColumn_(sheet, startRow, c.exportPoints, prepared.rows.map(row => row.points));
+  RSA_writeNukidashiColumn_(sheet, startRow, c.exportUsdt, prepared.rows.map(row => row.usdt));
+  RSA_writeNukidashiColumn_(sheet, startRow, c.exportTax, prepared.rows.map(row => row.tax));
+  RSA_writeNukidashiColumn_(sheet, startRow, c.exportTaxExcluded, prepared.rows.map(row => row.taxExcluded));
+  RSA_writeNukidashiColumn_(sheet, startRow, c.imageTitle, prepared.rows.map(row => row.imageTitle));
+  RSA_writeNukidashiColumn_(sheet, startRow, c.imageNumber, prepared.rows.map(row => row.imageNo));
+}
+
+/**
+ * トナメ抜き出しの計算列を、旧表の数式に依存せず今回分へ直接設定する。
+ * 画像番号は既存行の同一Game IDを優先して数え、Game IDが空白の継続行は
+ * 直前の所属プレイヤーを引き継ぐ。旧AB列が空でも既存明細数から続番できる。
+ */
+function RSA_applyNukidashiComputedValues_(sheet, rows, startRow) {
+  const c = RSA_CONFIG.NUKIDASHI_COLUMNS;
+  const sequenceByPerson = {};
+  const existingRowCount = Math.max(0, startRow - RSA_CONFIG.NUKIDASHI_HEADER_ROW - 1);
+
+  if (existingRowCount > 0) {
+    const width = c.imageNumber - c.gameId + 1;
+    const existing = sheet
+      .getRange(RSA_CONFIG.NUKIDASHI_HEADER_ROW + 1, c.gameId, existingRowCount, width)
+      .getDisplayValues();
+    const gameIdByIdentity = {};
+    let ownerGameId = '';
+    let ownerName = '';
+    let ownerEmail = '';
+
+    existing.forEach(values => {
+      const gameId = RSA_normalizeGameId_(values[c.gameId - c.gameId]);
+      const name = RSA_text_(values[c.name - c.gameId]);
+      const email = RSA_text_(values[c.email - c.gameId]);
+      const tournament = RSA_text_(values[c.tournament - c.gameId]);
+      const imageNo = RSA_count_(values[c.imageNumber - c.gameId]);
+      const identityKey = RSA_nukidashiSequenceKey_('', name, email);
+
+      if (gameId) {
+        ownerGameId = gameId;
+        ownerName = name;
+        ownerEmail = email;
+        if (identityKey) gameIdByIdentity[identityKey] = gameId;
+      } else {
+        if (identityKey && gameIdByIdentity[identityKey]) {
+          ownerGameId = gameIdByIdentity[identityKey];
+        }
+        if (name) ownerName = name;
+        if (email) ownerEmail = email;
+      }
+
+      if (!tournament) return;
+
+      const key = RSA_nukidashiSequenceKey_(ownerGameId, ownerName, ownerEmail);
+      if (!key) return;
+
+      const nextCount = (sequenceByPerson[key] || 0) + 1;
+      sequenceByPerson[key] = Math.max(nextCount, imageNo);
+    });
+  }
+
+  rows.forEach((row, index) => {
+    const cash = RSA_money_(row.cash);
+    const creditCard = RSA_money_(row.creditCard);
+    const points = RSA_money_(row.points);
+    const usdt = RSA_money_(row.usdt);
+    const total = cash + creditCard + points + usdt;
+    const tax = Math.floor(total / 11);
+    const key = RSA_nukidashiSequenceKey_(row.gameId, row.name, row.email) || ('row:' + (startRow + index));
+    const imageNo = (sequenceByPerson[key] || 0) + 1;
+
+    sequenceByPerson[key] = imageNo;
+    row.cash = cash;
+    row.creditCard = creditCard;
+    row.points = points;
+    row.usdt = usdt;
+    row.total = total;
+    row.tax = tax;
+    row.taxExcluded = total - tax;
+    row.imageTitle = row.name ? RSA_text_(row.name) + ' 様' : '';
+    row.imageNo = imageNo;
+  });
+}
+
+function RSA_nukidashiSequenceKey_(gameId, name, email) {
+  const gameIdKey = RSA_normalizeGameId_(gameId);
+  if (gameIdKey) return 'game:' + gameIdKey;
+
+  const emailKey = RSA_text_(email).toLowerCase();
+  if (emailKey) return 'email:' + emailKey;
+
+  let nameKey = RSA_text_(name);
+  if (nameKey.normalize) nameKey = nameKey.normalize('NFKC');
+  nameKey = nameKey.replace(/[\s\u3000]+/g, '').toLowerCase();
+  return nameKey ? 'name:' + nameKey : '';
 }
 
 function RSA_fillMissingNukidashiFormulas_(sheet, templateRow, startRow, rowCount, columnCount) {
@@ -983,7 +1097,6 @@ function RSA_fillMissingNukidashiFormulas_(sheet, templateRow, startRow, rowCoun
   const targetFormulas = targetRange.getFormulasR1C1();
   const inputColumns = new Set(
     Object.keys(RSA_CONFIG.NUKIDASHI_COLUMNS)
-      .filter(key => key !== 'imageNumber')
       .map(key => RSA_CONFIG.NUKIDASHI_COLUMNS[key] - 1)
   );
 

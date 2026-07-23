@@ -129,12 +129,21 @@ function PPT_createPokerPlusGameIdIssueDrafts_() {
   const formDisplayValues = formSheet
     .getRange(1, 1, formLastRow, formSheet.getLastColumn())
     .getDisplayValues();
+  const targetUniqueIds = {};
+
+  sourceDisplayValues.slice(PPT_CONFIG.HEADER_ROW).forEach(row => {
+    if (!PPT_text_(row[PPT_CONFIG.MAIL_TARGET_COLUMN - 1])) return;
+
+    const uniqueId = PPT_normalizeDigits_(row[PPT_CONFIG.UNIQUE_ID_COLUMN - 1]);
+    if (uniqueId) targetUniqueIds[uniqueId] = true;
+  });
+
   const emailsByUniqueId = {};
 
-  formDisplayValues.slice(PPT_CONFIG.HEADER_ROW).forEach((row, offset) => {
+  formDisplayValues.slice(PPT_CONFIG.HEADER_ROW).forEach(row => {
     const uniqueId = PPT_normalizeDigits_(row[PPT_CONFIG.FORM_UNIQUE_ID_COLUMN - 1]);
     const email = PPT_text_(row[PPT_CONFIG.FORM_EMAIL_COLUMN - 1]).toLowerCase();
-    if (!uniqueId && !email) return;
+    if (!targetUniqueIds[uniqueId]) return;
 
     if (!uniqueId || !PPT_isValidEmail_(email)) return;
     if (emailsByUniqueId[uniqueId] && emailsByUniqueId[uniqueId] !== email) {

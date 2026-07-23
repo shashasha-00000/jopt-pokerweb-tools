@@ -1,10 +1,10 @@
 ﻿// ==UserScript==
 // @name         PW Ticket Link Semi Auto
 // @namespace    pw-ticket-link-semi-auto
-// @version      1.0.4
+// @version      1.0.5
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
-// @description  TicketLink用ルール表から候補作成 → Shared Cache / URL poolでURL厳密確認 → 已确认比赛へ后台fetchでTicket Link実行。Ticket optionはtn_のみ。
+// @description  TicketLink用ルール表から候補作成 → Shared Cache / URL pool / 手動強制URLでURL確認 → 已确认比赛へ后台fetchでTicket Link実行。Ticket optionはtn_のみ。
 // @author       xhpc007 + ChatGPT
 // @match        https://japanopt.pokerweb.com.br/*
 // @grant        GM_setClipboard
@@ -22,6 +22,7 @@
     simpleTicketInputKey: "PW_TICKET_LINK_MANUAL_V10_SIMPLE_TICKETS",
     matrixInputKey: "PW_TICKET_LINK_MANUAL_V10_MATRIX",
     overrideInputKey: "PW_TICKET_LINK_MANUAL_V10_OVERRIDES",
+    forceUrlInputKey: "PW_TICKET_LINK_MANUAL_V10_FORCE_URL",
     candidateKey: "PW_TICKET_LINK_MANUAL_V10_CANDIDATES",
     reportKey: "PW_TICKET_LINK_MANUAL_V10_REPORT",
     flowKey: "PW_TICKET_LINK_MANUAL_V10_FLOW",
@@ -420,6 +421,26 @@
     };
 
     saveSharedCache(cache);
+  }
+
+  function replaceSharedCacheItemForName(name, data) {
+    const cleanName = cleanTournamentName(name);
+    if (!cleanName) return [];
+
+    const cache = loadSharedCache();
+    const removed = [];
+
+    for (const [key, item] of Object.entries(cache)) {
+      const itemName = cleanTournamentName(item?.name || item?.Name || "");
+      const actualName = cleanTournamentName(item?.actualName || item?.Actual_Name || "");
+      if (!isSameTournamentExactSafe(itemName, cleanName) && !isSameTournamentExactSafe(actualName, cleanName)) continue;
+      removed.push(String(item?.tournamentId || item?.TournamentId || extractTournamentIdFromUrl(item?.url || item?.URL || "") || ""));
+      delete cache[key];
+    }
+
+    saveSharedCache(cache);
+    setSharedCacheItem(cleanName, data);
+    return uniqueArray(removed);
   }
 
   function validateUrlCacheItem(item) {
@@ -1571,6 +1592,146 @@
     }
   }
 
+  function parseForcedUrlRows(raw) {
+    const rows = [];
+    const errors = [];
+
+    splitNonEmptyLines(raw).forEach((line, index) => {
+      const cols = splitTSVLine(line).map(norm);
+      const urlIndex = cols.findIndex(value => extractTournamentIdFromUrl(value));
+
+      if (urlIndex < 0) {
+        errors.push(`第${index + 1}行に有効な大会URLがありません: ${line}`);
+        return;
+      }
+
+      const tournamentId = extractTournamentIdFromUrl(cols[urlIndex]);
+      const name = cleanTournamentName(cols.find((value, colIndex) => colIndex !== urlIndex && value) || "");
+      rows.push({
+        lineNo: index + 1,
+        name,
+        tournamentId,
+        url: getTournamentUrl(tournamentId)
+      });
+    });
+
+    return { rows, errors };
+  }
+
+  async function forceSetTournamentUrls() {
+    if (running) {
+      alert("処理中です");
+      return;
+    }
+
+    const input = document.querySelector("#pw-ticket-link-force-url")?.value || "";
+    const parsed = parseForcedUrlRows(input);
+    if (parsed.errors.length) {
+      alert(`強制URL入力エラー\n\n${parsed.errors.join("\n")}`);
+      return;
+    }
+    if (!parsed.rows.length) {
+      alert("強制設定する大会URLを入力してください。");
+      return;
+    }
+
+    const candidates = getCandidateRows();
+    if (!candidates.length) {
+      alert("Candidates が空です。先に候補作成してください。");
+      return;
+    }
+
+    running = true;
+    const prepared = [];
+    const usedCandidateIndexes = new Set();
+
+    try {
+      for (const forced of parsed.rows) {
+        let matches = [];
+        if (forced.name) {
+          matches = candidates
+            .map((row, candidateIndex) => ({ row, candidateIndex }))
+            .filter(item => isSameTournamentExactSafe(forced.name, item.row["大会名"]));
+        } else if (candidates.length === 1) {
+          matches = [{ row: candidates[0], candidateIndex: 0 }];
+        } else {
+          throw new Error(`第${forced.lineNo}行: Candidates が複数あるため、比赛名[TAB]URL で指定してください。`);
+        }
+
+        if (matches.length !== 1) {
+          throw new Error(`第${forced.lineNo}行: Candidate一致件数=${matches.length}。比赛名を確認してください: ${forced.name || "(空)"}`);
+        }
+
+        const { row, candidateIndex } = matches[0];
+        if (usedCandidateIndexes.has(candidateIndex)) {
+          throw new Error(`第${forced.lineNo}行: 同じCandidateが複数回指定されています: ${row["大会名"]}`);
+        }
+        usedCandidateIndexes.add(candidateIndex);
+
+        log(`強制URL確認 ${prepared.length + 1}/${parsed.rows.length}: ${forced.url}`);
+        const doc = await fetchTicketLinkPage(forced.url);
+        const actualName = getPageTournamentTitleFromDoc(doc);
+        if (!actualName) {
+          throw new Error(`第${forced.lineNo}行: PAGE_TITLE_EMPTY ${forced.url}`);
+        }
+        if (!isSameTournamentExactSafe(row["大会名"], actualName)) {
+          throw new Error(`第${forced.lineNo}行: PAGE_TITLE_MISMATCH expected=${row["大会名"]} / actual=${actualName}`);
+        }
+
+        const formInfo = getTicketLinkFormFromDoc(doc, forced.tournamentId);
+        if (String(formInfo.idTorneio) !== String(forced.tournamentId)) {
+          throw new Error(`第${forced.lineNo}行: TOURNAMENT_ID_MISMATCH URL=${forced.tournamentId} / PAGE=${formInfo.idTorneio}`);
+        }
+
+        prepared.push({
+          row,
+          candidateIndex,
+          name: cleanTournamentName(row["大会名"]),
+          actualName,
+          tournamentId: forced.tournamentId,
+          url: forced.url,
+          oldTournamentId: norm(row["TournamentId"] || "")
+        });
+      }
+
+      const details = prepared.map((item, index) =>
+        `${index + 1}. ${item.name}\n   旧ID: ${item.oldTournamentId || "(なし)"}\n   新ID: ${item.tournamentId}\n   URL: ${item.url}`
+      ).join("\n\n");
+
+      if (!confirm(
+        `以下のURLを強制設定します。\nCandidatesを上書きし、同名の旧Shared Cacheを削除して新URLへ置換します。\n\n${details}\n\n続行しますか？`
+      )) return;
+
+      for (const item of prepared) {
+        const removedIds = replaceSharedCacheItemForName(item.name, {
+          tournamentId: item.tournamentId,
+          url: item.url,
+          actualName: item.actualName,
+          matchedRow: "manual-force-url",
+          source: "ticket-link-v1.0.5-manual-force"
+        });
+
+        item.row["本次处理"] = "使用";
+        item.row["TournamentId"] = item.tournamentId;
+        item.row["URL"] = item.url;
+        item.row["判定"] = "OK_MANUAL";
+        item.row["理由"] = `強制URL設定 / 旧Cache ID: ${removedIds.filter(Boolean).join(",") || "なし"}`;
+        appendReportLine(`[FORCE_URL] ${item.name} / ${item.oldTournamentId || "-"} -> ${item.tournamentId} / removed=${removedIds.filter(Boolean).join(",") || "-"}`);
+      }
+
+      setCandidateRows(candidates);
+      localStorage.setItem(CONFIG.forceUrlInputKey, input);
+      alert(`強制URL設定完了\n\n${prepared.length}件のCandidatesとShared Cacheを更新しました。`);
+      log(`強制URL設定完了: ${prepared.length}件`);
+    } catch (e) {
+      console.error(e);
+      alert("強制URL設定ERROR: " + (e.message || String(e)));
+      warn("強制URL設定ERROR:", e.message || e);
+    } finally {
+      running = false;
+    }
+  }
+
   // ============================================================
   // Ticket Link Direct
   // ============================================================
@@ -2146,7 +2307,7 @@
 
     if (!ok) return;
 
-    ["#pw-ticket-link-tournaments", "#pw-ticket-link-simple-tickets", "#pw-ticket-link-rules", "#pw-ticket-link-overrides", "#pw-ticket-link-candidates", "#pw-ticket-link-report"].forEach(sel => {
+    ["#pw-ticket-link-tournaments", "#pw-ticket-link-simple-tickets", "#pw-ticket-link-rules", "#pw-ticket-link-overrides", "#pw-ticket-link-force-url", "#pw-ticket-link-candidates", "#pw-ticket-link-report"].forEach(sel => {
       const el = document.querySelector(sel);
       if (el) el.value = "";
     });
@@ -2155,6 +2316,7 @@
     localStorage.removeItem(CONFIG.simpleTicketInputKey);
     localStorage.removeItem(CONFIG.matrixInputKey);
     localStorage.removeItem(CONFIG.overrideInputKey);
+    localStorage.removeItem(CONFIG.forceUrlInputKey);
     localStorage.removeItem(CONFIG.candidateKey);
     localStorage.removeItem(CONFIG.reportKey);
 
@@ -2192,6 +2354,7 @@
     const savedSimpleTickets = localStorage.getItem(CONFIG.simpleTicketInputKey) || "";
     const savedMatrix = localStorage.getItem(CONFIG.matrixInputKey) || "";
     const savedOverrides = localStorage.getItem(CONFIG.overrideInputKey) || "";
+    const savedForceUrl = localStorage.getItem(CONFIG.forceUrlInputKey) || "";
     const savedCandidates = localStorage.getItem(CONFIG.candidateKey) || CANDIDATE_HEADERS.join("\t");
     const savedReport = localStorage.getItem(CONFIG.reportKey) || "";
 
@@ -2219,7 +2382,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <div style="font-weight:bold;">PW Ticket Link Semi Auto v1.0.4</div>
+        <div style="font-weight:bold;">PW Ticket Link Semi Auto v1.0.5</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-ticket-link-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-ticket-link-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>
@@ -2302,6 +2465,15 @@ Satellite	s01"
         <textarea id="pw-ticket-link-candidates"
           style="width:100%;height:160px;background:#111;color:#fff;border:1px solid #555;padding:8px;font-family:Consolas,monospace;font-size:12px;"></textarea>
 
+        <div style="font-size:12px;font-weight:bold;color:#ffcf70;margin-top:6px;">強制URL設定 / 强制设置URL</div>
+        <div style="font-size:11px;color:#ccc;line-height:1.35;margin-bottom:3px;">
+          比赛名[TAB]URL。Candidatesが1行だけならURLのみでも可。页面核对后覆盖Candidate并修正Shared Cache。
+        </div>
+        <textarea id="pw-ticket-link-force-url"
+          placeholder="例：&#10;【SPADIE Season 41st】#01 NLH Main Event Day 1A&#9;https://japanopt.pokerweb.com.br/cb/torneio/painel/12345"
+          style="width:100%;height:58px;background:#111;color:#fff;border:1px solid #b87920;padding:8px;font-family:Consolas,monospace;font-size:12px;"></textarea>
+        <button id="pw-ticket-link-force-url-button" style="width:100%;padding:7px;cursor:pointer;background:#ffcf70;border:1px solid #b87920;margin-top:4px;">强制设置URL并修正库</button>
+
         <div style="font-size:12px;font-weight:bold;margin-top:6px;">Report</div>
         <textarea id="pw-ticket-link-report"
           readonly
@@ -2322,6 +2494,7 @@ Satellite	s01"
     document.querySelector("#pw-ticket-link-simple-tickets").value = savedSimpleTickets;
     document.querySelector("#pw-ticket-link-rules").value = savedMatrix;
     document.querySelector("#pw-ticket-link-overrides").value = savedOverrides;
+    document.querySelector("#pw-ticket-link-force-url").value = savedForceUrl;
     document.querySelector("#pw-ticket-link-candidates").value = savedCandidates;
     document.querySelector("#pw-ticket-link-report").value = savedReport;
 
@@ -2331,6 +2504,7 @@ Satellite	s01"
 
     document.querySelector("#pw-ticket-link-build").onclick = () => previewBuildCandidates();
     document.querySelector("#pw-ticket-link-resolve").onclick = () => resolveUrlForCandidates();
+    document.querySelector("#pw-ticket-link-force-url-button").onclick = () => forceSetTournamentUrls();
     document.querySelector("#pw-ticket-link-execute").onclick = () => startExecuteLink();
     document.querySelector("#pw-ticket-link-stop").onclick = () => stopRun();
     document.querySelector("#pw-ticket-link-copy-candidates").onclick = () => copyCandidates();
@@ -2363,6 +2537,7 @@ Satellite	s01"
     window.PWTicketLinkManualV10 = {
       previewBuildCandidates,
       resolveUrlForCandidates,
+      forceSetTournamentUrls,
       startExecuteLink,
       runExecuteCurrentStep,
       stopRun,
