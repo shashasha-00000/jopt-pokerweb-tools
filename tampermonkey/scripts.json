@@ -74,8 +74,8 @@
     {
         "file":  "pw-receipt-manual-check.user.js",
         "name":  "PW 領収書 Manual Check",
-        "version":  "1.6.15",
-        "description":  "Manual receipt check/additional-flow entry. Game ID + keyword search, strict URL Cache verification, and payment TSV output.",
+        "version":  "1.6.17",
+        "description":  "Manual receipt check with one player lookup per Game ID, Game ID-only date-range search, multi-column keyword TSV, strict URL Cache verification, and payment TSV output.",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js",
         "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js",
         "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js"

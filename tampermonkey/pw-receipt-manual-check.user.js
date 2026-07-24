@@ -1,10 +1,10 @@
 ﻿// ==UserScript==
 // @name         PW 領収書 Manual Check
 // @namespace    pw-receipt-manual-check
-// @version      1.6.15
+// @version      1.6.17
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js
-// @description  Manual receipt check/additional-flow entry. Game ID + keyword search, strict URL Cache verification, and payment TSV output.
+// @description  Manual receipt check. Game ID-only date-range search or multi-column keyword TSV, strict URL Cache verification, and payment TSV output.
 // @author       xhpc007 + ChatGPT
 // @match        https://japanopt.pokerweb.com.br/*
 // @grant        GM_setClipboard
@@ -439,32 +439,99 @@
       .map(line => line.replace(/\uFEFF/g, "").trim())
       .filter(Boolean);
 
-    const tasks = [];
+    const grouped = new Map();
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      if (/^(Game ID|GameID|対象キーワード|Keyword)\b/i.test(line)) continue;
+      const tsvColumns = line.split("\t").map(norm);
+      let gameId = "";
+      let keywords = [];
 
-      const m = line.match(/^\s*(\d{4}\.?\d{4}|\d{8})\s*(?:\t|,|，|、|\||｜|:|：|\s+)\s*(.+?)\s*$/);
-      if (!m) continue;
+      if (tsvColumns.length > 1) {
+        gameId = normalizeGameId(tsvColumns[0]);
+        keywords = tsvColumns.slice(1).filter(Boolean);
+      } else {
+        const gameIdOnly = line.match(/^\s*(\d{4}\.?\d{4}|\d{8})\s*$/);
+        if (gameIdOnly) {
+          gameId = normalizeGameId(gameIdOnly[1]);
+        } else {
+          const legacy = line.match(/^\s*(\d{4}\.?\d{4}|\d{8})\s*(?:,|，|、|\||｜|:|：|\s+)\s*(.+?)\s*$/);
+          if (legacy) {
+            gameId = normalizeGameId(legacy[1]);
+            keywords = [norm(legacy[2])].filter(Boolean);
+          }
+        }
+      }
 
-      const gameId = normalizeGameId(m[1]);
-      const keyword = norm(m[2]);
-      if (!gameId || !keyword) continue;
+      if (!gameId) continue;
+      if (!grouped.has(gameId)) {
+        grouped.set(gameId, { rowNo: i + 1, gameId, all: false, keywords: new Set() });
+      }
 
-      tasks.push({ rowNo: i + 1, gameId, keyword });
+      const group = grouped.get(gameId);
+      if (!keywords.length || keywords.some(keyword => keyword === "*")) {
+        group.all = true;
+        group.keywords.clear();
+        continue;
+      }
+      if (group.all) continue;
+      keywords.forEach(keyword => group.keywords.add(keyword));
     }
 
+    const tasks = [];
+    for (const group of grouped.values()) {
+      if (group.all || !group.keywords.size) {
+        tasks.push({ rowNo: group.rowNo, gameId: group.gameId, keyword: "*" });
+        continue;
+      }
+      for (const keyword of group.keywords) {
+        tasks.push({ rowNo: group.rowNo, gameId: group.gameId, keyword });
+      }
+    }
     return tasks;
   }
 
   function keywordMatches(name, keyword) {
     const n = compact(name);
     const k = compact(keyword);
-    if (!n || !k) return false;
+    if (!n) return false;
+    if (!k || k === "*") return true;
 
     const parts = k.split(/[ ,，、]+/).map(x => x.trim()).filter(Boolean);
     return parts.length <= 1 ? n.includes(k) : parts.every(p => n.includes(p));
+  }
+
+  function groupTasksByGameId(tasks) {
+    const grouped = new Map();
+
+    for (const task of tasks || []) {
+      const gameId = normalizeGameId(task?.gameId);
+      if (!gameId) continue;
+
+      if (!grouped.has(gameId)) {
+        grouped.set(gameId, {
+          rowNo: task.rowNo,
+          gameId,
+          all: false,
+          keywords: new Set()
+        });
+      }
+
+      const group = grouped.get(gameId);
+      const keyword = norm(task.keyword);
+      if (!keyword || keyword === "*") {
+        group.all = true;
+        group.keywords.clear();
+      } else if (!group.all) {
+        group.keywords.add(keyword);
+      }
+    }
+
+    return Array.from(grouped.values()).map(group => ({
+      rowNo: group.rowNo,
+      gameId: group.gameId,
+      keywords: group.all || !group.keywords.size ? ["*"] : Array.from(group.keywords)
+    }));
   }
 
   async function postForm(url, dataObj) {
@@ -611,29 +678,38 @@
 
   async function discoverCandidatesFromTasks(tasks, dateRange) {
     const candidates = [];
+    const seenCandidateKeys = new Set();
+    const playerTasks = groupTasksByGameId(tasks);
 
-    for (let i = 0; i < tasks.length; i++) {
+    for (let i = 0; i < playerTasks.length; i++) {
       if (stopRequested) break;
 
-      const task = tasks[i];
+      const task = playerTasks[i];
+      const keywordLabel = task.keywords.includes("*") ? "*" : task.keywords.join(" / ");
 
       try {
-        setStatus(`候補検索 ${i + 1}/${tasks.length}: ${task.gameId} / ${task.keyword}`);
+        setStatus(`候補検索 ${i + 1}/${playerTasks.length}: ${task.gameId} / ${keywordLabel}`);
 
         const search = await searchInternalId(task.gameId);
         const html = await requestPlayerTournamentHtml(search.internalId, dateRange);
-        const rows = extractPlayerTournamentRowsFromHtml(html).filter(row => keywordMatches(row.name, task.keyword));
+        const rows = extractPlayerTournamentRowsFromHtml(html).filter(row =>
+          task.keywords.some(keyword => keywordMatches(row.name, keyword))
+        );
 
         if (!rows.length) {
           candidates.push({
             本次处理: "不使用", "Game ID": task.gameId, internalId: search.internalId, 参加日: "",
-            対象キーワード: task.keyword, 大会名: "", TournamentId: "", URL: "",
+            対象キーワード: keywordLabel, 大会名: "", TournamentId: "", URL: "",
             判定: "NO_MATCH", 理由: "指定キーワードに一致する参加大会なし"
           });
           continue;
         }
 
         for (const row of rows) {
+          const candidateKey = [task.gameId, row.date, compact(row.name)].join("|");
+          if (seenCandidateKeys.has(candidateKey)) continue;
+          seenCandidateKeys.add(candidateKey);
+
           const sharedCacheResult = findSharedCacheByName(row.name);
           let cacheResult = sharedCacheResult;
 
@@ -683,7 +759,7 @@
             "Game ID": task.gameId,
             internalId: search.internalId,
             参加日: row.date,
-            対象キーワード: task.keyword,
+            対象キーワード: keywordLabel,
             大会名: row.name,
             TournamentId: cache ? cache.tournamentId : "",
             URL: cache ? cache.url : "",
@@ -693,11 +769,11 @@
         }
 
       } catch (e) {
-        candidates.push({
-          本次处理: "不使用", "Game ID": task.gameId, internalId: "", 参加日: "",
-          対象キーワード: task.keyword, 大会名: "", TournamentId: "", URL: "",
-          判定: "ERROR", 理由: e.message || String(e)
-        });
+          candidates.push({
+            本次处理: "不使用", "Game ID": task.gameId, internalId: "", 参加日: "",
+            対象キーワード: keywordLabel, 大会名: "", TournamentId: "", URL: "",
+            判定: "ERROR", 理由: e.message || String(e)
+          });
       }
 
       await sleep(CONFIG.betweenPlayerMs);
@@ -2168,13 +2244,19 @@
     const inputText = document.querySelector("#pw-manual-input")?.value || "";
     const dateRange = norm(document.querySelector("#pw-manual-date-range")?.value || CONFIG.defaultDateRange);
     const tasks = parseManualTasks(inputText);
+    const playerTasks = groupTasksByGameId(tasks);
 
     if (!tasks.length) {
-      alert("入力が空、または形式が不正です。\n例：51763548 【JOPT 2026 Grand Final】");
+      alert("入力が空、または形式が不正です。\n例：51763548\nまたは：51763548[TAB]JOPT[TAB]SPADIE");
       return;
     }
 
-    if (!confirm(`候補大会をAPI検索します。\n\n対象タスク：${tasks.length}件\n検索期間：${dateRange}\n\n続行しますか？`)) return;
+    if (!confirm(
+      `候補大会をAPI検索します。\n\n` +
+      `Game ID：${playerTasks.length}件（各IDを1回だけ検索）\n` +
+      `キーワード条件：${tasks.length}件\n` +
+      `検索期間：${dateRange}\n\n続行しますか？`
+    )) return;
 
     running = true;
     stopRequested = false;
@@ -2402,7 +2484,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.6.15</div>
+        <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.6.17</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-manual-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-manual-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>
@@ -2411,7 +2493,7 @@
 
       <div id="pw-manual-body">
         <div style="font-size:11px;color:#ccc;line-height:1.35;margin-bottom:6px;">
-          入力例：<code>51763548 【JOPT 2026 Grand Final】</code><br>
+          入力例：<code>51763548</code>（期間内すべて） / <code>51763548[TAB]JOPT[TAB]SPADIE</code><br>
           候補検索も支払い取得もAPIで取得します。URL Cacheは完整大会名で厳密照合します。<br>
           流れ：候補検索 → 必要な大会を確認 → 人工核查 → 支払い取得
         </div>
@@ -2425,9 +2507,9 @@
         <input id="pw-manual-date-range"
           style="width:100%;background:#111;color:#fff;border:1px solid #555;padding:7px;font-family:Consolas,monospace;font-size:12px;" />
 
-        <div style="font-size:12px;font-weight:bold;margin-top:6px;">Input: Game ID + 対象キーワード</div>
+        <div style="font-size:12px;font-weight:bold;margin-top:6px;">Input TSV: Game ID + 任意の複数キーワード（空白なら期間内すべて）</div>
         <textarea id="pw-manual-input"
-          placeholder="51763548 【JOPT 2026 Grand Final】"
+          placeholder="51763548&#10;84391920&#9;JOPT&#9;SPADIE"
           style="width:100%;height:100px;background:#111;color:#fff;border:1px solid #555;padding:8px;font-family:Consolas,monospace;font-size:12px;"></textarea>
 
         <div style="display:flex;gap:6px;margin-top:6px;">
@@ -2518,6 +2600,9 @@
       replaceSharedCacheForName,
       cacheToTsv,
       renderManualReview,
+      parseManualTasks,
+      keywordMatches,
+      groupTasksByGameId,
       runDiscoverCandidates,
       resolveUrlForCandidates,
       runPaymentFromCandidates

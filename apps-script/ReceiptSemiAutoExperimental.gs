@@ -41,9 +41,10 @@ const RSE = (() => {
   const SETTINGS_DEFAULTS = [
     ['FORM_SHEET_NAME', CONFIG.DEFAULT_FORM_SHEET, 'Google Form回答Sheet名'],
     ['PW_SHEET_NAME', CONFIG.DEFAULT_PW_SHEET, '人工取得したPW TSVのSheet名'],
-    ['EVENT_NAME', '', 'Form回答・番号管理・PDF表示に使う代表イベント名'],
-    ['PW_EVENT_KEYWORDS', '', 'PW 1.6.15へ渡す大会キーワード。複数は改行'],
-    ['PW_DATE_RANGE', '', 'PW 1.6.15検索期間 例: 11/7/2026 - 22/7/2026'],
+    ['EVENT_NAME', '', '本批次の管理・PDF表示に使う代表名。Form抽出条件ではありません'],
+    ['FORM_EVENT_FILTER', '', 'Form回答を特定イベントだけに絞る場合のみ設定。全イベントなら空白'],
+    ['PW_EVENT_KEYWORDS', '', 'PW 1.6.17へ渡す大会キーワード。複数は改行、空白なら期間内すべて'],
+    ['PW_DATE_RANGE', '', 'PW 1.6.17検索期間 例: 11/7/2026 - 22/7/2026'],
     ['EVENT_LABEL', '', 'PDF・メールに表示するイベント名。空白ならEVENT_NAME'],
     ['NEXT_RECEIPT_NO', '900000', '次に採番する領収書番号。実験用番号を設定'],
     ['DATE_FROM', '', '対象購入日の開始 YYYY-MM-DD。空白なら制限なし'],
@@ -68,7 +69,7 @@ const RSE = (() => {
     '確認OK', '確認日時', '確認者', 'eventName', '申請キー'
   ];
 
-  const PW_INPUT_HEADERS = ['Game ID', '対象キーワード'];
+  const PW_INPUT_HEADERS = ['Game ID'];
 
   const CHECK_HEADERS = [
     '判定', '確認状態', '確認内容', 'checkKey', 'sourceHash', 'confirmedHash',
@@ -127,7 +128,7 @@ const RSE = (() => {
       .addSeparator()
       .addItem('1. Form → Game ID CHECK更新', 'RSE_refreshGameIdCheck')
       .addItem('2. Game ID CHECKを確定', 'RSE_confirmGameIdCheck')
-      .addItem('3. PW 1.6.15入力を生成・表示', 'RSE_buildPwInput')
+      .addItem('3. PW 1.6.17入力を生成・表示', 'RSE_buildPwInput')
       .addSeparator()
       .addItem('4. PW TSV → 領収書CHECK更新', 'RSE_refreshReceiptCheck')
       .addItem('5. 領収書CHECKを確定', 'RSE_confirmReceiptCheck')
@@ -369,13 +370,12 @@ const RSE = (() => {
       throw new Error('採用済みGame IDがCHECK内で重複しています: ' + duplicateGameIds.join(', '));
     }
     const gameIds = uniqueStrings_(adoptedGameIds);
-    const keywords = parseSettingList_(settings.PW_EVENT_KEYWORDS || settings.EVENT_NAME);
+    const keywords = parseSettingList_(settings.PW_EVENT_KEYWORDS);
     if (!gameIds.length) throw new Error('採用済みGame IDがありません');
-    if (!keywords.length) throw new Error('PW_EVENT_KEYWORDSまたはEVENT_NAMEが空です');
 
-    const output = [];
-    gameIds.forEach(gameId => keywords.forEach(keyword => output.push([gameId, keyword])));
-    writeManagedRows_(outputSheet, PW_INPUT_HEADERS, output, []);
+    const headers = ['Game ID'].concat(keywords.map((_, index) => '大会名' + (index + 1)));
+    const output = gameIds.map(gameId => [gameId].concat(keywords));
+    writePwInputRows_(outputSheet, headers, output);
     const tsv = output.map(row => row.join('\t')).join('\n');
     showPwInputDialog_(settings.PW_DATE_RANGE, tsv, output.length);
   }
@@ -975,7 +975,8 @@ const RSE = (() => {
     table.rows.forEach((row, index) => {
       const rowNo = index + 2;
       const rawEventName = valueAt_(row, indexes.eventName);
-      if (settings.EVENT_NAME && rawEventName && !sameEvent_(rawEventName, settings.EVENT_NAME)) return;
+      const formEventFilter = text_(settings.FORM_EVENT_FILTER);
+      if (formEventFilter && rawEventName && !sameEvent_(rawEventName, formEventFilter)) return;
 
       const app = {
         rowNo,
@@ -992,7 +993,7 @@ const RSE = (() => {
       if (!app.gameId) errors.push('Game IDが不正または空白');
       if (!app.name) errors.push('本名が空白');
       if (!validEmail_(app.email)) errors.push('メールアドレスが不正');
-      if (indexes.eventName >= 0 && settings.EVENT_NAME && !text_(rawEventName)) {
+      if (indexes.eventName >= 0 && formEventFilter && !text_(rawEventName)) {
         errors.push('対象イベントが空白');
       }
 
@@ -1008,9 +1009,11 @@ const RSE = (() => {
     const byGameId = {};
     Object.keys(groups).forEach(gameId => {
       const applications = groups[gameId];
-      const profiles = uniqueStrings_(applications.map(app => [
-        compact_(app.name), app.email.toLowerCase(), compact_(app.recipient), compact_(app.eventName)
-      ].join('|')));
+      const profiles = uniqueStrings_(applications.map(app => {
+        const parts = [compact_(app.name), app.email.toLowerCase(), compact_(app.recipient)];
+        if (text_(settings.FORM_EVENT_FILTER)) parts.push(compact_(app.eventName));
+        return parts.join('|');
+      }));
       const latest = applications[applications.length - 1];
       const conflict = profiles.length > 1;
 
@@ -1343,9 +1346,6 @@ const RSE = (() => {
     if (!text_(settings.PW_DATE_RANGE)) {
       throw new Error('RSE_設定のPW_DATE_RANGEが空です');
     }
-    if (!parseSettingList_(settings.PW_EVENT_KEYWORDS || settings.EVENT_NAME).length) {
-      throw new Error('RSE_設定のPW_EVENT_KEYWORDSまたはEVENT_NAMEが空です');
-    }
   }
 
   function parseSettingList_(value) {
@@ -1503,6 +1503,25 @@ const RSE = (() => {
     sheet.setFrozenRows(1);
   }
 
+  function writePwInputRows_(sheet, headers, rows) {
+    if (sheet.getMaxColumns() < headers.length) {
+      sheet.insertColumnsAfter(sheet.getMaxColumns(), headers.length - sheet.getMaxColumns());
+    }
+    const requiredRows = rows.length + 1;
+    if (sheet.getMaxRows() < requiredRows) {
+      sheet.insertRowsAfter(sheet.getMaxRows(), requiredRows - sheet.getMaxRows());
+    }
+    const clearRows = Math.max(sheet.getLastRow(), 1);
+    const clearColumns = Math.max(sheet.getLastColumn(), headers.length);
+    sheet.getRange(1, 1, clearRows, clearColumns).clearContent().clearDataValidations();
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    if (rows.length) {
+      sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+      sheet.getRange(2, 1, rows.length, 1).setNumberFormat('@');
+    }
+    sheet.setFrozenRows(1);
+  }
+
   function formatGameIdCheckSheet_(sheet, rowCount) {
     if (!rowCount) return;
     sheet.getRange(2, 7, rowCount, 1).setNumberFormat('@');
@@ -1545,7 +1564,7 @@ const RSE = (() => {
       '<button style="margin-top:10px;width:100%;height:38px" onclick="var x=document.getElementById(\'rseTsv\');x.select();document.execCommand(\'copy\');this.textContent=\'コピー済み\';">TSVをコピー</button>' +
       '</div>'
     ).setWidth(720).setHeight(500);
-    SpreadsheetApp.getUi().showModalDialog(html, 'PW 1.6.15 入力');
+    SpreadsheetApp.getUi().showModalDialog(html, 'PW 1.6.17 入力');
   }
 
   function reserveReceiptNumbers_(ss, count) {
