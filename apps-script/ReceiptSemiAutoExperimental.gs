@@ -405,7 +405,9 @@ const RSE = (() => {
         'Form申請なしでスキップしたGame ID: ' + intersection.pwOnlyGameIds + '件\n' +
         '不正TSV行スキップ: ' + intersection.invalidPwRows + '件\n' +
         '未解決: ' + unresolved + '件\n\n' +
-        '正常行は自動確定です。確認必要行だけ修正し、確認OKをONにしてください。'
+        '正常行は自動確定です。\n' +
+        '確認必要行は K～M列の確定値とZ列の処理方針を確認・修正し、' +
+        'AA列に修正理由、AB列をONにしてからメニュー5を実行してください。'
       );
     } finally {
       lock.releaseLock();
@@ -683,8 +685,8 @@ const RSE = (() => {
     try {
       const ss = SpreadsheetApp.getActiveSpreadsheet();
       const sheet = requiredSheet_(ss, CONFIG.CHECK_SHEET);
-      assertReceiptBatchConfirmed_(ss, sheet);
       const rows = readObjects_(sheet);
+      assertReceiptBatchConfirmed_(ss, sheet, rows);
       const receiptColumn = CHECK_HEADERS.indexOf('領収書No') + 1;
       const receiptValues = rows.map(row => [text_(row['領収書No'])]);
       const targets = [];
@@ -725,11 +727,11 @@ const RSE = (() => {
       validateGenerationSettings_(settings);
       const sheet = requiredSheet_(ss, CONFIG.CHECK_SHEET);
       const ledgerSheet = requiredSheet_(ss, CONFIG.LEDGER_SHEET);
-      assertReceiptBatchConfirmed_(ss, sheet);
       const folder = getFolder_(settings.RECEIPT_FOLDER_URL);
       const ledgerMap = buildLedgerMap_(readObjects_(ledgerSheet));
       const checkState = readSheetUpdateState_(sheet);
       const rows = checkState.objects;
+      assertReceiptBatchConfirmed_(ss, sheet, rows);
       const limit = optionalPositiveIntegerSetting_(settings.MAX_RECEIPTS_PER_RUN);
       const requested = positiveIntegerSetting_(options && options.maxJobs, 20);
       const batchSize = Math.min(requested, 50, limit || 50);
@@ -815,10 +817,10 @@ const RSE = (() => {
       validateGenerationSettings_(settings);
       const sheet = requiredSheet_(ss, CONFIG.CHECK_SHEET);
       const ledgerSheet = requiredSheet_(ss, CONFIG.LEDGER_SHEET);
-      assertReceiptBatchConfirmed_(ss, sheet);
       const items = Array.isArray(payload && payload.items) ? payload.items : [];
       if (!items.length || items.length > 10) throw new Error('PDF保存バッチは1～10件で指定してください');
       const checkState = readSheetUpdateState_(sheet);
+      assertReceiptBatchConfirmed_(ss, sheet, checkState.objects);
       const ledgerMap = buildLedgerMap_(readObjects_(ledgerSheet));
       const folder = getFolder_(settings.RECEIPT_FOLDER_URL);
       const ledgerRowsToAppend = [];
@@ -905,8 +907,8 @@ const RSE = (() => {
       validateGenerationSettings_(settings);
       const sheet = requiredSheet_(ss, CONFIG.CHECK_SHEET);
       const ledgerSheet = requiredSheet_(ss, CONFIG.LEDGER_SHEET);
-      assertReceiptBatchConfirmed_(ss, sheet);
       const checkState = readSheetUpdateState_(sheet);
+      assertReceiptBatchConfirmed_(ss, sheet, checkState.objects);
       const rows = checkState.objects.filter(row => text_(row['処理方針']) === '新規発行');
       const groups = groupCheckRowsForDraft_(rows);
       const ledgerState = readLedgerUpdateState_(ledgerSheet);
@@ -1002,7 +1004,12 @@ const RSE = (() => {
           errors++;
           const message = error.message || String(error);
           setUpdateStateValue_(checkState, leader, '草稿ステータス', 'エラー');
-          setUpdateStateValue_(checkState, leader, '確認内容', message);
+          setUpdateStateValue_(
+            checkState,
+            leader,
+            '確認内容',
+            '原因を修正してメニュー8を再実行してください。既存Draft IDが有効なら再利用し、同じGame IDの草稿を重複作成しません。\nエラー: ' + message
+          );
         }
       }
 
@@ -1033,8 +1040,8 @@ const RSE = (() => {
       assertInitialized_(ss);
       const checkSheet = requiredSheet_(ss, CONFIG.CHECK_SHEET);
       const ledgerSheet = requiredSheet_(ss, CONFIG.LEDGER_SHEET);
-      assertReceiptBatchConfirmed_(ss, checkSheet);
       const checkState = readSheetUpdateState_(checkSheet);
+      assertReceiptBatchConfirmed_(ss, checkSheet, checkState.objects);
       const rows = checkState.objects;
       const groups = groupCheckRowsForDraft_(
         rows.filter(row => text_(row['処理方針']) === '新規発行')
@@ -1123,7 +1130,16 @@ const RSE = (() => {
           errors++;
           const message = error.message || String(error);
           setUpdateStateValue_(checkState, leader, '送信ステータス', '送信確認必要');
-          setUpdateStateValue_(checkState, leader, '確認内容', message);
+          setUpdateStateValue_(
+            checkState,
+            leader,
+            '確認内容',
+            'Gmailの送信済みを先に確認してください。\n' +
+            '送信済みなら組長行のAL列を「送信済み」、AM列を送信日時にしてメニュー9を再実行します。\n' +
+            '未送信で草稿が残っていれば、そのままメニュー9を再実行します。\n' +
+            '草稿も無ければ組長行のAI～AK列を空にしてメニュー8から作り直します。\n' +
+            'エラー: ' + message
+          );
           mutateLedgerFieldsForPdfKeys_(ledgerState, pdfKeys, {
             status: '送信確認必要',
             '備考': message
@@ -1781,8 +1797,8 @@ const RSE = (() => {
     return hash_(normalized.join('\n'));
   }
 
-  function assertReceiptBatchConfirmed_(ss, sheet) {
-    const rows = readObjects_(sheet);
+  function assertReceiptBatchConfirmed_(ss, sheet, existingRows) {
+    const rows = existingRows || readObjects_(sheet);
     if (!rows.length) throw new Error('領収書CHECKが空です');
     const unresolved = countUnresolvedReceiptRows_(rows);
     if (unresolved) throw new Error('未確定または確定後に変更された領収書CHECKがあります: ' + unresolved + '件');
