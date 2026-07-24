@@ -11,7 +11,7 @@
  * スクリプトが行うこと:
  * - Game IDでForm回答とPW TSVを結合する
  * - 重複申請、同一支払、宛名/送信先衝突をCHECKする
- * - 領収書番号を採番し、PDFをDriveへ直接生成する
+ * - 領収書番号を採番し、ブラウザ描画したPDFをDriveへ保存する
  * - 生成したDrive FileをそのままGmail下書きへ添付する
  * - 承認済み下書きだけ送信する
  *
@@ -29,6 +29,7 @@ const RSE = (() => {
     LEDGER_SHEET: 'RSE_領収書管理',
     DEFAULT_FORM_SHEET: 'フォームの回答 1',
     DEFAULT_PW_SHEET: 'PW TSVショウ用',
+    FORM_PROCESSED_HEADER: '処理終了',
     HEADER_ROW: 1,
     DATA_START_ROW: 2,
     COMPANY_ADDRESS: '〒162-0845　東京都新宿区市谷本村町 2-21<br>市ケ谷キャナルコート 3階',
@@ -41,25 +42,13 @@ const RSE = (() => {
   const SETTINGS_DEFAULTS = [
     ['FORM_SHEET_NAME', CONFIG.DEFAULT_FORM_SHEET, 'Google Form回答Sheet名'],
     ['PW_SHEET_NAME', CONFIG.DEFAULT_PW_SHEET, '人工取得したPW TSVのSheet名'],
-    ['EVENT_NAME', '', '本批次の管理・PDF表示に使う代表名。Form抽出条件ではありません'],
-    ['FORM_EVENT_FILTER', '', 'Form回答を特定イベントだけに絞る場合のみ設定。全イベントなら空白'],
-    ['PW_EVENT_KEYWORDS', '', 'PW 1.6.17へ渡す大会キーワード。複数は改行、空白なら期間内すべて'],
-    ['PW_DATE_RANGE', '', 'PW 1.6.17検索期間 例: 11/7/2026 - 22/7/2026'],
-    ['EVENT_LABEL', '', 'PDF・メールに表示するイベント名。空白ならEVENT_NAME'],
-    ['NEXT_RECEIPT_NO', '900000', '次に採番する領収書番号。実験用番号を設定'],
-    ['DATE_FROM', '', '対象購入日の開始 YYYY-MM-DD。空白なら制限なし'],
-    ['DATE_TO', '', '対象購入日の終了 YYYY-MM-DD。空白なら制限なし'],
-    ['RECEIPT_FOLDER_URL', '', '実験PDF保存先DriveフォルダURLまたはID'],
-    ['TEST_MODE', 'ON', 'ONなら下書き宛先をTEST_EMAILへ変更'],
-    ['TEST_EMAIL', '', '実験下書きの宛先'],
+    ['NEXT_RECEIPT_NO', '900000', '次に採番する領収書番号'],
+    ['MAX_RECEIPTS_PER_RUN', '', '空白なら全件生成。必要時だけ1回あたりの上限件数を入力'],
+    ['RECEIPT_FOLDER_URL', '', 'PDF保存先DriveフォルダURLまたはID'],
     ['FROM_ALIAS', '', 'Gmail送信元エイリアス。未設定なら空白'],
     ['FROM_NAME', 'Japan Open Poker Tour / JOPT', 'メール送信者表示名'],
-    ['BCC', '', 'BCC。実験中は空白推奨'],
-    ['SUBJECT', '電子領収書の送付について', 'メール件名'],
-    ['MAX_RECEIPTS_PER_RUN', '20', '1回のPDF生成上限。実験中は小さい値を推奨'],
-    ['MAX_DRAFTS_PER_SEND', '20', '1回の送信草稿上限'],
-    ['MAX_ATTACHMENT_MB', '20', '1通の添付合計上限MB'],
-    ['MAX_EXECUTION_SECONDS', '240', '各重処理の自主停止秒数。Google強制停止前に終了']
+    ['BCC', '', 'BCC'],
+    ['SUBJECT', '電子領収書の送付について', 'メール件名']
   ];
 
   const GAME_ID_CHECK_HEADERS = [
@@ -104,7 +93,10 @@ const RSE = (() => {
       'メールアドレス', 'Email', 'email', 'メール'
     ],
     recipient: ['宛名', '領収書の宛名'],
-    eventName: ['対象イベント', 'イベント名', 'eventName', '大会名']
+    eventName: ['対象大会', '対象イベント', 'イベント名', 'eventName', '大会名'],
+    startDate: ['対象期間 （開始日）', '対象期間（開始日）', '開始日', '対象開始日'],
+    endDate: ['対象期間（終了日）', '対象期間 （終了日）', '終了日', '対象終了日'],
+    processed: ['処理終了']
   };
 
   const PW_ALIASES = {
@@ -134,7 +126,7 @@ const RSE = (() => {
       .addItem('5. 領収書CHECKを確定', 'RSE_confirmReceiptCheck')
       .addItem('6. 未採番行へ領収書番号を採番', 'RSE_assignReceiptNumbers')
       .addSeparator()
-      .addItem('7. 未生成PDFを生成', 'RSE_generatePendingFiles')
+      .addItem('7. ブラウザで未生成PDFを生成', 'RSE_generatePendingFiles')
       .addItem('8. 未作成Gmail草稿を生成', 'RSE_createPendingDrafts')
       .addItem('9. 送信OK → 承認済み草稿を送信', 'RSE_sendApproved')
       .addToUi();
@@ -148,13 +140,15 @@ const RSE = (() => {
     ensureSheet_(ss, CONFIG.PW_INPUT_SHEET, PW_INPUT_HEADERS);
     ensureSheet_(ss, CONFIG.CHECK_SHEET, CHECK_HEADERS);
     ensureSheet_(ss, CONFIG.LEDGER_SHEET, LEDGER_HEADERS);
+    const settings = readSettings_(ss);
+    ensureFormProcessedColumn_(requiredSheet_(ss, settings.FORM_SHEET_NAME || CONFIG.DEFAULT_FORM_SHEET));
 
     installOpenTrigger_();
     addMenu();
     alert_(
-      '実験版の初期設定が完了しました。\n\n' +
-      '最初に RSE_設定 の大会名・PW検索条件・保存先・開始番号を確認してください。\n' +
-      'TEST_MODE=ON のまま、実験用DriveフォルダとTEST_EMAILを設定してください。'
+      '初期設定が完了しました。\n\n' +
+      'RSE_設定 の保存先・開始番号・メール設定を確認してください。\n' +
+      'フォーム回答Sheetには「処理終了」列を追加しました。'
     );
   }
 
@@ -165,28 +159,31 @@ const RSE = (() => {
       const ss = SpreadsheetApp.getActiveSpreadsheet();
       assertInitialized_(ss);
       const settings = readSettings_(ss);
-      validateGameIdSettings_(settings);
       const formSheet = requiredSheet_(ss, settings.FORM_SHEET_NAME || CONFIG.DEFAULT_FORM_SHEET);
+      ensureFormProcessedColumn_(formSheet);
       const checkSheet = requiredSheet_(ss, CONFIG.GAME_ID_CHECK_SHEET);
       const applicationResult = readApplications_(formSheet, settings);
       const prior = objectMapBy_(readObjects_(checkSheet), 'checkKey');
-      const nameGames = buildSharedValueMap_(applicationResult.byGameId, 'name');
-      const emailGames = buildSharedValueMap_(applicationResult.byGameId, 'email');
+      const nameGames = buildSharedValueMap_(applicationResult.byRequestKey, 'name');
+      const emailGames = buildSharedValueMap_(applicationResult.byRequestKey, 'email');
       const rows = [];
 
-      Object.keys(applicationResult.byGameId).sort().forEach(gameId => {
-        const info = applicationResult.byGameId[gameId];
+      Object.keys(applicationResult.byRequestKey).sort().forEach(applicationKey => {
+        const info = applicationResult.byRequestKey[applicationKey];
         const app = info.application;
-        const checkKey = 'APP__' + compact_(settings.EVENT_NAME) + '__' + gameId;
+        const gameId = app.gameId;
+        const checkKey = 'APP__' + applicationKey;
         const sourceHash = hash_((info.applications || [app]).map(item => [
-          item.rowNo, item.gameId, item.name, item.email, item.recipient, item.eventName
+          item.rowNo, item.gameId, item.name, item.email, item.recipient, item.startDate, item.endDate
         ].join('|')).join('\n'));
         const old = prior[checkKey] || {};
         const finalGameId = normalizeGameId_(old['Game ID']) || gameId;
         const finalName = text_(old['確定本名'] || app.name);
         const finalEmail = text_(old['確定メールアドレス'] || app.email).toLowerCase();
         const finalRecipient = removeSama_(old['確定宛名'] !== undefined ? old['確定宛名'] : app.recipient);
-        const policy = text_(old['処理方針'] || '採用');
+        const policy = text_(old['処理方針']) === '除外' && text_(old['確認状態']) === '確定済み'
+          ? '除外'
+          : '採用';
         const messages = [];
         let judgement = 'OK';
         let requiresManual = false;
@@ -247,7 +244,7 @@ const RSE = (() => {
           false,
           oldStillConfirmed ? old['確認日時'] || '' : '',
           oldStillConfirmed ? old['確認者'] || '' : '',
-          settings.EVENT_NAME,
+          [app.startDate, app.endDate].join(' - '),
           app.applicationKey
         ]);
       });
@@ -276,7 +273,7 @@ const RSE = (() => {
           old['確定本名'] || app.name || '', old['確定メールアドレス'] || app.email || '',
           old['確定宛名'] || app.recipient || '', policy, old['修正理由'] || '', false,
           confirmed ? old['確認日時'] || '' : '', confirmed ? old['確認者'] || '' : '',
-          settings.EVENT_NAME, app.applicationKey || ''
+          app.eventName || '', app.applicationKey || ''
         ]);
       });
 
@@ -285,7 +282,7 @@ const RSE = (() => {
       const unresolved = countUnresolvedGameIdRows_(readObjects_(checkSheet));
       alert_(
         'Game ID CHECK更新完了。\n\n' +
-        'Game ID: ' + Object.keys(applicationResult.byGameId).length + '件\n' +
+        '申請期間: ' + Object.keys(applicationResult.byRequestKey).length + '件\n' +
         '要確認: ' + unresolved + '件\n\n' +
         '緑色の確定値・処理方針を修正し、確認OKをONにして「CHECKを確定」を実行してください。'
       );
@@ -350,8 +347,6 @@ const RSE = (() => {
 
   function buildPwInput() {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const settings = readSettings_(ss);
-    validateGameIdSettings_(settings);
     const checkSheet = requiredSheet_(ss, CONFIG.GAME_ID_CHECK_SHEET);
     const outputSheet = requiredSheet_(ss, CONFIG.PW_INPUT_SHEET);
     const rows = readObjects_(checkSheet);
@@ -363,21 +358,14 @@ const RSE = (() => {
     const adoptedGameIds = rows
       .filter(row => text_(row['処理方針']) === '採用')
       .map(row => normalizeGameId_(row['Game ID']));
-    const gameIdCounts = {};
-    adoptedGameIds.forEach(gameId => { gameIdCounts[gameId] = (gameIdCounts[gameId] || 0) + 1; });
-    const duplicateGameIds = Object.keys(gameIdCounts).filter(gameId => gameIdCounts[gameId] > 1);
-    if (duplicateGameIds.length) {
-      throw new Error('採用済みGame IDがCHECK内で重複しています: ' + duplicateGameIds.join(', '));
-    }
     const gameIds = uniqueStrings_(adoptedGameIds);
-    const keywords = parseSettingList_(settings.PW_EVENT_KEYWORDS);
     if (!gameIds.length) throw new Error('採用済みGame IDがありません');
 
-    const headers = ['Game ID'].concat(keywords.map((_, index) => '大会名' + (index + 1)));
-    const output = gameIds.map(gameId => [gameId].concat(keywords));
+    const headers = ['Game ID'];
+    const output = gameIds.map(gameId => [gameId]);
     writePwInputRows_(outputSheet, headers, output);
     const tsv = output.map(row => row.join('\t')).join('\n');
-    showPwInputDialog_(settings.PW_DATE_RANGE, tsv, output.length);
+    showPwInputDialog_(tsv, output.length);
   }
 
   function refreshReceiptCheck() {
@@ -387,7 +375,6 @@ const RSE = (() => {
       const ss = SpreadsheetApp.getActiveSpreadsheet();
       assertInitialized_(ss);
       const settings = readSettings_(ss);
-      validateCheckSettings_(settings);
       const applications = readConfirmedApplications_(ss);
       const pwSheet = requiredSheet_(ss, settings.PW_SHEET_NAME || CONFIG.DEFAULT_PW_SHEET);
       const pwResult = readPwRows_(pwSheet, settings);
@@ -395,13 +382,29 @@ const RSE = (() => {
       const ledgerMap = buildLedgerMap_(readObjects_(requiredSheet_(ss, CONFIG.LEDGER_SHEET)));
       const prior = objectMapBy_(readObjects_(checkSheet), 'checkKey');
       const rows = buildReceiptCheckRows_(applications, pwResult, ledgerMap, prior, settings);
+      const intersection = receiptIntersectionStats_(applications, pwResult);
 
       writeManagedRows_(checkSheet, CHECK_HEADERS, rows, [28, 37]);
       formatReceiptCheckSheet_(checkSheet, rows.length);
+      const mailState = readSheetUpdateState_(checkSheet);
+      const mailGroups = groupCheckRowsForDraft_(
+        mailState.objects.filter(row => text_(row['処理方針']) === '新規発行')
+      );
+      Object.keys(mailGroups).forEach(gameId => {
+        normalizeMailGroupDisplay_(mailState, mailGroups[gameId]);
+        applyMailGroupConflictToCheck_(mailState, mailGroups[gameId]);
+      });
+      writeSheetUpdateState_(checkSheet, mailState);
+      formatMailGroupControls_(checkSheet, mailGroups);
       PropertiesService.getDocumentProperties().deleteProperty('RSE_CONFIRMED_RECEIPT_BATCH_HASH');
       const unresolved = countUnresolvedReceiptRows_(readObjects_(checkSheet));
       alert_(
-        '領収書CHECK更新完了。\n\n明細: ' + rows.length + '件\n未解決: ' + unresolved + '件\n\n' +
+        '領収書CHECK更新完了。\n\n' +
+        '対象明細: ' + rows.length + '件\n' +
+        '今回TSVなしでスキップした申請: ' + intersection.formOnlyGameIds + '件\n' +
+        'Form申請なしでスキップしたGame ID: ' + intersection.pwOnlyGameIds + '件\n' +
+        '不正TSV行スキップ: ' + intersection.invalidPwRows + '件\n' +
+        '未解決: ' + unresolved + '件\n\n' +
         '正常行は自動確定です。確認必要行だけ修正し、確認OKをONにしてください。'
       );
     } finally {
@@ -412,54 +415,23 @@ const RSE = (() => {
   function buildReceiptCheckRows_(applications, pwResult, ledgerMap, prior, settings) {
     const output = [];
     const pwByGameId = pwResult.byGameId;
-    const allGameIds = uniqueStrings_(Object.keys(applications).concat(Object.keys(pwByGameId))).sort();
-    const invalidPwGameIds = new Set(pwResult.invalid
-      .map(item => normalizeGameId_((item.pw || {}).gameId))
-      .filter(Boolean));
+    const matchedApplicationKeys = Object.keys(applications)
+      .filter(applicationKey => {
+        const app = applications[applicationKey];
+        return (pwByGameId[app.gameId] || []).some(pw => pwMatchesApplicationPeriod_(pw, app));
+      })
+      .sort();
     const seenPayments = new Set();
 
-    pwResult.invalid.forEach(item => {
-      const pw = item.pw || {};
-      const checkKey = 'INVALID_PW__' + (pw.rowNo || output.length + 2);
-      output.push(makeReceiptCheckRow_({
-        judgement: '確認必要', state: '未確定', message: item.message,
-        checkKey, sourceHash: hash_(item.message + '|' + JSON.stringify(pw)),
-        application: applications[pw.gameId] || {}, pw, policy: '', old: prior[checkKey] || {}
-      }));
-    });
-
-    allGameIds.forEach(gameId => {
-      const app = applications[gameId];
-      const pwRows = pwByGameId[gameId] || [];
-      if (!app) {
-        pwRows.forEach(pw => {
-          const checkKey = 'PW_ONLY__' + gameId + '__' + pw.rowNo;
-          output.push(makeReceiptCheckRow_({
-            judgement: '確認必要', state: '未確定',
-            message: '確定済みGame ID申請がありません', checkKey,
-            sourceHash: hash_(JSON.stringify(pw)), application: {}, pw,
-            policy: '', old: prior[checkKey] || {}
-          }));
-        });
-        return;
-      }
-
-      if (!pwRows.length) {
-        if (invalidPwGameIds.has(gameId)) return;
-        const checkKey = 'FORM_ONLY__' + gameId;
-        output.push(makeReceiptCheckRow_({
-          judgement: '確認必要', state: '未確定',
-          message: '確定済み申請がありますがPW TSVに支払明細がありません', checkKey,
-          sourceHash: hash_(JSON.stringify(app)), application: app, pw: {},
-          policy: '', old: prior[checkKey] || {}
-        }));
-        return;
-      }
+    matchedApplicationKeys.forEach(applicationKey => {
+      const app = applications[applicationKey];
+      const gameId = app.gameId;
+      const pwRows = (pwByGameId[gameId] || []).filter(pw => pwMatchesApplicationPeriod_(pw, app));
 
       pwRows.forEach(pw => {
         const total = calcTotal_(pw);
         const paymentKey = makePaymentKey_({
-          gameId, eventName: settings.EVENT_NAME, tournament: pw.tournament,
+          gameId, tournament: pw.tournament,
           purchaseTime: pw.purchaseTime, type: pw.type, total
         });
         const checkKey = paymentKey + '__PWROW__' + pw.rowNo;
@@ -510,10 +482,9 @@ const RSE = (() => {
             messages.push('同一支払・同一宛名の管理記録あり: ' + text_(existingPdf.status));
           }
         } else if (existingPayment) {
-          judgement = '確認必要';
-          requiresManual = true;
-          policy = text_(old['処理方針'] || '');
-          messages.push('同一支払に別宛名のPDFがあります。新規発行するか除外するか人工確認が必要');
+          judgement = '差替';
+          policy = '新規発行';
+          messages.push('同一支払の宛名変更。旧領収書番号を再利用して自動差替');
         }
 
         if (text_(old.sourceHash) && text_(old.sourceHash) !== sourceHash) {
@@ -538,11 +509,25 @@ const RSE = (() => {
             name: finalName, email: finalEmail, recipient: finalRecipient
           }), pw, paymentKey, pdfKey, total, policy, old,
           existing: existingPdf || null,
+          receiptNo: existingPayment && !existingPdf ? text_(existingPayment['領収書No']) : '',
           preserveConfirmation: oldStillConfirmed
         }));
       });
     });
     return output;
+  }
+
+  function receiptIntersectionStats_(applications, pwResult) {
+    const pwByGameId = (pwResult && pwResult.byGameId) || {};
+    const applicationList = Object.keys(applications || {}).map(key => applications[key]);
+    const applicationGameIds = new Set(applicationList.map(app => app.gameId));
+    return {
+      formOnlyGameIds: applicationList.filter(app =>
+        !(pwByGameId[app.gameId] || []).some(pw => pwMatchesApplicationPeriod_(pw, app))
+      ).length,
+      pwOnlyGameIds: Object.keys(pwByGameId).filter(gameId => !applicationGameIds.has(gameId)).length,
+      invalidPwRows: ((pwResult && pwResult.invalid) || []).length
+    };
   }
 
   function makeReceiptCheckRow_(params) {
@@ -578,7 +563,7 @@ const RSE = (() => {
       money_(pw.points), money_(pw.usdt), total, policy,
       text_(old['修正理由']), false,
       preserve ? old['確認日時'] || '' : '', preserve ? old['確認者'] || '' : '',
-      existing['領収書No'] || old['領収書No'] || '',
+      params.receiptNo || existing['領収書No'] || old['領収書No'] || '',
       existing.PDF_FILE_ID || old.PDF_FILE_ID || '', existing.PDF_URL || old.PDF_URL || '',
       status, existing['Draft ID'] || old['Draft ID'] || '',
       text_(existing.status).includes('下書き') ? existing.status : old['草稿ステータス'] || '',
@@ -594,9 +579,38 @@ const RSE = (() => {
       const ss = SpreadsheetApp.getActiveSpreadsheet();
       const sheet = requiredSheet_(ss, CONFIG.CHECK_SHEET);
       const settings = readSettings_(ss);
-      const rows = readObjects_(sheet);
+      const rows = readObjects_(sheet).map((row, index) => Object.assign(row, { __rowNo: index + 2 }));
       const errors = [];
       let confirmed = 0;
+      const mailGroups = groupCheckRowsForDraft_(
+        rows.filter(row => text_(row['処理方針']) === '新規発行')
+      );
+      Object.keys(mailGroups).forEach(gameId => {
+        const info = mailGroupInfo_(mailGroups[gameId]);
+        if (!info.leader || !isOn_(info.leader['確認OK'])) return;
+        if (info.names.length <= 1 && info.emails.length <= 1) return;
+        if (info.rows.some(row => text_(row.PDF_FILE_ID) || text_(row['Draft ID']))) {
+          errors.push(info.leader.__rowNo + '行: Game ID資料統一はPDF・草稿作成前だけ実行できます');
+          return;
+        }
+        const finalName = text_(info.leader['本名']);
+        const finalEmail = text_(info.leader['メールアドレス']).toLowerCase();
+        const reason = text_(info.leader['修正理由']);
+        if (!finalName || !validEmail_(finalEmail) || !reason) {
+          errors.push(info.leader.__rowNo + '行: K列本名・L列メール・AA列修正理由を入力してください');
+          return;
+        }
+        info.rows.forEach(row => {
+          row['本名'] = finalName;
+          row['メールアドレス'] = finalEmail;
+          row['修正理由'] = reason;
+          row['確認OK'] = true;
+          setHeaderValue_(sheet, CHECK_HEADERS, row.__rowNo, '本名', finalName);
+          setHeaderValue_(sheet, CHECK_HEADERS, row.__rowNo, 'メールアドレス', finalEmail);
+          setHeaderValue_(sheet, CHECK_HEADERS, row.__rowNo, '修正理由', reason);
+          setHeaderValue_(sheet, CHECK_HEADERS, row.__rowNo, '確認OK', true);
+        });
+      });
       rows.forEach((row, index) => {
         if (!isOn_(row['確認OK'])) return;
         const rowNo = index + 2;
@@ -626,7 +640,6 @@ const RSE = (() => {
           const data = receiptDataFromCheckRow_(row, settings);
           const paymentKey = makePaymentKey_({
             gameId: data.gameId,
-            eventName: data.eventName,
             tournament: data.tournament,
             purchaseTime: data.purchaseTime,
             type: data.type,
@@ -692,10 +705,21 @@ const RSE = (() => {
   }
 
   function generatePendingFiles() {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const settings = readSettings_(ss);
+    validateGenerationSettings_(settings);
+    const sheet = requiredSheet_(ss, CONFIG.CHECK_SHEET);
+    assertReceiptBatchConfirmed_(ss, sheet);
+    const html = HtmlService.createHtmlOutputFromFile('ReceiptSemiAutoRenderer')
+      .setWidth(560)
+      .setHeight(620);
+    SpreadsheetApp.getUi().showModelessDialog(html, '領収書PDF ブラウザ生成');
+  }
+
+  function getRenderBatch(options) {
     const lock = LockService.getDocumentLock();
     lock.waitLock(30000);
     try {
-      const startedAt = Date.now();
       const ss = SpreadsheetApp.getActiveSpreadsheet();
       const settings = readSettings_(ss);
       validateGenerationSettings_(settings);
@@ -704,94 +728,171 @@ const RSE = (() => {
       assertReceiptBatchConfirmed_(ss, sheet);
       const folder = getFolder_(settings.RECEIPT_FOLDER_URL);
       const ledgerMap = buildLedgerMap_(readObjects_(ledgerSheet));
-      const maxFiles = positiveIntegerSetting_(settings.MAX_RECEIPTS_PER_RUN, 20);
-      const maxSeconds = positiveIntegerSetting_(settings.MAX_EXECUTION_SECONDS, 240);
-      const rows = readObjects_(sheet);
-      let generated = 0;
-      let reused = 0;
-      let errors = 0;
-      let stoppedByTime = false;
+      const checkState = readSheetUpdateState_(sheet);
+      const rows = checkState.objects;
+      const limit = optionalPositiveIntegerSetting_(settings.MAX_RECEIPTS_PER_RUN);
+      const requested = positiveIntegerSetting_(options && options.maxJobs, 20);
+      const batchSize = Math.min(requested, 50, limit || 50);
+      const pendingBefore = rows.filter(row =>
+        text_(row['処理方針']) === '新規発行' && text_(row['領収書No']) && !text_(row.PDF_FILE_ID)
+      ).length;
+      const jobs = [];
+      const ledgerRowsToAppend = [];
+      let checkChanged = false;
 
       for (let index = 0; index < rows.length; index++) {
-        if (generated + reused >= maxFiles) break;
-        if ((Date.now() - startedAt) / 1000 >= maxSeconds) {
-          stoppedByTime = true;
-          break;
-        }
         const row = rows[index];
-        const rowNo = index + 2;
+        const rowNo = row.__rowNo;
         if (text_(row['処理方針']) !== '新規発行') continue;
         if (text_(row.PDF_FILE_ID)) continue;
         const receiptNo = text_(row['領収書No']);
         if (!receiptNo) continue;
 
-        try {
-          const data = receiptDataFromCheckRow_(row, settings);
-          data.receiptNo = receiptNo;
-          const paymentKey = makePaymentKey_({
-            gameId: data.gameId, eventName: data.eventName, tournament: data.tournament,
-            purchaseTime: data.purchaseTime, type: data.type, total: data.total
-          });
-          const pdfKey = makePdfKey_(paymentKey, data.recipient);
-          if (paymentKey !== text_(row.paymentKey)) throw new Error('paymentKeyがCHECK確定時から変化しています');
-
-          let file = null;
-          let existing = ledgerMap.byPdfKey[pdfKey];
-          if (existing && text_(existing.PDF_FILE_ID)) {
-            if (text_(existing['領収書No']) && text_(existing['領収書No']) !== receiptNo) {
-              throw new Error('同じpdfKeyの既存領収書番号が今回の採番と一致しません');
-            }
-            file = DriveApp.getFileById(text_(existing.PDF_FILE_ID));
-            reused++;
-          } else {
-            file = findSingleFileByName_(folder, makeReceiptFileName_(data, settings));
-            if (file) reused++;
-          }
-
-          setHeaderValue_(sheet, CHECK_HEADERS, rowNo, 'ファイル状態', '生成中');
-          SpreadsheetApp.flush();
-
-          if (!file) {
-            const fileName = makeReceiptFileName_(data, settings);
-            file = folder.createFile(makeReceiptPdfBlob_(data, settings).setName(fileName)).setName(fileName);
-            generated++;
-          }
-
-          if (!existing) {
-            appendLedger_(ledgerSheet, {
-              pdfKey, paymentKey, receiptNo, data, file,
-              status: 'PDF作成済み', applicationKey: text_(row['申請キー']), note: 'RSE実験版'
-            });
-            existing = {
-              pdfKey, paymentKey, '領収書No': receiptNo, 'メールアドレス': data.email,
-              PDF_FILE_ID: file.getId(), PDF_URL: file.getUrl(), status: 'PDF作成済み'
-            };
-            ledgerMap.byPdfKey[pdfKey] = existing;
-            if (!ledgerMap.byPaymentKey[paymentKey]) ledgerMap.byPaymentKey[paymentKey] = existing;
-          }
-
-          setHeaderValue_(sheet, CHECK_HEADERS, rowNo, 'pdfKey', pdfKey);
-          setHeaderValue_(sheet, CHECK_HEADERS, rowNo, 'PDF_FILE_ID', file.getId());
-          setHeaderValue_(sheet, CHECK_HEADERS, rowNo, 'PDF_URL', file.getUrl());
-          setHeaderValue_(sheet, CHECK_HEADERS, rowNo, 'ファイル状態', 'PDF作成済み');
-        } catch (error) {
-          errors++;
-          setHeaderValue_(sheet, CHECK_HEADERS, rowNo, 'ファイル状態', '生成エラー');
-          setHeaderValue_(sheet, CHECK_HEADERS, rowNo, '確認内容', error.message || String(error));
+        const data = receiptDataFromCheckRow_(row, settings);
+        data.receiptNo = receiptNo;
+        const paymentKey = makePaymentKey_({
+          gameId: data.gameId, tournament: data.tournament,
+          purchaseTime: data.purchaseTime, type: data.type, total: data.total
+        });
+        const pdfKey = makePdfKey_(paymentKey, data.recipient);
+        if (paymentKey !== text_(row.paymentKey) || pdfKey !== text_(row.pdfKey)) {
+          throw new Error(rowNo + '行: CHECK確定後にpaymentKey/pdfKeyが変化しています');
         }
+
+        const existing = ledgerMap.byPdfKey[pdfKey];
+        if (existing && text_(existing.PDF_FILE_ID)) {
+          const file = DriveApp.getFileById(text_(existing.PDF_FILE_ID));
+          applyRenderedFileToCheckState_(checkState, row, file, pdfKey);
+          checkChanged = true;
+          continue;
+        }
+
+        const fileName = makeReceiptFileName_(data, settings);
+        const namedFile = findSingleFileByName_(folder, fileName);
+        if (namedFile) {
+          applyRenderedFileToCheckState_(checkState, row, namedFile, pdfKey);
+          ledgerRowsToAppend.push(makeLedgerRowArray_({
+            pdfKey, paymentKey, receiptNo, data, file: namedFile,
+            status: 'PDF作成済み', applicationKey: text_(row['申請キー']), note: '既存ファイル再登録'
+          }));
+          ledgerMap.byPdfKey[pdfKey] = { PDF_FILE_ID: namedFile.getId() };
+          checkChanged = true;
+          continue;
+        }
+
+        setUpdateStateValue_(checkState, row, 'ファイル状態', 'ブラウザ生成待ち');
+        checkChanged = true;
+        jobs.push({
+          rowNo,
+          pdfKey,
+          paymentKey,
+          receiptNo,
+          fileName,
+          html: buildReceiptHtml_(data, settings)
+        });
+        if (jobs.length >= batchSize) break;
       }
 
-      const pending = readObjects_(sheet).filter(row =>
-        text_(row['処理方針']) === '新規発行' && text_(row['領収書No']) && !text_(row.PDF_FILE_ID)
-      ).length;
-      alert_(
-        '未生成PDF処理が完了しました。\n\n新規生成: ' + generated +
-        '\n既存/中断ファイル再利用: ' + reused + '\nエラー: ' + errors +
-        '\n残り: ' + pending + (stoppedByTime ? '\n自主停止時間に達したため、再度同じボタンを実行してください。' : '')
-      );
+      if (checkChanged) writeSheetUpdateState_(sheet, checkState);
+      if (ledgerRowsToAppend.length) appendLedgerRows_(ledgerSheet, ledgerRowsToAppend);
+      return {
+        done: jobs.length === 0,
+        pending: pendingBefore,
+        limit,
+        jobs
+      };
     } finally {
       lock.releaseLock();
     }
+  }
+
+  function saveRenderedPdfBatch(payload) {
+    const lock = LockService.getDocumentLock();
+    lock.waitLock(30000);
+    try {
+      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      const settings = readSettings_(ss);
+      validateGenerationSettings_(settings);
+      const sheet = requiredSheet_(ss, CONFIG.CHECK_SHEET);
+      const ledgerSheet = requiredSheet_(ss, CONFIG.LEDGER_SHEET);
+      assertReceiptBatchConfirmed_(ss, sheet);
+      const items = Array.isArray(payload && payload.items) ? payload.items : [];
+      if (!items.length || items.length > 10) throw new Error('PDF保存バッチは1～10件で指定してください');
+      const checkState = readSheetUpdateState_(sheet);
+      const ledgerMap = buildLedgerMap_(readObjects_(ledgerSheet));
+      const folder = getFolder_(settings.RECEIPT_FOLDER_URL);
+      const ledgerRowsToAppend = [];
+      const results = [];
+
+      items.forEach(item => {
+        const rowNo = Math.floor(Number(item && item.rowNo));
+        const row = checkState.objects[rowNo - 2];
+        try {
+          if (!row || row.__rowNo !== rowNo) throw new Error('対象CHECK行が見つかりません');
+          if (text_(row.PDF_FILE_ID)) {
+            results.push({ rowNo, ok: true, reused: true });
+            return;
+          }
+          const data = receiptDataFromCheckRow_(row, settings);
+          data.receiptNo = text_(row['領収書No']);
+          const paymentKey = makePaymentKey_({
+            gameId: data.gameId, tournament: data.tournament,
+            purchaseTime: data.purchaseTime, type: data.type, total: data.total
+          });
+          const pdfKey = makePdfKey_(paymentKey, data.recipient);
+          if (pdfKey !== text_(item.pdfKey) || pdfKey !== text_(row.pdfKey)) {
+            throw new Error('pdfKeyが一致しません。CHECKを更新してください');
+          }
+
+          const existing = ledgerMap.byPdfKey[pdfKey];
+          if (existing && text_(existing.PDF_FILE_ID)) {
+            const existingFile = DriveApp.getFileById(text_(existing.PDF_FILE_ID));
+            applyRenderedFileToCheckState_(checkState, row, existingFile, pdfKey);
+            results.push({ rowNo, ok: true, reused: true });
+            return;
+          }
+
+          const base64 = String(item.base64 || '').replace(/^data:application\/pdf;base64,/, '');
+          if (!base64) throw new Error('PDFデータが空です');
+          const fileName = makeReceiptFileName_(data, settings);
+          const file = folder.createFile(
+            Utilities.newBlob(Utilities.base64Decode(base64), MimeType.PDF, fileName)
+          ).setName(fileName);
+          applyRenderedFileToCheckState_(checkState, row, file, pdfKey);
+          ledgerRowsToAppend.push(makeLedgerRowArray_({
+            pdfKey, paymentKey, receiptNo: data.receiptNo, data, file,
+            status: 'PDF作成済み', applicationKey: text_(row['申請キー']), note: 'ブラウザ一括生成'
+          }));
+          ledgerMap.byPdfKey[pdfKey] = { PDF_FILE_ID: file.getId() };
+          results.push({ rowNo, ok: true, fileId: file.getId(), fileUrl: file.getUrl(), fileName });
+        } catch (error) {
+          if (row) {
+            setUpdateStateValue_(checkState, row, 'ファイル状態', '生成エラー');
+            setUpdateStateValue_(checkState, row, '確認内容', error.message || String(error));
+          }
+          results.push({ rowNo, ok: false, error: error.message || String(error) });
+        }
+      });
+
+      writeSheetUpdateState_(sheet, checkState);
+      if (ledgerRowsToAppend.length) appendLedgerRows_(ledgerSheet, ledgerRowsToAppend);
+      return {
+        ok: results.every(result => result.ok),
+        saved: results.filter(result => result.ok).length,
+        errors: results.filter(result => !result.ok).length,
+        results
+      };
+    } finally {
+      lock.releaseLock();
+    }
+  }
+
+  function applyRenderedFileToCheckState_(state, row, file, pdfKey) {
+    setUpdateStateValue_(state, row, 'pdfKey', pdfKey);
+    setUpdateStateValue_(state, row, 'PDF_FILE_ID', file.getId());
+    setUpdateStateValue_(state, row, 'PDF_URL', file.getUrl());
+    setUpdateStateValue_(state, row, 'ファイル状態', 'PDF作成済み');
+    setUpdateStateValue_(state, row, '確認内容', '');
   }
 
   function createPendingDrafts() {
@@ -805,8 +906,10 @@ const RSE = (() => {
       const sheet = requiredSheet_(ss, CONFIG.CHECK_SHEET);
       const ledgerSheet = requiredSheet_(ss, CONFIG.LEDGER_SHEET);
       assertReceiptBatchConfirmed_(ss, sheet);
-      const rows = readCheckObjects_(sheet).filter(row => text_(row['処理方針']) === '新規発行');
+      const checkState = readSheetUpdateState_(sheet);
+      const rows = checkState.objects.filter(row => text_(row['処理方針']) === '新規発行');
       const groups = groupCheckRowsForDraft_(rows);
+      const ledgerState = readLedgerUpdateState_(ledgerSheet);
       const maxDrafts = positiveIntegerSetting_(settings.MAX_DRAFTS_PER_SEND, 20);
       const maxSeconds = positiveIntegerSetting_(settings.MAX_EXECUTION_SECONDS, 240);
       let created = 0;
@@ -814,23 +917,54 @@ const RSE = (() => {
       let errors = 0;
       let stoppedByTime = false;
       let draftRecoveryMap = null;
+      let ledgerChanged = false;
+      const plans = [];
 
       for (const groupKey of Object.keys(groups)) {
-        if (created >= maxDrafts) break;
+        const group = groups[groupKey];
+        const info = normalizeMailGroupDisplay_(checkState, group);
+        const leader = info.leader;
+        if (!leader) continue;
+        if (text_(leader['送信ステータス']) === '送信済み') continue;
+        if (info.draftIds.length > 1) {
+          errors++;
+          continue;
+        }
+        if (group.some(row => !text_(row.PDF_FILE_ID))) {
+          setUpdateStateValue_(checkState, leader, '草稿ステータス', 'PDF未完成');
+          setUpdateStateValue_(checkState, leader, '確認内容', 'このGame IDには未生成PDFがあります。先にメニュー7を完了してください。');
+          incomplete++;
+          continue;
+        }
+        if (info.emails.length !== 1 || !validEmail_(info.emails[0]) || info.names.length !== 1) {
+          setUpdateStateValue_(checkState, leader, '草稿ステータス', '人工確認必要');
+          setUpdateStateValue_(
+            checkState,
+            leader,
+            '確認内容',
+            '同一Game ID内の本名またはメールが一致しません。K列・L列を正しい値へ統一し、AA列に理由、AB列を確認後、メニュー5を実行してください。'
+          );
+          errors++;
+          continue;
+        }
+        if (info.draftIds.length === 1 && text_(leader['草稿ステータス']) === '下書き作成済み') continue;
+        if (plans.length >= maxDrafts) break;
+        setUpdateStateValue_(checkState, leader, '草稿ステータス', '草稿作成中');
+        setUpdateStateValue_(checkState, leader, '確認内容', '');
+        plans.push({ groupKey, group, leader, existingDraftId: info.draftIds[0] || '' });
+      }
+
+      writeSheetUpdateState_(sheet, checkState);
+      SpreadsheetApp.flush();
+
+      for (const plan of plans) {
         if ((Date.now() - startedAt) / 1000 >= maxSeconds) {
           stoppedByTime = true;
           break;
         }
-        const group = groups[groupKey];
-        if (group.every(row => text_(row['Draft ID']))) continue;
-        if (group.some(row => !text_(row.PDF_FILE_ID))) {
-          incomplete++;
-          continue;
-        }
-        let draftMayExist = false;
+        const group = plan.group;
+        const leader = plan.leader;
         try {
-          const emails = uniqueStrings_(group.map(row => text_(row['メールアドレス']).toLowerCase()));
-          if (emails.length !== 1 || !validEmail_(emails[0])) throw new Error('同一申請内のメールアドレスが一致しません');
           const items = group.map(row => {
             const data = receiptDataFromCheckRow_(row, settings);
             data.receiptNo = text_(row['領収書No']);
@@ -840,43 +974,48 @@ const RSE = (() => {
             };
           });
           const draftKey = makeDraftKey_(items);
-          const existingDraftIds = uniqueStrings_(group.map(row => text_(row['Draft ID'])));
-          if (existingDraftIds.length > 1) throw new Error('同一申請内に複数のDraft IDがあります');
-          const recovering = group.some(row => text_(row['草稿ステータス']) === '草稿作成中');
-          group.forEach(row => writeCheckStatus_(sheet, row.__rowNo, '草稿作成中', ''));
-          SpreadsheetApp.flush();
-
-          let draft = existingDraftIds.length ? GmailApp.getDraft(existingDraftIds[0]) : null;
-          if (!draft && recovering) {
+          let draft = plan.existingDraftId ? GmailApp.getDraft(plan.existingDraftId) : null;
+          if (!draft) {
             if (!draftRecoveryMap) draftRecoveryMap = buildDraftRecoveryMap_();
             draft = draftRecoveryMap[draftKey] || null;
           }
           if (!draft) draft = createDraftForPreparedItems_(items, settings, draftKey);
-          draftMayExist = true;
           const draftId = draft.getId();
           if (draftRecoveryMap) draftRecoveryMap[draftKey] = draft;
-          const draftTo = draftRecipient_(items[0].data, settings);
-          items.forEach(item => {
-            updateCheckDraft_(sheet, item.rowNo, draftId, '下書き作成済み');
-            updateLedgerDraft_(ledgerSheet, item.pdfKey, draftId, draftTo, '下書き作成済み');
+          const draftTo = text_(items[0].data.email).toLowerCase();
+          setUpdateStateValue_(checkState, leader, 'Draft ID', draftId);
+          setUpdateStateValue_(checkState, leader, '草稿ステータス', '下書き作成済み');
+          setUpdateStateValue_(checkState, leader, '確認内容', '');
+          group.slice(1).forEach(row => {
+            ['Draft ID', '草稿ステータス', '送信OK', '送信ステータス', '送信日時']
+              .forEach(header => setUpdateStateValue_(checkState, row, header, ''));
           });
+          mutateLedgerFieldsForPdfKeys_(ledgerState, items.map(item => item.pdfKey), {
+            'Draft ID': draftId,
+            '草稿作成日時': new Date(),
+            '送信先': draftTo,
+            status: '下書き作成済み'
+          });
+          ledgerChanged = true;
           created++;
         } catch (error) {
           errors++;
           const message = error.message || String(error);
-          group.forEach(row => {
-            if (draftMayExist) writeCheckStatus_(sheet, row.__rowNo, '草稿作成中', message);
-            else writeCheckError_(sheet, row.__rowNo, message);
-          });
+          setUpdateStateValue_(checkState, leader, '草稿ステータス', 'エラー');
+          setUpdateStateValue_(checkState, leader, '確認内容', message);
         }
       }
 
-      const pending = readObjects_(sheet).filter(row =>
-        text_(row['処理方針']) === '新規発行' && text_(row.PDF_FILE_ID) && !text_(row['Draft ID'])
-      ).length;
+      writeSheetUpdateState_(sheet, checkState);
+      if (ledgerChanged) writeLedgerUpdateState_(ledgerSheet, ledgerState);
+      formatMailGroupControls_(sheet, groups);
+      const pending = Object.keys(groups).filter(gameId => {
+        const info = mailGroupInfo_(groups[gameId]);
+        return info.leader && text_(info.leader['送信ステータス']) !== '送信済み' && !text_(info.leader['Draft ID']);
+      }).length;
       alert_(
-        '未作成Gmail草稿処理が完了しました。\n\n作成: ' + created + '通\n未完成申請: ' + incomplete +
-        '\nエラー: ' + errors + '\n草稿未作成明細: ' + pending +
+        'Game ID単位のGmail草稿処理が完了しました。\n\n作成・復旧: ' + created + '通\nPDF未完成Game ID: ' + incomplete +
+        '\n人工確認・エラー: ' + errors + '\n草稿未作成Game ID: ' + pending +
         (stoppedByTime ? '\n自主停止時間に達したため、再度同じボタンを実行してください。' : '')
       );
     } finally {
@@ -895,69 +1034,111 @@ const RSE = (() => {
       const checkSheet = requiredSheet_(ss, CONFIG.CHECK_SHEET);
       const ledgerSheet = requiredSheet_(ss, CONFIG.LEDGER_SHEET);
       assertReceiptBatchConfirmed_(ss, checkSheet);
-      const rows = readCheckObjects_(checkSheet);
-      const draftGroups = {};
+      const checkState = readSheetUpdateState_(checkSheet);
+      const rows = checkState.objects;
+      const groups = groupCheckRowsForDraft_(
+        rows.filter(row => text_(row['処理方針']) === '新規発行')
+      );
+      const approvedGroups = [];
 
-      rows.forEach(row => {
-        const draftId = text_(row['Draft ID']);
-        if (!draftId || text_(row['送信ステータス']) === '送信済み') return;
-        if (!draftGroups[draftId]) draftGroups[draftId] = [];
-        draftGroups[draftId].push(row);
+      Object.keys(groups).forEach(gameId => {
+        const info = normalizeMailGroupDisplay_(checkState, groups[gameId]);
+        if (!info.leader || text_(info.leader['送信ステータス']) === '送信済み') return;
+        if (info.draftIds.length !== 1 || !isOn_(info.leader['送信OK'])) return;
+        approvedGroups.push(info);
       });
 
-      const approvedDraftIds = Object.keys(draftGroups).filter(draftId => {
-        return draftGroups[draftId].every(row => isOn_(row['送信OK']));
-      });
-
-      if (!approvedDraftIds.length) {
+      if (!approvedGroups.length) {
+        writeSheetUpdateState_(checkSheet, checkState);
+        const completedApplications = syncFormProcessedFromCheck_(ss, checkSheet, rows);
+        if (completedApplications) {
+          alert_(
+            '新規送信対象はありませんでした。\n\n' +
+            '既存の送信済み記録からForm回答を完了へ更新: ' + completedApplications + '件'
+          );
+          return;
+        }
         throw new Error('全添付行で送信OKになっているGmail草稿がありません。');
       }
 
       const settings = readSettings_(ss);
       const maxDrafts = positiveIntegerSetting_(settings.MAX_DRAFTS_PER_SEND, 20);
-      if (approvedDraftIds.length > maxDrafts) {
+      if (approvedGroups.length > maxDrafts) {
         throw new Error(
           '承認済み草稿が1回の送信上限を超えています。\n' +
-          '承認済み: ' + approvedDraftIds.length + '通 / 上限: ' + maxDrafts + '通'
+          '承認済み: ' + approvedGroups.length + '通 / 上限: ' + maxDrafts + '通'
         );
       }
 
       let sentDrafts = 0;
       let sentReceipts = 0;
       let errors = 0;
+      const ledgerState = readLedgerUpdateState_(ledgerSheet);
+      let ledgerChanged = false;
 
-      approvedDraftIds.forEach(draftId => {
-        const group = draftGroups[draftId];
+      approvedGroups.forEach(info => {
+        const pdfKeys = info.rows.map(row => text_(row.pdfKey));
+        setUpdateStateValue_(checkState, info.leader, '送信ステータス', '送信処理中');
+        setUpdateStateValue_(checkState, info.leader, '確認内容', '');
+        mutateLedgerFieldsForPdfKeys_(ledgerState, pdfKeys, {
+          status: '送信処理中',
+          '備考': 'Gmail送信開始'
+        });
+        ledgerChanged = true;
+      });
+      writeSheetUpdateState_(checkSheet, checkState);
+      if (ledgerChanged) writeLedgerUpdateState_(ledgerSheet, ledgerState);
+      SpreadsheetApp.flush();
+
+      approvedGroups.forEach(info => {
+        const group = info.rows;
+        const leader = info.leader;
+        const draftId = info.draftIds[0];
+        const pdfKeys = group.map(row => text_(row.pdfKey));
         try {
           const draft = GmailApp.getDraft(draftId);
           if (!draft) throw new Error('Gmail下書きが見つかりません: ' + draftId);
-          group.forEach(row => {
-            setCheckValue_(checkSheet, row.__rowNo, '送信ステータス', '送信処理中');
-            updateLedgerStatus_(ledgerSheet, text_(row.pdfKey), '送信処理中', 'Gmail送信開始');
-          });
           draft.send();
           const sentAt = new Date();
           sentDrafts++;
           sentReceipts += group.length;
 
+          setUpdateStateValue_(checkState, leader, '草稿ステータス', '送信済み');
+          setUpdateStateValue_(checkState, leader, '送信ステータス', '送信済み');
+          setUpdateStateValue_(checkState, leader, '送信日時', sentAt);
+          setUpdateStateValue_(checkState, leader, '確認内容', '');
+          mutateLedgerFieldsForPdfKeys_(ledgerState, pdfKeys, {
+            status: '送信済み',
+            'メール送信日時': sentAt
+          });
+
           group.forEach(row => {
-            updateCheckSent_(checkSheet, row.__rowNo, sentAt);
-            updateLedgerSent_(ledgerSheet, text_(row.pdfKey), sentAt);
+            markReplacedLedgerState_(
+              ledgerState,
+              text_(row.paymentKey),
+              text_(row.pdfKey)
+            );
           });
         } catch (error) {
           errors++;
           const message = error.message || String(error);
-          group.forEach(row => {
-            writeCheckSendError_(checkSheet, row.__rowNo, message);
-            updateLedgerStatus_(ledgerSheet, text_(row.pdfKey), '送信確認必要', message);
+          setUpdateStateValue_(checkState, leader, '送信ステータス', '送信確認必要');
+          setUpdateStateValue_(checkState, leader, '確認内容', message);
+          mutateLedgerFieldsForPdfKeys_(ledgerState, pdfKeys, {
+            status: '送信確認必要',
+            '備考': message
           });
         }
       });
 
+      writeSheetUpdateState_(checkSheet, checkState);
+      writeLedgerUpdateState_(ledgerSheet, ledgerState);
+      const completedApplications = syncFormProcessedFromCheck_(ss, checkSheet, rows);
       alert_(
         '承認済み草稿の送信処理が完了しました。\n\n' +
         '送信メール: ' + sentDrafts + '\n' +
         '領収書: ' + sentReceipts + '\n' +
+        '処理終了Form回答: ' + completedApplications + '\n' +
         'エラー: ' + errors
       );
     } finally {
@@ -968,15 +1149,14 @@ const RSE = (() => {
 
   function readApplications_(sheet, settings) {
     const table = readTable_(sheet);
-    const indexes = aliasIndexes_(table.headers, FORM_ALIASES, ['gameId', 'name', 'email']);
+    const indexes = aliasIndexes_(table.headers, FORM_ALIASES, ['gameId', 'name', 'email', 'startDate', 'endDate']);
     const groups = {};
     const invalid = [];
 
     table.rows.forEach((row, index) => {
       const rowNo = index + 2;
+      if (indexes.processed >= 0 && formStatusDone_(valueAt_(row, indexes.processed))) return;
       const rawEventName = valueAt_(row, indexes.eventName);
-      const formEventFilter = text_(settings.FORM_EVENT_FILTER);
-      if (formEventFilter && rawEventName && !sameEvent_(rawEventName, formEventFilter)) return;
 
       const app = {
         rowNo,
@@ -985,7 +1165,9 @@ const RSE = (() => {
         name: text_(valueAt_(row, indexes.name)),
         email: text_(valueAt_(row, indexes.email)).toLowerCase(),
         recipient: removeSama_(valueAt_(row, indexes.recipient)),
-        eventName: text_(rawEventName || settings.EVENT_NAME)
+        eventName: text_(rawEventName),
+        startDate: normalizeIsoDate_(valueAt_(row, indexes.startDate)),
+        endDate: normalizeIsoDate_(valueAt_(row, indexes.endDate))
       };
       app.applicationKey = makeApplicationKey_(app);
 
@@ -993,42 +1175,39 @@ const RSE = (() => {
       if (!app.gameId) errors.push('Game IDが不正または空白');
       if (!app.name) errors.push('本名が空白');
       if (!validEmail_(app.email)) errors.push('メールアドレスが不正');
-      if (indexes.eventName >= 0 && formEventFilter && !text_(rawEventName)) {
-        errors.push('対象イベントが空白');
-      }
-
+      if (!app.startDate) errors.push('対象期間（開始日）が不正または空白');
+      if (!app.endDate) errors.push('対象期間（終了日）が不正または空白');
+      if (app.startDate && app.endDate && app.startDate > app.endDate) errors.push('対象期間の開始日が終了日より後です');
       if (errors.length) {
         invalid.push({ application: app, message: 'Form ' + rowNo + '行: ' + errors.join(' / ') });
         return;
       }
 
-      if (!groups[app.gameId]) groups[app.gameId] = [];
-      groups[app.gameId].push(app);
+      if (!groups[app.applicationKey]) groups[app.applicationKey] = [];
+      groups[app.applicationKey].push(app);
     });
 
-    const byGameId = {};
-    Object.keys(groups).forEach(gameId => {
-      const applications = groups[gameId];
+    const byRequestKey = {};
+    Object.keys(groups).forEach(applicationKey => {
+      const applications = groups[applicationKey];
       const profiles = uniqueStrings_(applications.map(app => {
-        const parts = [compact_(app.name), app.email.toLowerCase(), compact_(app.recipient)];
-        if (text_(settings.FORM_EVENT_FILTER)) parts.push(compact_(app.eventName));
-        return parts.join('|');
+        return [compact_(app.name), app.email.toLowerCase(), compact_(app.recipient)].join('|');
       }));
       const latest = applications[applications.length - 1];
       const conflict = profiles.length > 1;
 
-      byGameId[gameId] = {
+      byRequestKey[applicationKey] = {
         application: latest,
         applications,
         conflict,
         duplicateExactCount: applications.length,
         message: conflict
-          ? '同一Game IDに本名・メール・宛名・イベントが異なるForm回答があります。対象回答を1件に整理してください'
+          ? '同一Game ID・同一対象期間に本名・メール・宛名が異なるForm回答があります。対象回答を1件に整理してください'
           : ''
       };
     });
 
-    return { byGameId, invalid };
+    return { byRequestKey, invalid };
   }
 
   function readPwRows_(sheet, settings) {
@@ -1061,8 +1240,6 @@ const RSE = (() => {
       if (!pw.gameId) errors.push('Game IDが不正または空白');
       if (!pw.tournament) errors.push('大会名が空白');
       if (!pw.year || !pw.month || !pw.day) errors.push('領収日が不足');
-      if (!dateInRange_(pw, settings.DATE_FROM, settings.DATE_TO)) errors.push('設定した対象日範囲外');
-
       if (errors.length) {
         invalid.push({ pw, message: 'PW TSV ' + rowNo + '行: ' + errors.join(' / ') });
         return;
@@ -1078,17 +1255,14 @@ const RSE = (() => {
 
   function createDraftForPreparedItems_(items, settings, draftKey) {
     const first = items[0].data;
-    const originalTo = first.email;
-    const testMode = isOn_(settings.TEST_MODE);
-    const to = draftRecipient_(first, settings);
+    const to = first.email;
     if (!validEmail_(to)) throw new Error('下書き宛先メールアドレスが不正です: ' + to);
 
-    const subject = (testMode ? '[EXP TEST] ' : '') + text_(settings.SUBJECT || '電子領収書の送付について');
+    const subject = text_(settings.SUBJECT || '電子領収書の送付について');
     const body = buildMailBody_(
       first.name,
-      settings.EVENT_LABEL || first.eventName,
-      items.length,
-      testMode ? originalTo : ''
+      eventLabelForItems_(items),
+      items.length
     );
     const attachments = items.map(item => item.file.getBlob().setName(item.file.getName()));
     const totalAttachmentBytes = attachments.reduce((sum, blob) => sum + blob.getBytes().length, 0);
@@ -1129,10 +1303,6 @@ const RSE = (() => {
     return map;
   }
 
-  function draftRecipient_(data, settings) {
-    return isOn_(settings.TEST_MODE) ? text_(settings.TEST_EMAIL) : text_(data.email).toLowerCase();
-  }
-
   function receiptDataFromCheckRow_(row, settings) {
     const total = money_(row['総金額']);
     const tax = Math.floor(total / 11);
@@ -1141,7 +1311,7 @@ const RSE = (() => {
       name: text_(row['本名']),
       email: text_(row['メールアドレス']).toLowerCase(),
       recipient: removeSama_(row['宛名']),
-      eventName: text_(row.eventName || settings.EVENT_NAME),
+      eventName: text_(row.eventName || eventLabelFromTournament_(row['大会名'])),
       purchaseTime: text_(row['購入時間']),
       year: text_(row['年']),
       month: text_(row['月']),
@@ -1159,13 +1329,10 @@ const RSE = (() => {
     };
   }
 
-  function buildMailBody_(name, eventName, count, originalTo) {
-    const testNotice = originalTo
-      ? '【実験モード】本来の送信先: ' + originalTo + '\n\n'
-      : '';
+  function buildMailBody_(name, eventName, count) {
     const addressee = text_(name) ? text_(name) + ' 様' : 'お客様';
     const eventLabel = formatEventLabel_(eventName);
-    return testNotice + `${addressee}
+    return `${addressee}
 
 平素よりお世話になっております。
 ジャパンオープンポーカーツアー株式会社カスタマーサポートのショウです。
@@ -1177,11 +1344,6 @@ const RSE = (() => {
 
 ご不明点やご質問などがございましたら、本メールへのご返信にてお気軽にお問い合わせください。
 今後ともどうぞよろしくお願いいたします。`;
-  }
-
-  function makeReceiptPdfBlob_(data, settings) {
-    const html = buildReceiptHtml_(data, settings);
-    return Utilities.newBlob(html, 'text/html', 'receipt.html').getAs(MimeType.PDF);
   }
 
   function buildReceiptHtml_(data, settings) {
@@ -1218,19 +1380,28 @@ const RSE = (() => {
   }
 
   function makeReceiptFileName_(data, settings) {
-    const label = formatEventLabel_(settings.EVENT_LABEL || data.eventName || settings.EVENT_NAME);
+    const label = formatEventLabel_(eventLabelFromTournament_(data.tournament) || data.eventName);
     const name = data.name ? data.name + ' 様' : 'お客様';
     return sanitizeFileName_(label + ' 領収書_' + name + '-' + data.receiptNo + '.pdf');
   }
 
   function appendLedger_(sheet, item) {
+    appendLedgerRows_(sheet, [makeLedgerRowArray_(item)]);
+  }
+
+  function makeLedgerRowArray_(item) {
     const d = item.data;
-    sheet.appendRow([
+    return [
       item.pdfKey, item.paymentKey, item.receiptNo, d.gameId, d.name, d.email,
       d.recipient, d.eventName, d.tournament, d.purchaseTime, d.type, d.total,
       item.file.getId(), item.file.getUrl(), '', '', '', '', item.status,
       item.applicationKey, item.note || ''
-    ]);
+    ];
+  }
+
+  function appendLedgerRows_(sheet, rows) {
+    if (!rows || !rows.length) return;
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, LEDGER_HEADERS.length).setValues(rows);
   }
 
 
@@ -1250,43 +1421,149 @@ const RSE = (() => {
     return { byPdfKey, byPaymentKey };
   }
 
-  function updateLedgerDraft_(sheet, pdfKey, draftId, draftTo, status) {
-    updateLedgerByPdfKey_(sheet, pdfKey, row => {
-      row['Draft ID'] = draftId;
-      row['草稿作成日時'] = new Date();
-      row['送信先'] = draftTo;
-      row.status = status;
-    });
-  }
-
-  function updateLedgerSent_(sheet, pdfKey, sentAt) {
-    updateLedgerByPdfKey_(sheet, pdfKey, row => {
-      row['メール送信日時'] = sentAt;
-      row.status = '送信済み';
-    });
-  }
-
-  function updateLedgerStatus_(sheet, pdfKey, status, note) {
-    updateLedgerByPdfKey_(sheet, pdfKey, row => {
-      row.status = status;
-      row['備考'] = note || row['備考'];
-    });
-  }
-
-  function updateLedgerByPdfKey_(sheet, pdfKey, mutator) {
-    if (!pdfKey || sheet.getLastRow() < 2) return;
+  function readLedgerUpdateState_(sheet) {
     const values = sheet.getDataRange().getValues();
     const headers = values[0].map(text_);
-    const keyCol = headers.indexOf('pdfKey');
-    for (let r = values.length - 1; r >= 1; r--) {
-      if (text_(values[r][keyCol]) !== pdfKey) continue;
-      const obj = {};
-      headers.forEach((header, index) => { obj[header] = values[r][index]; });
-      mutator(obj);
-      headers.forEach((header, index) => { values[r][index] = obj[header]; });
-      sheet.getRange(r + 1, 1, 1, headers.length).setValues([values[r]]);
-      return;
+    const columns = {};
+    headers.forEach((header, index) => { columns[header] = index; });
+    const byPdfKey = {};
+    const byPaymentKey = {};
+
+    for (let rowIndex = 1; rowIndex < values.length; rowIndex++) {
+      const rowNo = rowIndex + 1;
+      const pdfKey = text_(values[rowIndex][columns.pdfKey]);
+      const paymentKey = text_(values[rowIndex][columns.paymentKey]);
+      if (pdfKey) byPdfKey[pdfKey] = rowNo;
+      if (paymentKey) {
+        if (!byPaymentKey[paymentKey]) byPaymentKey[paymentKey] = [];
+        byPaymentKey[paymentKey].push(rowNo);
+      }
     }
+    return { values, headers, columns, byPdfKey, byPaymentKey };
+  }
+
+  function mutateLedgerFieldsForPdfKeys_(state, pdfKeys, fields) {
+    const rowNos = uniqueStrings_((pdfKeys || []).map(pdfKey => state.byPdfKey[text_(pdfKey)]));
+    rowNos.forEach(rowNo => {
+      Object.keys(fields).forEach(header => {
+        const column = state.columns[header];
+        if (column === undefined) throw new Error('管理表列が見つかりません: ' + header);
+        state.values[rowNo - 1][column] = fields[header];
+      });
+    });
+    return rowNos;
+  }
+
+  function writeLedgerUpdateState_(sheet, state) {
+    if (state.values.length < 2) return;
+    sheet.getRange(2, 1, state.values.length - 1, state.headers.length)
+      .setValues(state.values.slice(1));
+  }
+
+  function markReplacedLedgerState_(state, paymentKey, activePdfKey) {
+    if (!paymentKey || !activePdfKey) return [];
+    const changedRowNos = [];
+    const paymentCol = state.columns.paymentKey;
+    const pdfCol = state.columns.pdfKey;
+    const statusCol = state.columns.status;
+    const noteCol = state.columns['備考'];
+    (state.byPaymentKey[paymentKey] || []).forEach(rowNo => {
+      const row = state.values[rowNo - 1];
+      if (text_(row[paymentCol]) !== paymentKey) return;
+      if (text_(row[pdfCol]) === activePdfKey) return;
+      if (CONFIG.INACTIVE_LEDGER_STATUSES.indexOf(text_(row[statusCol])) >= 0) return;
+      row[statusCol] = '差替済み';
+      row[noteCol] = '差替先: ' + activePdfKey;
+      changedRowNos.push(rowNo);
+    });
+    return changedRowNos;
+  }
+
+  function ensureFormProcessedColumn_(sheet) {
+    const lastColumn = Math.max(sheet.getLastColumn(), 1);
+    const headers = sheet.getRange(1, 1, 1, lastColumn).getDisplayValues()[0].map(text_);
+    let column = headers.findIndex(header => normalizeHeader_(header) === normalizeHeader_(CONFIG.FORM_PROCESSED_HEADER)) + 1;
+
+    if (!column) {
+      column = lastColumn + 1;
+      if (sheet.getMaxColumns() < column) sheet.insertColumnAfter(sheet.getMaxColumns());
+      sheet.getRange(1, column).setValue(CONFIG.FORM_PROCESSED_HEADER);
+    }
+
+    const statusRule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(['自動', '完了', '重複'], true)
+      .setAllowInvalid(false)
+      .build();
+    const validationRowCount = Math.max(sheet.getMaxRows() - 1, 1);
+    sheet.getRange(2, column, validationRowCount, 1).setDataValidation(statusRule);
+
+    if (sheet.getLastRow() >= 2) {
+      const range = sheet.getRange(2, column, sheet.getLastRow() - 1, 1);
+      const values = range.getValues().map(row => {
+        const value = row[0];
+        if (value === true || text_(value) === '完了') return ['完了'];
+        if (text_(value) === '重複') return ['重複'];
+        return ['自動'];
+      });
+      range.setValues(values);
+    }
+    return column;
+  }
+
+  function syncFormProcessedFromCheck_(ss, checkSheet, currentCheckRows) {
+    const settings = readSettings_(ss);
+    const formSheet = requiredSheet_(ss, settings.FORM_SHEET_NAME || CONFIG.DEFAULT_FORM_SHEET);
+    const processedColumn = ensureFormProcessedColumn_(formSheet);
+    const checkRows = currentCheckRows || readCheckObjects_(checkSheet);
+    const completedApplicationKeys = completedApplicationKeysFromCheckRows_(checkRows);
+
+    if (!completedApplicationKeys.size || formSheet.getLastRow() < 2) return 0;
+
+    const values = formSheet.getDataRange().getDisplayValues();
+    const indexes = aliasIndexes_(values[0], FORM_ALIASES, ['gameId', 'startDate', 'endDate']);
+    const processedValues = values.slice(1).map(row => [row[processedColumn - 1]]);
+    let updated = 0;
+    for (let rowIndex = 1; rowIndex < values.length; rowIndex++) {
+      const applicationKey = makeApplicationKey_({
+        gameId: valueAt_(values[rowIndex], indexes.gameId),
+        startDate: valueAt_(values[rowIndex], indexes.startDate),
+        endDate: valueAt_(values[rowIndex], indexes.endDate)
+      });
+      if (!completedApplicationKeys.has(applicationKey) || formStatusDone_(values[rowIndex][processedColumn - 1])) continue;
+      processedValues[rowIndex - 1][0] = '完了';
+      updated++;
+    }
+    if (updated) {
+      formSheet.getRange(2, processedColumn, processedValues.length, 1).setValues(processedValues);
+    }
+    return updated;
+  }
+
+  function completedApplicationKeysFromCheckRows_(checkRows) {
+    const byApplicationKey = {};
+    const sentGameIds = new Set();
+
+    (checkRows || []).forEach(row => {
+      if (text_(row['送信ステータス']) === '送信済み') {
+        const gameId = normalizeGameId_(row['Game ID']);
+        if (gameId) sentGameIds.add(gameId);
+      }
+      const applicationKey = text_(row['申請キー']);
+      if (!applicationKey) return;
+      if (!byApplicationKey[applicationKey]) byApplicationKey[applicationKey] = [];
+      byApplicationKey[applicationKey].push(row);
+    });
+
+    const completedApplicationKeys = new Set();
+    Object.keys(byApplicationKey).forEach(applicationKey => {
+      const rows = byApplicationKey[applicationKey];
+      const issueRows = rows.filter(row => text_(row['処理方針']) === '新規発行');
+      const completed = issueRows.length
+        ? issueRows.every(row => sentGameIds.has(normalizeGameId_(row['Game ID'])))
+        : rows.every(row => ['対象外', '重複として除外'].indexOf(text_(row['処理方針'])) >= 0);
+      if (completed) completedApplicationKeys.add(applicationKey);
+    });
+    return completedApplicationKeys;
   }
 
 
@@ -1294,65 +1571,124 @@ const RSE = (() => {
     return readObjects_(sheet).map((row, index) => Object.assign(row, { __rowNo: index + 2 }));
   }
 
-
-  function updateCheckDraft_(sheet, rowNo, draftId, status) {
-    setCheckValue_(sheet, rowNo, 'Draft ID', draftId);
-    setCheckValue_(sheet, rowNo, '草稿ステータス', status);
-    setCheckValue_(sheet, rowNo, '確認内容', '');
+  function readSheetUpdateState_(sheet) {
+    const values = sheet.getDataRange().getValues();
+    const headers = values[0].map(text_);
+    const columns = {};
+    headers.forEach((header, index) => { columns[header] = index; });
+    const objects = values.slice(1).map((row, index) => {
+      const object = { __rowNo: index + 2 };
+      headers.forEach((header, column) => { object[header] = row[column]; });
+      return object;
+    });
+    return { values, headers, columns, objects };
   }
 
-  function updateCheckSent_(sheet, rowNo, sentAt) {
-    setCheckValue_(sheet, rowNo, '送信ステータス', '送信済み');
-    setCheckValue_(sheet, rowNo, '送信日時', sentAt);
-    setCheckValue_(sheet, rowNo, '確認内容', '');
+  function setUpdateStateValue_(state, row, header, value) {
+    const column = state.columns[header];
+    if (column === undefined) throw new Error('Sheet列が見つかりません: ' + header);
+    row[header] = value;
+    state.values[row.__rowNo - 1][column] = value;
   }
 
-  function writeCheckError_(sheet, rowNo, message) {
-    setCheckValue_(sheet, rowNo, '草稿ステータス', 'エラー');
-    setCheckValue_(sheet, rowNo, '確認内容', message);
+  function writeSheetUpdateState_(sheet, state) {
+    if (state.values.length < 2) return;
+    sheet.getRange(2, 1, state.values.length - 1, state.headers.length)
+      .setValues(state.values.slice(1));
   }
 
-  function writeCheckStatus_(sheet, rowNo, status, message) {
-    setCheckValue_(sheet, rowNo, '草稿ステータス', status);
-    setCheckValue_(sheet, rowNo, '確認内容', message);
-  }
 
-  function writeCheckSendError_(sheet, rowNo, message) {
-    setCheckValue_(sheet, rowNo, '送信ステータス', '送信確認必要');
-    setCheckValue_(sheet, rowNo, '確認内容', message);
-  }
-
-  function setCheckValue_(sheet, rowNo, header, value) {
-    const column = CHECK_HEADERS.indexOf(header) + 1;
-    if (column < 1) throw new Error('RSE_CHECK列が定義されていません: ' + header);
-    sheet.getRange(rowNo, column).setValue(value);
+  function columnToLetter_(column) {
+    let value = Math.floor(Number(column));
+    let result = '';
+    while (value > 0) {
+      value--;
+      result = String.fromCharCode(65 + (value % 26)) + result;
+      value = Math.floor(value / 26);
+    }
+    return result;
   }
 
   function groupCheckRowsForDraft_(rows) {
     const groups = {};
     rows.forEach(row => {
-      const key = [
-        text_(row['メールアドレス']).toLowerCase(),
-        compact_(row['本名']) || normalizeGameId_(row['Game ID'])
-      ].join('|');
+      const key = normalizeGameId_(row['Game ID']);
+      if (!key) return;
       if (!groups[key]) groups[key] = [];
       groups[key].push(row);
+    });
+    Object.keys(groups).forEach(key => {
+      groups[key].sort((a, b) => Number(a.__rowNo || 0) - Number(b.__rowNo || 0));
     });
     return groups;
   }
 
-  function validateGameIdSettings_(settings) {
-    validateCheckSettings_(settings);
-    if (!text_(settings.PW_DATE_RANGE)) {
-      throw new Error('RSE_設定のPW_DATE_RANGEが空です');
-    }
+  function mailGroupInfo_(group) {
+    const rows = (group || []).slice().sort((a, b) => Number(a.__rowNo || 0) - Number(b.__rowNo || 0));
+    return {
+      rows,
+      leader: rows[0] || null,
+      gameId: rows.length ? normalizeGameId_(rows[0]['Game ID']) : '',
+      names: uniqueStrings_(rows.map(row => text_(row['本名'])).filter(Boolean)),
+      emails: uniqueStrings_(rows.map(row => text_(row['メールアドレス']).toLowerCase()).filter(Boolean)),
+      draftIds: uniqueStrings_(rows.map(row => text_(row['Draft ID'])).filter(Boolean)),
+      draftStatuses: uniqueStrings_(rows.map(row => text_(row['草稿ステータス'])).filter(Boolean)),
+      sendStatuses: uniqueStrings_(rows.map(row => text_(row['送信ステータス'])).filter(Boolean)),
+      sentTimes: rows.map(row => row['送信日時']).filter(value => text_(value)),
+      approved: rows.some(row => isOn_(row['送信OK']))
+    };
   }
 
-  function parseSettingList_(value) {
-    return uniqueStrings_(String(value || '')
-      .split(/[\r\n,、]+/)
-      .map(text_)
-      .filter(Boolean));
+  function normalizeMailGroupDisplay_(state, group) {
+    const info = mailGroupInfo_(group);
+    if (!info.leader) return info;
+    const leader = info.leader;
+    const draftId = info.draftIds.length === 1 ? info.draftIds[0] : '';
+    const sent = info.sendStatuses.indexOf('送信済み') >= 0;
+    const sendStatus = sent
+      ? '送信済み'
+      : (info.sendStatuses.length === 1 ? info.sendStatuses[0] : '');
+    const draftStatus = sent
+      ? '送信済み'
+      : (info.draftStatuses.length === 1 ? info.draftStatuses[0] : '');
+    const sentAt = info.sentTimes.length ? info.sentTimes[0] : '';
+
+    setUpdateStateValue_(state, leader, 'Draft ID', draftId);
+    setUpdateStateValue_(state, leader, '草稿ステータス', draftStatus);
+    setUpdateStateValue_(state, leader, '送信OK', info.approved);
+    setUpdateStateValue_(state, leader, '送信ステータス', sendStatus);
+    setUpdateStateValue_(state, leader, '送信日時', sentAt);
+    info.rows.slice(1).forEach(row => {
+      ['Draft ID', '草稿ステータス', '送信OK', '送信ステータス', '送信日時']
+        .forEach(header => setUpdateStateValue_(state, row, header, ''));
+    });
+
+    if (info.draftIds.length > 1) {
+      setUpdateStateValue_(state, leader, '草稿ステータス', '人工確認必要');
+      setUpdateStateValue_(
+        state,
+        leader,
+        '確認内容',
+        '同一Game IDに複数Draft IDがあります: ' + info.draftIds.join(', ') +
+        '。Gmailで正しい草稿を確認し、余分な草稿を削除してからAI列へ正しいDraft IDを入力してください。'
+      );
+    }
+    return info;
+  }
+
+  function applyMailGroupConflictToCheck_(state, group) {
+    const info = mailGroupInfo_(group);
+    if (!info.leader || (info.names.length <= 1 && info.emails.length <= 1)) return false;
+    setUpdateStateValue_(state, info.leader, '判定', '確認必要');
+    setUpdateStateValue_(state, info.leader, '確認状態', '未確定');
+    setUpdateStateValue_(state, info.leader, 'confirmedHash', '');
+    setUpdateStateValue_(
+      state,
+      info.leader,
+      '確認内容',
+      '同一Game ID内の本名またはメールが一致しません。グループ先頭行のK列・L列を正しい値へ修正し、AA列へ理由、AB列をONにしてメニュー5を実行してください。先頭行の値を同一Game ID全体へ適用します。'
+    );
+    return true;
   }
 
   function objectMapBy_(rows, key) {
@@ -1467,16 +1803,20 @@ const RSE = (() => {
     rows.forEach(row => {
       if (text_(row['処理方針']) !== '採用') return;
       const gameId = normalizeGameId_(row['Game ID']);
-      if (map[gameId]) {
-        throw new Error('採用済みGame IDがCHECK内で重複しています: ' + gameId);
+      const applicationKey = text_(row['申請キー']);
+      const period = parseApplicationKey_(applicationKey);
+      if (!applicationKey || !period.startDate || !period.endDate) {
+        throw new Error('申請キーから対象期間を取得できません: ' + applicationKey);
       }
-      map[gameId] = {
+      map[applicationKey] = {
         gameId,
         name: text_(row['確定本名']),
         email: text_(row['確定メールアドレス']).toLowerCase(),
         recipient: removeSama_(row['確定宛名']),
         eventName: text_(row.eventName),
-        applicationKey: text_(row['申請キー'])
+        startDate: period.startDate,
+        endDate: period.endDate,
+        applicationKey
       };
     });
     return map;
@@ -1544,6 +1884,26 @@ const RSE = (() => {
     sheet.getRange(2, 26, rowCount, 1).setDataValidation(validation);
   }
 
+  function formatMailGroupControls_(sheet, groups) {
+    const rowCount = Math.max(sheet.getLastRow() - 1, 0);
+    if (!rowCount) return;
+    const sendOkColumn = CHECK_HEADERS.indexOf('送信OK') + 1;
+    const mailStartColumn = CHECK_HEADERS.indexOf('Draft ID') + 1;
+    sheet.getRange(2, sendOkColumn, rowCount, 1).clearDataValidations();
+    sheet.getRange(2, mailStartColumn, rowCount, 5).setBackground(null);
+    const leaderRows = Object.keys(groups || {})
+      .map(gameId => mailGroupInfo_(groups[gameId]).leader)
+      .filter(Boolean)
+      .map(row => row.__rowNo);
+    if (!leaderRows.length) return;
+    const sendOkLetter = columnToLetter_(sendOkColumn);
+    const mailStartLetter = columnToLetter_(mailStartColumn);
+    const mailEndLetter = columnToLetter_(mailStartColumn + 4);
+    sheet.getRangeList(leaderRows.map(rowNo => sendOkLetter + rowNo)).insertCheckboxes();
+    sheet.getRangeList(leaderRows.map(rowNo => mailStartLetter + rowNo + ':' + mailEndLetter + rowNo))
+      .setBackground('#fff2cc');
+  }
+
   function setHeaderValue_(sheet, headers, rowNo, header, value) {
     const column = headers.indexOf(header) + 1;
     if (column < 1) throw new Error('列が定義されていません: ' + header);
@@ -1554,11 +1914,10 @@ const RSE = (() => {
     return text_(Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail() || 'unknown');
   }
 
-  function showPwInputDialog_(dateRange, tsv, count) {
+  function showPwInputDialog_(tsv, count) {
     const html = HtmlService.createHtmlOutput(
       '<div style="font-family:Arial,sans-serif;padding:12px">' +
-      '<div style="margin-bottom:8px"><b>検索期間 / dateRange</b><br>' + escapeHtml_(dateRange) + '</div>' +
-      '<div style="margin-bottom:6px"><b>Input: Game ID + 対象キーワード (' + count + '行)</b></div>' +
+      '<div style="margin-bottom:6px"><b>Input: Game ID (' + count + '行)</b></div>' +
       '<textarea id="rseTsv" readonly style="width:100%;height:330px;box-sizing:border-box;font-family:monospace">' +
       escapeHtml_(tsv) + '</textarea>' +
       '<button style="margin-top:10px;width:100%;height:38px" onclick="var x=document.getElementById(\'rseTsv\');x.select();document.execCommand(\'copy\');this.textContent=\'コピー済み\';">TSVをコピー</button>' +
@@ -1593,35 +1952,28 @@ const RSE = (() => {
 
   function buildSharedValueMap_(applications, field) {
     const map = {};
-    Object.keys(applications).forEach(gameId => {
-      const info = applications[gameId];
+    Object.keys(applications).forEach(key => {
+      const info = applications[key];
       if (!info || info.conflict) return;
       const raw = field === 'email'
         ? text_(info.application[field]).toLowerCase()
         : compact_(info.application[field]);
       if (!raw) return;
       if (!map[raw]) map[raw] = [];
-      map[raw].push(gameId);
+      const gameId = normalizeGameId_(info.application.gameId);
+      if (gameId && map[raw].indexOf(gameId) < 0) map[raw].push(gameId);
     });
     return map;
   }
 
 
   function makeApplicationKey_(app) {
-    return [
-      app.rowNo,
-      app.gameId,
-      compact_(app.timestamp),
-      app.email,
-      compact_(app.recipient),
-      compact_(app.eventName)
-    ].join('__');
+    return ['REQ', normalizeGameId_(app.gameId), normalizeIsoDate_(app.startDate), normalizeIsoDate_(app.endDate)].join('__');
   }
 
   function makePaymentKey_(data) {
     return [
       normalizeGameId_(data.gameId),
-      compact_(data.eventName),
       compact_(data.tournament),
       compact_(data.purchaseTime),
       compact_(data.type),
@@ -1695,12 +2047,23 @@ const RSE = (() => {
     const existing = {};
     if (sheet.getLastRow() >= 2) {
       sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getDisplayValues().forEach(row => {
-        existing[text_(row[0])] = true;
+        const key = text_(row[0]);
+        if (key) existing[key] = row[1];
       });
     }
-    SETTINGS_DEFAULTS.forEach(row => {
-      if (!existing[row[0]]) sheet.appendRow(row);
-    });
+    const rows = SETTINGS_DEFAULTS.map(row => [
+      row[0],
+      Object.prototype.hasOwnProperty.call(existing, row[0]) ? existing[row[0]] : row[1],
+      row[2]
+    ]);
+    if (sheet.getLastRow() >= 2) {
+      sheet.getRange(2, 1, sheet.getLastRow() - 1, SETTINGS_HEADERS.length).clearContent();
+    }
+    if (rows.length) sheet.getRange(2, 1, rows.length, SETTINGS_HEADERS.length).setValues(rows);
+    const trailingRows = sheet.getLastRow() - rows.length - 1;
+    if (trailingRows > 0) {
+      sheet.getRange(rows.length + 2, 1, trailingRows, SETTINGS_HEADERS.length).clearContent();
+    }
   }
 
   function readSettings_(ss) {
@@ -1720,22 +2083,22 @@ const RSE = (() => {
   }
 
   function validateGenerationSettings_(settings) {
-    validateCheckSettings_(settings);
     if (!text_(settings.RECEIPT_FOLDER_URL)) throw new Error('RSE_設定のRECEIPT_FOLDER_URLが空です');
-    if (isOn_(settings.TEST_MODE) && !validEmail_(settings.TEST_EMAIL)) {
-      throw new Error('TEST_MODE=ONですがTEST_EMAILが不正です');
-    }
-  }
-
-  function validateCheckSettings_(settings) {
-    if (!text_(settings.EVENT_NAME)) {
-      throw new Error('RSE_設定のEVENT_NAMEが空です。対象イベントを明示してください');
-    }
   }
 
   function positiveIntegerSetting_(value, fallback) {
     const number = Math.floor(Number(value));
     return Number.isFinite(number) && number > 0 ? number : fallback;
+  }
+
+  function optionalPositiveIntegerSetting_(value) {
+    const raw = text_(value);
+    if (!raw) return 0;
+    const number = Math.floor(Number(raw));
+    if (!Number.isFinite(number) || number < 1) {
+      throw new Error('MAX_RECEIPTS_PER_RUNは空白または1以上の整数を設定してください');
+    }
+    return number;
   }
 
   function positiveNumberSetting_(value, fallback) {
@@ -1772,18 +2135,6 @@ const RSE = (() => {
     }
   }
 
-  function dateInRange_(pw, fromText, toText) {
-    if (!fromText && !toText) return true;
-    const iso = [pw.year, String(pw.month).padStart(2, '0'), String(pw.day).padStart(2, '0')].join('-');
-    if (fromText && iso < fromText) return false;
-    if (toText && iso > toText) return false;
-    return true;
-  }
-
-  function sameEvent_(a, b) {
-    return compact_(a) === compact_(b);
-  }
-
   function uniqueStrings_(values) {
     return Array.from(new Set(values.filter(Boolean)));
   }
@@ -1795,6 +2146,45 @@ const RSE = (() => {
   function normalizeGameId_(value) {
     const digits = String(value === null || value === undefined ? '' : value).replace(/\D/g, '');
     return digits.length === 8 ? digits : '';
+  }
+
+  function normalizeIsoDate_(value) {
+    if (value instanceof Date && !isNaN(value.getTime())) {
+      return Utilities.formatDate(value, Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd');
+    }
+    const source = text_(value).normalize ? text_(value).normalize('NFKC') : text_(value);
+    let match = source.match(/^(\d{4})[\/.\-年](\d{1,2})[\/.\-月](\d{1,2})日?$/);
+    if (!match) {
+      const dayFirst = source.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})$/);
+      if (dayFirst) match = [dayFirst[0], dayFirst[3], dayFirst[2], dayFirst[1]];
+    }
+    if (!match) return '';
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (date.getUTCFullYear() !== year || date.getUTCMonth() + 1 !== month || date.getUTCDate() !== day) return '';
+    return [year, String(month).padStart(2, '0'), String(day).padStart(2, '0')].join('-');
+  }
+
+  function parseApplicationKey_(applicationKey) {
+    const parts = text_(applicationKey).split('__');
+    return parts.length === 4 && parts[0] === 'REQ'
+      ? { gameId: normalizeGameId_(parts[1]), startDate: normalizeIsoDate_(parts[2]), endDate: normalizeIsoDate_(parts[3]) }
+      : { gameId: '', startDate: '', endDate: '' };
+  }
+
+  function pwIsoDate_(pw) {
+    return normalizeIsoDate_([pw.year, pw.month, pw.day].join('-'));
+  }
+
+  function pwMatchesApplicationPeriod_(pw, app) {
+    const date = pwIsoDate_(pw);
+    return Boolean(date && app && app.startDate && app.endDate && date >= app.startDate && date <= app.endDate);
+  }
+
+  function formStatusDone_(value) {
+    return value === true || ['完了', '重複'].indexOf(text_(value)) >= 0;
   }
 
   function text_(value) {
@@ -1836,9 +2226,24 @@ const RSE = (() => {
 
   function formatEventLabel_(value) {
     const text = text_(value);
-    if (!text) return '【EXP】';
+    if (!text) return '各大会';
     if (/^【.*】$/.test(text)) return text;
     return '【' + text.replace(/^【|】$/g, '') + '】';
+  }
+
+  function eventLabelFromTournament_(tournament) {
+    const name = text_(tournament);
+    if (!name) return '';
+    const bracket = name.match(/^【[^】]+】/);
+    return bracket ? bracket[0] : name;
+  }
+
+  function eventLabelForItems_(items) {
+    const labels = uniqueStrings_((items || []).map(item =>
+      eventLabelFromTournament_(item && item.data ? item.data.tournament : '')
+    ));
+    if (!labels.length) return '各大会';
+    return labels.join('・');
   }
 
   function sanitizeFileName_(value) {
@@ -1872,13 +2277,20 @@ const RSE = (() => {
     confirmReceiptCheck,
     assignReceiptNumbers,
     generatePendingFiles,
+    getRenderBatch,
+    saveRenderedPdfBatch,
     createPendingDrafts,
     sendApproved,
     _test: {
-      normalizeGameId_, makePaymentKey_, makePdfKey_, money_, calcTotal_, compact_,
-      hash_, parseSettingList_, gameIdFinalHash_, receiptFinalHash_, receiptBatchHash_,
+      normalizeGameId_, makePaymentKey_, makePdfKey_, money_, calcTotal_, compact_, text_,
+      hash_, gameIdFinalHash_, receiptFinalHash_, receiptBatchHash_,
       isGameIdCheckRowResolved_, isReceiptCheckRowResolved_, makeReceiptFileName_,
-      makeReceiptCheckRow_, buildReceiptCheckRows_, groupCheckRowsForDraft_
+      makeReceiptCheckRow_, buildReceiptCheckRows_, groupCheckRowsForDraft_,
+      completedApplicationKeysFromCheckRows_, receiptIntersectionStats_,
+      normalizeIsoDate_, parseApplicationKey_, pwMatchesApplicationPeriod_,
+      readLedgerUpdateState_, mutateLedgerFieldsForPdfKeys_, markReplacedLedgerState_,
+      readSheetUpdateState_, normalizeMailGroupDisplay_, mailGroupInfo_,
+      columnToLetter_
     }
   };
 })();
@@ -1917,6 +2329,14 @@ function RSE_assignReceiptNumbers() {
 
 function RSE_generatePendingFiles() {
   RSE.generatePendingFiles();
+}
+
+function RSE_getRenderBatch(options) {
+  return RSE.getRenderBatch(options);
+}
+
+function RSE_saveRenderedPdfBatch(payload) {
+  return RSE.saveRenderedPdfBatch(payload);
 }
 
 function RSE_createPendingDrafts() {

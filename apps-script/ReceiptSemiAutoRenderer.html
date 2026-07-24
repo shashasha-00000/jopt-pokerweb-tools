@@ -1,0 +1,292 @@
+<!doctype html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <style>
+    body{font-family:Arial,"Yu Gothic",sans-serif;margin:0;padding:18px;background:#f4f6f8;color:#1f2937}
+    .card{background:#fff;border:1px solid #d8dee6;border-radius:10px;padding:16px}
+    h2{font-size:18px;margin:0 0 10px}
+    .status{white-space:pre-wrap;line-height:1.55;background:#111827;color:#d1fae5;border-radius:8px;padding:12px;min-height:110px}
+    .bar{height:12px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin:14px 0}
+    .bar i{display:block;height:100%;width:0;background:#16a34a;transition:width .2s}
+    button{width:100%;height:42px;border:0;border-radius:8px;font-weight:700;cursor:pointer;margin-top:10px}
+    #start{background:#2563eb;color:#fff}#stop{background:#e5e7eb;color:#111827}
+    button:disabled{opacity:.45;cursor:not-allowed}
+    iframe{position:fixed;left:-20000px;top:0;width:1123px;height:794px;border:0;background:#fff}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>領収書PDF ブラウザ生成</h2>
+    <div>GSの番号・ファイル名・管理方式を維持し、PDF描画だけをこのブラウザで実行します。</div>
+    <div class="bar"><i id="bar"></i></div>
+    <div class="status" id="status">開始してください。</div>
+    <button id="start">未生成PDFを生成</button>
+    <button id="stop" disabled>現在の1件が終わったら停止</button>
+  </div>
+  <iframe id="renderFrame"></iframe>
+  <script>
+    const statusBox = document.getElementById('status');
+    const startButton = document.getElementById('start');
+    const stopButton = document.getElementById('stop');
+    const bar = document.getElementById('bar');
+    const frame = document.getElementById('renderFrame');
+    const FETCH_BATCH_SIZE = 20;
+    const UPLOAD_BATCH_SIZE = 5;
+    let running = false;
+    let stopRequested = false;
+    let frameReady = false;
+    let initialPending = 0;
+    let runLimit = 0;
+    let runTarget = 0;
+    let completed = 0;
+
+    function setStatus(message) {
+      statusBox.textContent = message;
+    }
+
+    function callGs(functionName, argument) {
+      return new Promise((resolve, reject) => {
+        let runner = google.script.run
+          .withSuccessHandler(resolve)
+          .withFailureHandler(error => reject(new Error(error && error.message ? error.message : String(error))));
+        if (argument === undefined) runner[functionName]();
+        else runner[functionName](argument);
+      });
+    }
+
+    function loadReceiptHtml(html) {
+      if (frameReady && frame.contentDocument && frame.contentDocument.body) {
+        const parsed = new DOMParser().parseFromString(html, 'text/html');
+        frame.contentDocument.body.innerHTML = parsed.body.innerHTML;
+        return new Promise(resolve => {
+          requestAnimationFrame(() => requestAnimationFrame(() => {
+            resolve(frame.contentDocument.querySelector('.page'));
+          }));
+        });
+      }
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('領収書HTMLの読込がタイムアウトしました')), 15000);
+        frame.onload = async () => {
+          clearTimeout(timeout);
+          try {
+            if (frame.contentDocument.fonts && frame.contentDocument.fonts.ready) {
+              await frame.contentDocument.fonts.ready;
+            }
+            frameReady = true;
+            resolve(frame.contentDocument.querySelector('.page'));
+          } catch (error) {
+            reject(error);
+          }
+        };
+        frame.srcdoc = html;
+      });
+    }
+
+    async function renderPdfBase64(job) {
+      const page = await loadReceiptHtml(job.html);
+      if (!page) throw new Error('領収書ページ要素が見つかりません');
+      const canvas = await html2canvas(page, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        logging: false
+      });
+      const image = canvas.toDataURL('image/jpeg', 0.96);
+      return jpegDataUrlToA4PdfBase64(image, canvas.width, canvas.height);
+    }
+
+    function jpegDataUrlToA4PdfBase64(dataUrl, imageWidth, imageHeight) {
+      const encoded = String(dataUrl || '').split(',')[1] || '';
+      if (!encoded) throw new Error('JPEGデータが空です');
+      const binary = atob(encoded);
+      const jpegBytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index++) {
+        jpegBytes[index] = binary.charCodeAt(index);
+      }
+
+      const pageWidth = 841.89;
+      const pageHeight = 595.28;
+      const content = `q\n${pageWidth} 0 0 ${pageHeight} 0 0 cm\n/Im0 Do\nQ`;
+      const objects = [
+        asciiBytes('<< /Type /Catalog /Pages 2 0 R >>'),
+        asciiBytes('<< /Type /Pages /Kids [3 0 R] /Count 1 >>'),
+        asciiBytes(
+          `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] ` +
+          '/Resources << /ProcSet [/PDF /ImageC] /XObject << /Im0 4 0 R >> >> ' +
+          '/Contents 5 0 R >>'
+        ),
+        concatBytes([
+          asciiBytes(
+            `<< /Type /XObject /Subtype /Image /Width ${imageWidth} /Height ${imageHeight} ` +
+            `/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpegBytes.length} >>\nstream\n`
+          ),
+          jpegBytes,
+          asciiBytes('\nendstream')
+        ]),
+        asciiBytes(`<< /Length ${asciiBytes(content).length} >>\nstream\n${content}\nendstream`)
+      ];
+
+      const parts = [new Uint8Array([
+        0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, 0x0a,
+        0x25, 0xe2, 0xe3, 0xcf, 0xd3, 0x0a
+      ])];
+      const offsets = [0];
+      let byteLength = parts[0].length;
+
+      objects.forEach((objectBytes, index) => {
+        offsets[index + 1] = byteLength;
+        const wrapped = concatBytes([
+          asciiBytes(`${index + 1} 0 obj\n`),
+          objectBytes,
+          asciiBytes('\nendobj\n')
+        ]);
+        parts.push(wrapped);
+        byteLength += wrapped.length;
+      });
+
+      const xrefOffset = byteLength;
+      let xref = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+      for (let index = 1; index <= objects.length; index++) {
+        xref += String(offsets[index]).padStart(10, '0') + ' 00000 n \n';
+      }
+      xref +=
+        `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\n` +
+        `startxref\n${xrefOffset}\n%%EOF`;
+      parts.push(asciiBytes(xref));
+      return bytesToBase64(concatBytes(parts));
+    }
+
+    function asciiBytes(text) {
+      return new TextEncoder().encode(String(text));
+    }
+
+    function concatBytes(parts) {
+      const totalLength = parts.reduce((total, part) => total + part.length, 0);
+      const result = new Uint8Array(totalLength);
+      let offset = 0;
+      parts.forEach(part => {
+        result.set(part, offset);
+        offset += part.length;
+      });
+      return result;
+    }
+
+    function bytesToBase64(bytes) {
+      let binary = '';
+      const chunkSize = 0x8000;
+      for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(offset, offset + chunkSize));
+      }
+      return btoa(binary);
+    }
+
+    async function run() {
+      if (running) return;
+      running = true;
+      stopRequested = false;
+      initialPending = 0;
+      runLimit = 0;
+      runTarget = 0;
+      completed = 0;
+      startButton.disabled = true;
+      stopButton.disabled = false;
+      bar.style.width = '0%';
+
+      try {
+        while (!stopRequested) {
+          const remainingLimit = runTarget ? Math.max(1, runTarget - completed) : FETCH_BATCH_SIZE;
+          const response = await callGs('RSE_getRenderBatch', {
+            maxJobs: Math.min(FETCH_BATCH_SIZE, remainingLimit)
+          });
+          if (response.done || !response.jobs || !response.jobs.length) {
+            setStatus(`完了\n生成・登録: ${completed}件\n残り: 0件`);
+            bar.style.width = '100%';
+            break;
+          }
+          if (!initialPending) {
+            initialPending = Number(response.pending || 1);
+            runLimit = Number(response.limit || 0);
+            runTarget = runLimit > 0 ? Math.min(initialPending, runLimit) : initialPending;
+          }
+          const jobs = response.jobs.slice(0, Math.max(0, runTarget - completed));
+          let uploadItems = [];
+          for (let index = 0; index < jobs.length; index++) {
+            if (stopRequested) break;
+            const job = jobs[index];
+            setStatus(
+              `PDF描画中 ${completed + uploadItems.length + 1}/${runTarget}\n` +
+              `領収書No: ${job.receiptNo}\n${job.fileName}`
+            );
+            const base64 = await renderPdfBase64(job);
+            uploadItems.push({ rowNo: job.rowNo, pdfKey: job.pdfKey, base64 });
+
+            if (uploadItems.length >= UPLOAD_BATCH_SIZE || index === jobs.length - 1) {
+              setStatus(
+                `Drive一括保存中 ${completed + 1}～${completed + uploadItems.length}/${runTarget}\n` +
+                `${uploadItems.length}件を保存・管理表へ一括登録`
+              );
+              const saved = await callGs('RSE_saveRenderedPdfBatch', { items: uploadItems });
+              if (saved.errors) {
+                const firstError = (saved.results || []).find(result => !result.ok);
+                throw new Error(
+                  `PDF保存エラー ${saved.errors}件: ` +
+                  (firstError ? firstError.error : '詳細不明')
+                );
+              }
+              completed += Number(saved.saved || uploadItems.length);
+              uploadItems = [];
+              bar.style.width = `${Math.min(100, completed / runTarget * 100)}%`;
+            }
+          }
+          if (uploadItems.length) {
+            setStatus(
+              `Drive一括保存中 ${completed + 1}～${completed + uploadItems.length}/${runTarget}\n` +
+              `${uploadItems.length}件を保存・管理表へ一括登録`
+            );
+            const saved = await callGs('RSE_saveRenderedPdfBatch', { items: uploadItems });
+            if (saved.errors) {
+              const firstError = (saved.results || []).find(result => !result.ok);
+              throw new Error(
+                `PDF保存エラー ${saved.errors}件: ` +
+                (firstError ? firstError.error : '詳細不明')
+              );
+            }
+            completed += Number(saved.saved || uploadItems.length);
+            bar.style.width = `${Math.min(100, completed / runTarget * 100)}%`;
+          }
+          if (runLimit > 0 && completed >= runTarget) {
+            const remaining = Math.max(0, initialPending - completed);
+            setStatus(
+              `今回の上限 ${runLimit}件まで完了しました。\n` +
+              `生成・登録: ${completed}件\n残り: ${remaining}件\n\n` +
+              `メニュー7を再実行すると残りから再開します。`
+            );
+            break;
+          }
+        }
+        if (stopRequested) {
+          setStatus(`停止しました。\n完了: ${completed}件\nメニュー7を再実行すると未生成分から再開します。`);
+        }
+      } catch (error) {
+        setStatus(`ERROR\n${error.message || String(error)}\n\nメニュー7を再実行すると未生成分から再開できます。`);
+      } finally {
+        frame.srcdoc = '';
+        frameReady = false;
+        running = false;
+        startButton.disabled = false;
+        stopButton.disabled = true;
+      }
+    }
+
+    startButton.addEventListener('click', run);
+    stopButton.addEventListener('click', () => {
+      stopRequested = true;
+      stopButton.disabled = true;
+      stopButton.textContent = '停止要求済み';
+    });
+  </script>
+</body>
+</html>
