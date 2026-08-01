@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW 大会作成 Auto
 // @namespace    pw-tournament-create-auto
-// @version      0.1.2
+// @version      0.1.3
 // @description  API-first tournament create flow from fixed TSV: create, USDT, items, and Ticket Link without page-step pipeline.
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js
@@ -30,7 +30,7 @@ test7777\t2026/07/02\t13:00\t80000\t1000\t1\t80000\t0\t3\t-74998\t0\t0\t【SPADI
     afterTicketMs: 50,
     betweenTournamentMs: 120,
     refetchAfterEachItem: false,
-    refetchAfterEachTicket: false
+    refetchAfterEachTicket: true
   };
 
   const DEFAULTS = {

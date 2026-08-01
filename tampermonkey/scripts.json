@@ -119,7 +119,7 @@
     {
         "file":  "pw-tournament-create-auto.user.js",
         "name":  "PW 大会作成 Auto",
-        "version":  "0.1.2",
+        "version":  "0.1.3",
         "description":  "API-first tournament create flow from fixed TSV: create, USDT, items, and Ticket Link without page-step pipeline.",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js",
         "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js",
