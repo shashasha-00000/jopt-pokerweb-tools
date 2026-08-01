@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW 大会作成 Auto
 // @namespace    pw-tournament-create-auto
-// @version      0.1.1
+// @version      0.1.2
 // @description  API-first tournament create flow from fixed TSV: create, USDT, items, and Ticket Link without page-step pipeline.
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js
@@ -104,6 +104,12 @@ test7777\t2026/07/02\t13:00\t80000\t1000\t1\t80000\t0\t3\t-74998\t0\t0\t【SPADI
     return digits === "" ? s : String(Number(digits));
   }
 
+  function isBlankOrNumericZero(value) {
+    const s = normalizeText(value).replace(/[￥¥,\s]/g, "");
+    if (!s) return true;
+    return /^[-+]?0+(?:\.0+)?$/.test(s);
+  }
+
   function normalizeDateToDdMmYyyy(value) {
     const s = normalizeText(value);
     let m = s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);
@@ -153,6 +159,11 @@ test7777\t2026/07/02\t13:00\t80000\t1000\t1\t80000\t0\t3\t-74998\t0\t0\t【SPADI
         throw new Error(`Row ${rowNo}: 大会名 / 日付 / 開始時間 are required.`);
       }
 
+      const teAmount = normalizeAmount(cell("TE金額"));
+      const teFee = normalizeAmount(cell("TE手数料"));
+      const teLimit = normalizeLimit(cell("TE回数"));
+      const hasTicketEntry = ![teAmount, teFee, teLimit].every(isBlankOrNumericZero);
+
       return {
         rowNo,
         name,
@@ -176,15 +187,17 @@ test7777\t2026/07/02\t13:00\t80000\t1000\t1\t80000\t0\t3\t-74998\t0\t0\t【SPADI
           fichas: DEFAULTS.reEntryChips,
           reposicionar: DEFAULTS.reEntryReposicionar
         },
-        ticketEntry: {
-          nome: "Ticket Entry",
-          siglas: "TE",
-          valor: normalizeAmount(cell("TE金額")),
-          taxa: normalizeAmount(cell("TE手数料")),
-          limite: normalizeLimit(cell("TE回数")),
-          fichas: DEFAULTS.teChips,
-          reposicionar: DEFAULTS.ticketReposicionar
-        },
+        ticketEntry: hasTicketEntry
+          ? {
+              nome: "Ticket Entry",
+              siglas: "TE",
+              valor: teAmount,
+              taxa: teFee,
+              limite: teLimit,
+              fichas: DEFAULTS.teChips,
+              reposicionar: DEFAULTS.ticketReposicionar
+            }
+          : null,
         tickets: splitTickets(cols[idx["チケット名称"]] ?? "")
       };
     });
@@ -216,7 +229,9 @@ test7777\t2026/07/02\t13:00\t80000\t1000\t1\t80000\t0\t3\t-74998\t0\t0\t【SPADI
       log(`   Start: ${t.date} ${t.time}`);
       log(`   Entry: ${t.entry.valor} + ${t.entry.taxa} / limit=${t.entry.limite}`);
       log(`   Re Entry: ${t.reEntry.valor} + ${t.reEntry.taxa} / limit=${t.reEntry.limite}`);
-      log(`   Ticket Entry: ${t.ticketEntry.valor} + ${t.ticketEntry.taxa} / limit=${t.ticketEntry.limite}`);
+      log(t.ticketEntry
+        ? `   Ticket Entry: ${t.ticketEntry.valor} + ${t.ticketEntry.taxa} / limit=${t.ticketEntry.limite}`
+        : "   Ticket Entry: (none)");
       log(`   Tickets: ${t.tickets.length ? t.tickets.join(" | ") : "(none)"}`);
     });
   }
@@ -452,7 +467,9 @@ test7777\t2026/07/02\t13:00\t80000\t1000\t1\t80000\t0\t3\t-74998\t0\t0\t【SPADI
     await sleep(SPEED.afterUsdtMs);
 
     let doc = await fetchTournamentDoc(id);
-    for (const item of [t.entry, t.reEntry, t.ticketEntry]) {
+    const items = [t.entry, t.reEntry, t.ticketEntry].filter(Boolean);
+    if (!t.ticketEntry) log("ITEM_SKIP Ticket Entry/TE reason=not configured");
+    for (const item of items) {
       const result = await saveItemByHtml(id, doc, item);
       log(`ITEM_${result.action}_OK ${item.nome}/${item.siglas} value=${item.valor} id_item=${result.id_item || "(new)"}`);
       await sleep(SPEED.afterItemMs);

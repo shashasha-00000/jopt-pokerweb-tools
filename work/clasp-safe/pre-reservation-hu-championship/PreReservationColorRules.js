@@ -14,7 +14,7 @@ const PRE_RES_COLOR_RULES = {
     paymentDeadline: ['支払期限']
   },
   optionalHeaders: {
-    manualAction: ['手動指示', 'メール指示']
+    manualAction: ['手動指示', '手動操作', 'メール指示']
   },
   colors: {
     gray: '#d9d9d9',
@@ -57,7 +57,7 @@ function applyPreReservationColorRulesToActiveSheet() {
     const manualAction = preResColorColLetter_(map.manualActionCol);
     rules.push(
       SpreadsheetApp.newConditionalFormatRule()
-        .whenFormulaSatisfied('=OR($' + cancelMailSent + startRow + '=TRUE,$' + manualAction + startRow + '="キャンセル通知済")')
+        .whenFormulaSatisfied('=OR($' + cancelMailSent + startRow + '=TRUE,$' + manualAction + startRow + '="キャンセル通知済",REGEXMATCH($' + manualAction + startRow + ',"(?i)テスト|test|重複|除外|スキップ|skip"))')
         .setBackground(PRE_RES_COLOR_RULES.colors.gray)
         .setRanges([target])
         .build(),

@@ -33,8 +33,11 @@
     const stopButton = document.getElementById('stop');
     const bar = document.getElementById('bar');
     const frame = document.getElementById('renderFrame');
-    const FETCH_BATCH_SIZE = 20;
-    const UPLOAD_BATCH_SIZE = 5;
+    const DEFAULT_FETCH_BATCH_SIZE = 200;
+    const DEFAULT_UPLOAD_BATCH_SIZE = 10;
+    const MAX_FETCH_BATCH_SIZE = 500;
+    let fetchBatchSize = MAX_FETCH_BATCH_SIZE;
+    let uploadBatchSize = DEFAULT_UPLOAD_BATCH_SIZE;
     let running = false;
     let stopRequested = false;
     let frameReady = false;
@@ -191,16 +194,20 @@
       runLimit = 0;
       runTarget = 0;
       completed = 0;
+      fetchBatchSize = MAX_FETCH_BATCH_SIZE;
+      uploadBatchSize = DEFAULT_UPLOAD_BATCH_SIZE;
       startButton.disabled = true;
       stopButton.disabled = false;
       bar.style.width = '0%';
 
       try {
         while (!stopRequested) {
-          const remainingLimit = runTarget ? Math.max(1, runTarget - completed) : FETCH_BATCH_SIZE;
+          const remainingLimit = runTarget ? Math.max(1, runTarget - completed) : fetchBatchSize;
           const response = await callGs('RSE_getRenderBatch', {
-            maxJobs: Math.min(FETCH_BATCH_SIZE, remainingLimit)
+            maxJobs: Math.min(fetchBatchSize, remainingLimit)
           });
+          fetchBatchSize = positiveInteger(response.fetchBatchSize, DEFAULT_FETCH_BATCH_SIZE);
+          uploadBatchSize = positiveInteger(response.uploadBatchSize, DEFAULT_UPLOAD_BATCH_SIZE);
           if (response.done || !response.jobs || !response.jobs.length) {
             setStatus(`完了\n生成・登録: ${completed}件\n残り: 0件`);
             bar.style.width = '100%';
@@ -223,7 +230,7 @@
             const base64 = await renderPdfBase64(job);
             uploadItems.push({ rowNo: job.rowNo, pdfKey: job.pdfKey, base64 });
 
-            if (uploadItems.length >= UPLOAD_BATCH_SIZE || index === jobs.length - 1) {
+            if (uploadItems.length >= uploadBatchSize || index === jobs.length - 1) {
               setStatus(
                 `Drive一括保存中 ${completed + 1}～${completed + uploadItems.length}/${runTarget}\n` +
                 `${uploadItems.length}件を保存・管理表へ一括登録`
@@ -279,6 +286,11 @@
         startButton.disabled = false;
         stopButton.disabled = true;
       }
+    }
+
+    function positiveInteger(value, fallback) {
+      const number = Math.floor(Number(value));
+      return Number.isFinite(number) && number > 0 ? number : fallback;
     }
 
     startButton.addEventListener('click', run);

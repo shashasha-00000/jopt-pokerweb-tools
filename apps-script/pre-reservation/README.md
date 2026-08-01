@@ -17,6 +17,23 @@ These cover:
 - building `REPORT_PRE_RES_MAIL`
 - creating drafts / sending approved rows
 - applying color rules
+- marking older duplicate applications by email or Game ID
+- syncing LivePocket payment confirmations from a pasted full Game ID list
+
+## Duplicate And LivePocket Payment Flow
+
+1. Run `重複申請を整理（最新を残す）`.
+   - Matching email OR matching Game ID is treated as the same application group.
+   - The latest timestamp wins; the later source row wins when timestamps are equal.
+   - Older rows receive `重複` in the manual-action column.
+   - Rows already marked `重複` manually are excluded from the judgment.
+2. Open `LIVEPOCKET_GAME_ID`.
+   - Paste the complete current list of paid LivePocket Game IDs into column A.
+   - Keep the header in row 1 and paste IDs from A2 downward.
+3. Run `LivePocket決済確認を反映`.
+   - Existing confirmations stay checked.
+   - Only newly matched current applications are checked.
+   - Columns B-D show whether each ID is newly confirmed, already confirmed, unmatched, or an old duplicate requiring review.
 
 ## Deployment Rule
 

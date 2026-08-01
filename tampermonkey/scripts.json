@@ -38,8 +38,8 @@
     {
         "file":  "pw-panel-drag-helper.user.js",
         "name":  "PW 共通パネル移動・最小化",
-        "version":  "0.1.1",
-        "description":  "PokerWeb用Tampermonkeyツールの固定パネルをドラッグ移動・最小化し、URL Cache Managerとの重なりを避けます。",
+        "version":  "0.2.0",
+        "description":  "PokerWeb用Tampermonkeyツールの通常パネルをドラッグ移動し、選択中のパネルを最前面に表示します。",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-panel-drag-helper.user.js",
         "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-panel-drag-helper.user.js",
         "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-panel-drag-helper.user.js"
@@ -119,7 +119,7 @@
     {
         "file":  "pw-tournament-create-auto.user.js",
         "name":  "PW 大会作成 Auto",
-        "version":  "0.1.1",
+        "version":  "0.1.2",
         "description":  "API-first tournament create flow from fixed TSV: create, USDT, items, and Ticket Link without page-step pipeline.",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js",
         "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js",

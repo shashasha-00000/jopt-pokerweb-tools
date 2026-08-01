@@ -44,6 +44,8 @@ const RSE = (() => {
     ['PW_SHEET_NAME', CONFIG.DEFAULT_PW_SHEET, '人工取得したPW TSVのSheet名'],
     ['NEXT_RECEIPT_NO', '900000', '次に採番する領収書番号'],
     ['MAX_RECEIPTS_PER_RUN', '', '空白なら全件生成。必要時だけ1回あたりの上限件数を入力'],
+    ['PDF_FETCH_BATCH_SIZE', '200', 'ブラウザが1回に取得するPDF件数。推奨200、設定範囲1～500'],
+    ['PDF_UPLOAD_BATCH_SIZE', '10', 'GSへ1回に返してDrive保存するPDF件数。推奨10、設定範囲1～50'],
     ['RECEIPT_FOLDER_URL', '', 'PDF保存先DriveフォルダURLまたはID'],
     ['FROM_ALIAS', '', 'Gmail送信元エイリアス。未設定なら空白'],
     ['FROM_NAME', 'Japan Open Poker Tour / JOPT', 'メール送信者表示名'],
@@ -383,6 +385,7 @@ const RSE = (() => {
       const prior = objectMapBy_(readObjects_(checkSheet), 'checkKey');
       const rows = buildReceiptCheckRows_(applications, pwResult, ledgerMap, prior, settings);
       const intersection = receiptIntersectionStats_(applications, pwResult);
+      const replacementCount = rows.filter(row => text_(row[0]) === '差替').length;
 
       writeManagedRows_(checkSheet, CHECK_HEADERS, rows, [28, 37]);
       formatReceiptCheckSheet_(checkSheet, rows.length);
@@ -401,6 +404,7 @@ const RSE = (() => {
       alert_(
         '領収書CHECK更新完了。\n\n' +
         '対象明細: ' + rows.length + '件\n' +
+        'Game ID CHECK確定値による自動差替: ' + replacementCount + '件\n' +
         '今回TSVなしでスキップした申請: ' + intersection.formOnlyGameIds + '件\n' +
         'Form申請なしでスキップしたGame ID: ' + intersection.pwOnlyGameIds + '件\n' +
         '不正TSV行スキップ: ' + intersection.invalidPwRows + '件\n' +
@@ -438,12 +442,29 @@ const RSE = (() => {
         });
         const checkKey = paymentKey + '__PWROW__' + pw.rowNo;
         const old = prior[checkKey] || {};
-        const finalName = text_(old['本名'] || app.name);
-        const finalEmail = text_(old['メールアドレス'] || app.email).toLowerCase();
-        const finalRecipient = removeSama_(old['宛名'] !== undefined ? old['宛名'] : app.recipient);
+        // Game ID CHECK の確定値を下流の唯一の人物情報として扱う。
+        // 領収書CHECKの旧値は履歴であり、確定値を逆方向に上書きしてはいけない。
+        const finalName = text_(app.name);
+        const finalEmail = text_(app.email).toLowerCase();
+        const finalRecipient = removeSama_(app.recipient);
         const pdfKey = makePdfKey_(paymentKey, finalRecipient);
         const existingPdf = ledgerMap.byPdfKey[pdfKey];
         const existingPayment = ledgerMap.byPaymentKey[paymentKey];
+        const existingRecord = existingPdf || existingPayment || null;
+        const existingName = text_(existingRecord && existingRecord['本名']);
+        const existingEmail = text_(existingRecord && existingRecord['メールアドレス']).toLowerCase();
+        const existingRecipient = removeSama_(existingRecord && existingRecord['宛名']);
+        const existingPdfKey = text_(existingRecord && existingRecord.pdfKey);
+        const authorityChanged = Boolean(text_(old.sourceHash)) && (
+          text_(old['本名']) !== finalName ||
+          text_(old['メールアドレス']).toLowerCase() !== finalEmail ||
+          removeSama_(old['宛名']) !== finalRecipient
+        );
+        const replacement = Boolean(existingRecord) && (
+          (existingName && existingName !== finalName) ||
+          (existingEmail && existingEmail !== finalEmail) ||
+          (existingPdfKey ? existingPdfKey !== pdfKey : (existingRecipient && existingRecipient !== finalRecipient))
+        );
         const sourceHash = hash_([
           app.applicationKey, gameId, app.name, app.email, app.recipient,
           pw.purchaseTime, pw.year, pw.month, pw.day, pw.tournament, pw.type,
@@ -451,7 +472,7 @@ const RSE = (() => {
         ].join('|'));
         const messages = [];
         let judgement = 'OK';
-        let policy = text_(old['処理方針'] || '新規発行');
+        let policy = authorityChanged ? '新規発行' : text_(old['処理方針'] || '新規発行');
         let requiresManual = false;
 
         if (total <= 0) {
@@ -472,12 +493,20 @@ const RSE = (() => {
           messages.push('確定メールアドレスが不正');
         }
 
-        if (existingPdf) {
+        if (replacement) {
+          judgement = '差替';
+          policy = '新規発行';
+          messages.push('Game ID CHECKの最新確定値を採用。旧領収書番号を再利用して自動差替');
+        } else if (existingPdf) {
           const oldEmail = text_(existingPdf['メールアドレス']).toLowerCase();
           if (oldEmail && oldEmail !== finalEmail) {
             judgement = '確認必要';
             requiresManual = true;
             messages.push('同じPDFの既存送信先とメールアドレスが異なります');
+          } else if (text_(existingPdf.status) !== '送信済み') {
+            judgement = 'OK';
+            policy = '新規発行';
+            messages.push('同一PDFの未送信処理を継続: ' + text_(existingPdf.status));
           } else {
             judgement = '重複済み';
             policy = '重複として除外';
@@ -489,10 +518,12 @@ const RSE = (() => {
           messages.push('同一支払の宛名変更。旧領収書番号を再利用して自動差替');
         }
 
-        if (text_(old.sourceHash) && text_(old.sourceHash) !== sourceHash) {
+        if (text_(old.sourceHash) && text_(old.sourceHash) !== sourceHash && !authorityChanged) {
           judgement = '確認必要';
           requiresManual = true;
           messages.push('前回CHECK後にFormまたはPW元データが変わりました。再確認が必要');
+        } else if (authorityChanged) {
+          messages.push('領収書CHECK旧値よりGame ID CHECKの確定値を優先');
         }
 
         const finalHash = receiptFinalHash_({
@@ -510,9 +541,12 @@ const RSE = (() => {
           confirmedHash, application: Object.assign({}, app, {
             name: finalName, email: finalEmail, recipient: finalRecipient
           }), pw, paymentKey, pdfKey, total, policy, old,
-          existing: existingPdf || null,
-          receiptNo: existingPayment && !existingPdf ? text_(existingPayment['領収書No']) : '',
-          preserveConfirmation: oldStillConfirmed
+          existing: replacement ? null : (existingPdf || null),
+          receiptNo: replacement
+            ? text_(existingRecord && existingRecord['領収書No'])
+            : (existingPayment && !existingPdf ? text_(existingPayment['領収書No']) : ''),
+          preserveConfirmation: oldStillConfirmed,
+          resetDeliveryState: replacement
         }));
       });
     });
@@ -554,7 +588,8 @@ const RSE = (() => {
       text_(old.confirmedHash) === finalHash &&
       ['確定済み', '自動確定'].indexOf(text_(old['確認状態'])) >= 0
     );
-    const status = text_(existing.status || old['ファイル状態']);
+    const resetDeliveryState = Boolean(params.resetDeliveryState);
+    const status = resetDeliveryState ? '' : text_(existing.status || old['ファイル状態']);
     return [
       params.judgement || '確認必要', preserve ? text_(old['確認状態']) : (params.state || '未確定'), params.message || '',
       params.checkKey || '', params.sourceHash || '', preserve ? text_(old.confirmedHash) : (params.confirmedHash || ''),
@@ -566,11 +601,18 @@ const RSE = (() => {
       text_(old['修正理由']), false,
       preserve ? old['確認日時'] || '' : '', preserve ? old['確認者'] || '' : '',
       params.receiptNo || existing['領収書No'] || old['領収書No'] || '',
-      existing.PDF_FILE_ID || old.PDF_FILE_ID || '', existing.PDF_URL || old.PDF_URL || '',
-      status, existing['Draft ID'] || old['Draft ID'] || '',
-      text_(existing.status).includes('下書き') ? existing.status : old['草稿ステータス'] || '',
-      false, text_(existing.status) === '送信済み' ? '送信済み' : old['送信ステータス'] || '',
-      existing['メール送信日時'] || old['送信日時'] || ''
+      resetDeliveryState ? '' : (existing.PDF_FILE_ID || old.PDF_FILE_ID || ''),
+      resetDeliveryState ? '' : (existing.PDF_URL || old.PDF_URL || ''),
+      status,
+      resetDeliveryState ? '' : (existing['Draft ID'] || old['Draft ID'] || ''),
+      resetDeliveryState
+        ? ''
+        : (text_(existing.status).includes('下書き') ? existing.status : old['草稿ステータス'] || ''),
+      false,
+      resetDeliveryState
+        ? ''
+        : (text_(existing.status) === '送信済み' ? '送信済み' : old['送信ステータス'] || ''),
+      resetDeliveryState ? '' : (existing['メール送信日時'] || old['送信日時'] || '')
     ];
   }
 
@@ -733,8 +775,10 @@ const RSE = (() => {
       const rows = checkState.objects;
       assertReceiptBatchConfirmed_(ss, sheet, rows);
       const limit = optionalPositiveIntegerSetting_(settings.MAX_RECEIPTS_PER_RUN);
-      const requested = positiveIntegerSetting_(options && options.maxJobs, 20);
-      const batchSize = Math.min(requested, 50, limit || 50);
+      const fetchBatchSize = boundedIntegerSetting_(settings.PDF_FETCH_BATCH_SIZE, 200, 1, 500);
+      const uploadBatchSize = boundedIntegerSetting_(settings.PDF_UPLOAD_BATCH_SIZE, 10, 1, 50);
+      const requested = positiveIntegerSetting_(options && options.maxJobs, fetchBatchSize);
+      const batchSize = Math.min(requested, fetchBatchSize, limit || fetchBatchSize);
       const pendingBefore = rows.filter(row =>
         text_(row['処理方針']) === '新規発行' && text_(row['領収書No']) && !text_(row.PDF_FILE_ID)
       ).length;
@@ -761,8 +805,9 @@ const RSE = (() => {
           throw new Error(rowNo + '行: CHECK確定後にpaymentKey/pdfKeyが変化しています');
         }
 
+        const replacement = text_(row['判定']) === '差替';
         const existing = ledgerMap.byPdfKey[pdfKey];
-        if (existing && text_(existing.PDF_FILE_ID)) {
+        if (!replacement && existing && text_(existing.PDF_FILE_ID)) {
           const file = DriveApp.getFileById(text_(existing.PDF_FILE_ID));
           applyRenderedFileToCheckState_(checkState, row, file, pdfKey);
           checkChanged = true;
@@ -770,7 +815,7 @@ const RSE = (() => {
         }
 
         const fileName = makeReceiptFileName_(data, settings);
-        const namedFile = findSingleFileByName_(folder, fileName);
+        const namedFile = replacement ? null : findSingleFileByName_(folder, fileName);
         if (namedFile) {
           applyRenderedFileToCheckState_(checkState, row, namedFile, pdfKey);
           ledgerRowsToAppend.push(makeLedgerRowArray_({
@@ -801,6 +846,8 @@ const RSE = (() => {
         done: jobs.length === 0,
         pending: pendingBefore,
         limit,
+        fetchBatchSize,
+        uploadBatchSize,
         jobs
       };
     } finally {
@@ -818,13 +865,17 @@ const RSE = (() => {
       const sheet = requiredSheet_(ss, CONFIG.CHECK_SHEET);
       const ledgerSheet = requiredSheet_(ss, CONFIG.LEDGER_SHEET);
       const items = Array.isArray(payload && payload.items) ? payload.items : [];
-      if (!items.length || items.length > 10) throw new Error('PDF保存バッチは1～10件で指定してください');
+      const uploadBatchSize = boundedIntegerSetting_(settings.PDF_UPLOAD_BATCH_SIZE, 10, 1, 50);
+      if (!items.length || items.length > uploadBatchSize) {
+        throw new Error('PDF保存バッチは1～' + uploadBatchSize + '件で指定してください');
+      }
       const checkState = readSheetUpdateState_(sheet);
       assertReceiptBatchConfirmed_(ss, sheet, checkState.objects);
       const ledgerMap = buildLedgerMap_(readObjects_(ledgerSheet));
       const folder = getFolder_(settings.RECEIPT_FOLDER_URL);
       const ledgerRowsToAppend = [];
       const results = [];
+      const replacementsToArchive = [];
 
       items.forEach(item => {
         const rowNo = Math.floor(Number(item && item.rowNo));
@@ -846,8 +897,9 @@ const RSE = (() => {
             throw new Error('pdfKeyが一致しません。CHECKを更新してください');
           }
 
+          const replacement = text_(row['判定']) === '差替';
           const existing = ledgerMap.byPdfKey[pdfKey];
-          if (existing && text_(existing.PDF_FILE_ID)) {
+          if (!replacement && existing && text_(existing.PDF_FILE_ID)) {
             const existingFile = DriveApp.getFileById(text_(existing.PDF_FILE_ID));
             applyRenderedFileToCheckState_(checkState, row, existingFile, pdfKey);
             results.push({ rowNo, ok: true, reused: true });
@@ -866,6 +918,13 @@ const RSE = (() => {
             status: 'PDF作成済み', applicationKey: text_(row['申請キー']), note: 'ブラウザ一括生成'
           }));
           ledgerMap.byPdfKey[pdfKey] = { PDF_FILE_ID: file.getId() };
+          if (replacement) {
+            replacementsToArchive.push({
+              paymentKey,
+              activeFileId: file.getId(),
+              oldRows: ledgerMap.byPaymentKeyRows[paymentKey] || []
+            });
+          }
           results.push({ rowNo, ok: true, fileId: file.getId(), fileUrl: file.getUrl(), fileName });
         } catch (error) {
           if (row) {
@@ -878,6 +937,12 @@ const RSE = (() => {
 
       writeSheetUpdateState_(sheet, checkState);
       if (ledgerRowsToAppend.length) appendLedgerRows_(ledgerSheet, ledgerRowsToAppend);
+      replacementsToArchive.forEach(item => {
+        trashSupersededDriveFiles_(item.oldRows, item.activeFileId);
+      });
+      deleteSupersededGmailDrafts_(
+        replacementsToArchive.reduce((rows, item) => rows.concat(item.oldRows || []), [])
+      );
       return {
         ok: results.every(result => result.ok),
         saved: results.filter(result => result.ok).length,
@@ -1123,7 +1188,8 @@ const RSE = (() => {
             markReplacedLedgerState_(
               ledgerState,
               text_(row.paymentKey),
-              text_(row.pdfKey)
+              text_(row.pdfKey),
+              text_(row.PDF_FILE_ID)
             );
           });
         } catch (error) {
@@ -1205,7 +1271,9 @@ const RSE = (() => {
 
     const byRequestKey = {};
     Object.keys(groups).forEach(applicationKey => {
-      const applications = groups[applicationKey];
+      const applications = groups[applicationKey]
+        .slice()
+        .sort((left, right) => Number(left.rowNo || 0) - Number(right.rowNo || 0));
       const profiles = uniqueStrings_(applications.map(app => {
         return [compact_(app.name), app.email.toLowerCase(), compact_(app.recipient)].join('|');
       }));
@@ -1424,6 +1492,7 @@ const RSE = (() => {
   function buildLedgerMap_(rows) {
     const byPdfKey = {};
     const byPaymentKey = {};
+    const byPaymentKeyRows = {};
 
     rows.forEach(row => {
       const status = text_(row.status);
@@ -1431,10 +1500,46 @@ const RSE = (() => {
       const pdfKey = text_(row.pdfKey);
       const paymentKey = text_(row.paymentKey);
       if (pdfKey) byPdfKey[pdfKey] = row;
-      if (paymentKey && !byPaymentKey[paymentKey]) byPaymentKey[paymentKey] = row;
+      if (paymentKey) {
+        // 管理表は追記式なので、最後の有効行を現在値として扱う。
+        byPaymentKey[paymentKey] = row;
+        if (!byPaymentKeyRows[paymentKey]) byPaymentKeyRows[paymentKey] = [];
+        byPaymentKeyRows[paymentKey].push(row);
+      }
     });
 
-    return { byPdfKey, byPaymentKey };
+    return { byPdfKey, byPaymentKey, byPaymentKeyRows };
+  }
+
+  function trashSupersededDriveFiles_(ledgerRows, activeFileId) {
+    const fileIds = uniqueStrings_((ledgerRows || [])
+      .map(row => text_(row.PDF_FILE_ID))
+      .filter(fileId => fileId && fileId !== text_(activeFileId)));
+    fileIds.forEach(fileId => {
+      try {
+        const file = DriveApp.getFileById(fileId);
+        if (!file.isTrashed()) file.setTrashed(true);
+      } catch (error) {
+        Logger.log('旧差替PDFをゴミ箱へ移動できませんでした: ' + fileId + ' / ' + (error.message || error));
+      }
+    });
+    return fileIds;
+  }
+
+  function deleteSupersededGmailDrafts_(ledgerRows) {
+    const draftIds = uniqueStrings_((ledgerRows || [])
+      .map(row => text_(row['Draft ID']))
+      .filter(Boolean));
+    draftIds.forEach(draftId => {
+      try {
+        const draft = GmailApp.getDraft(draftId);
+        if (draft) draft.deleteDraft();
+      } catch (error) {
+        // 送信済みDraft IDは取得できないため正常系として無視する。
+        Logger.log('旧差替Draftは削除済みまたは取得不能です: ' + draftId);
+      }
+    });
+    return draftIds;
   }
 
   function readLedgerUpdateState_(sheet) {
@@ -1476,17 +1581,20 @@ const RSE = (() => {
       .setValues(state.values.slice(1));
   }
 
-  function markReplacedLedgerState_(state, paymentKey, activePdfKey) {
+  function markReplacedLedgerState_(state, paymentKey, activePdfKey, activeFileId) {
     if (!paymentKey || !activePdfKey) return [];
     const changedRowNos = [];
     const paymentCol = state.columns.paymentKey;
     const pdfCol = state.columns.pdfKey;
+    const fileCol = state.columns.PDF_FILE_ID;
     const statusCol = state.columns.status;
     const noteCol = state.columns['備考'];
     (state.byPaymentKey[paymentKey] || []).forEach(rowNo => {
       const row = state.values[rowNo - 1];
       if (text_(row[paymentCol]) !== paymentKey) return;
-      if (text_(row[pdfCol]) === activePdfKey) return;
+      const samePdfKey = text_(row[pdfCol]) === activePdfKey;
+      const sameFile = !text_(activeFileId) || text_(row[fileCol]) === text_(activeFileId);
+      if (samePdfKey && sameFile) return;
       if (CONFIG.INACTIVE_LEDGER_STATUSES.indexOf(text_(row[statusCol])) >= 0) return;
       row[statusCol] = '差替済み';
       row[noteCol] = '差替先: ' + activePdfKey;
@@ -2115,6 +2223,14 @@ const RSE = (() => {
       throw new Error('MAX_RECEIPTS_PER_RUNは空白または1以上の整数を設定してください');
     }
     return number;
+  }
+
+  function boundedIntegerSetting_(value, fallback, minimum, maximum) {
+    const raw = text_(value);
+    if (!raw) return fallback;
+    const number = Math.floor(Number(raw));
+    if (!Number.isFinite(number) || number < minimum) return fallback;
+    return Math.min(number, maximum);
   }
 
   function positiveNumberSetting_(value, fallback) {

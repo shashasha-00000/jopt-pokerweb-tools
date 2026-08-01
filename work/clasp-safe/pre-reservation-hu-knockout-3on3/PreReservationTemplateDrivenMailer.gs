@@ -9,9 +9,12 @@ const PRE_RES_TEMPLATE_MAILER = {
   menuName: '事前予約メール送信',
   templateSourceSheetName: 'PreReservationTemplateSource',
   reportSheetName: 'REPORT_PRE_RES_MAIL',
+  livePocketGameIdSheetName: 'LIVEPOCKET_GAME_ID',
+  livePocketGameIdHeaders: ['Game ID', '照合結果', 'プレイヤーネーム', '元シート行'],
   from: 'customer@japanopenpoker.com',
   fromName: 'Japan Open Poker Tour / JOPT',
   defaultBcc: 'customer@japanopenpoker.com',
+  timezone: 'Asia/Tokyo',
   headerSearchRows: 40,
   maxReadRows: 3000,
   sourceSheetNamePatterns: [/^フォーム.*回答/i, /^フォーム.*回.*/i],
@@ -50,13 +53,15 @@ const PRE_RES_SOURCE_HEADER_ALIASES = {
   gameIdCol: ['GameID【代表者】', 'Game ID【代表者】', 'GameID', 'Game ID'],
   paymentMethodCol: ['決済方法', '決済方法選択'],
   voucherAnswerCol: ['いくらのバウチャーを何枚使用しますか？', 'どのバウチャーを何枚ご利用されますか？'],
-  manualActionCol: ['手動指示']
+  manualActionCol: ['手動指示', '手動操作']
 };
 
 function openPreReservationTemplateDrivenMailMenu() {
   SpreadsheetApp.getUi()
     .createMenu(PRE_RES_TEMPLATE_MAILER.menuName)
     .addItem('手動指示の選択肢を設定', 'applyPreReservationManualActionDropdown')
+    .addItem('重複申請を整理（最新を残す）', 'markDuplicatePreReservationApplications')
+    .addItem('LivePocket決済確認を反映', 'syncLivePocketPaymentConfirmations')
     .addSeparator()
     .addItem('REPORT作成：全対象', 'buildPreReservationTemplateDrivenMailReport')
     .addSeparator()
@@ -81,6 +86,245 @@ function applyPreReservationManualActionDropdown() {
     '候補: ' + PRE_RES_TEMPLATE_MAILER.manualActionOptions.join(' / ') + '\n' +
     '適用行数: ' + appliedRows + '行'
   );
+}
+
+function markDuplicatePreReservationApplications() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  preResMailerEnsureTokyoTimezone_(ss);
+  const ctx = preResMailerResolveContext_(ss);
+  if (!ctx.sourceMap.manualActionCol) {
+    throw new Error('手動指示（または手動操作）列が見つかりませんでした。');
+  }
+
+  const source = preResMailerReadSourceRowsWithoutUpdates_(ctx.sourceSheet, ctx.sourceMap);
+  const candidates = source.rows.filter(row =>
+    (row.email || row.gameId) &&
+    !preResMailerIsManualSkip_(row.manualAction)
+  );
+  const groups = preResMailerGroupRowsByIdentity_(candidates);
+  const duplicateRows = [];
+
+  groups.forEach(group => {
+    if (group.rows.length < 2) return;
+    group.rows.forEach(row => {
+      if (row.sourceRow !== group.latest.sourceRow) duplicateRows.push(row);
+    });
+  });
+
+  let newlyMarked = 0;
+  if (source.rowCount > 0 && duplicateRows.length > 0) {
+    const actionRange = ctx.sourceSheet.getRange(
+      source.startRow,
+      ctx.sourceMap.manualActionCol,
+      source.rowCount,
+      1
+    );
+    const actionValues = actionRange.getValues();
+
+    duplicateRows.forEach(row => {
+      const index = row.sourceRow - source.startRow;
+      if (preResMailerText_(actionValues[index][0]) !== '重複') {
+        actionValues[index][0] = '重複';
+        newlyMarked++;
+      }
+    });
+
+    if (newlyMarked > 0) actionRange.setValues(actionValues);
+  }
+
+  SpreadsheetApp.getUi().alert(
+    '重複申請の整理が完了しました。\n\n' +
+    '対象シート: ' + ctx.sourceSheet.getName() + '\n' +
+    '重複グループ: ' + groups.filter(group => group.rows.length > 1).length + '件\n' +
+    '重複として扱う旧申請: ' + duplicateRows.length + '件\n' +
+    '今回「重複」を設定: ' + newlyMarked + '件\n\n' +
+    'すでに手動で「重複」が選択されていた行は、判定対象から除外しています。'
+  );
+}
+
+function syncLivePocketPaymentConfirmations() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  preResMailerEnsureTokyoTimezone_(ss);
+  const ctx = preResMailerResolveContext_(ss);
+  const map = ctx.sourceMap;
+
+  if (!map.paymentConfirmedCol) throw new Error('決済確認列が見つかりませんでした。');
+  if (!map.gameIdCol) throw new Error('Game ID列が見つかりませんでした。');
+  if (!map.paymentMethodCol) throw new Error('決済方法列が見つかりませんでした。');
+
+  let paymentSheet = ss.getSheetByName(PRE_RES_TEMPLATE_MAILER.livePocketGameIdSheetName);
+  if (!paymentSheet) {
+    paymentSheet = ss.insertSheet(PRE_RES_TEMPLATE_MAILER.livePocketGameIdSheetName);
+    preResMailerPrepareLivePocketGameIdSheet_(paymentSheet);
+    SpreadsheetApp.getUi().alert(
+      PRE_RES_TEMPLATE_MAILER.livePocketGameIdSheetName + ' を作成しました。\n\n' +
+      'A2以降に、LivePocketで決済完了した全Game IDを貼り付けてから、\n' +
+      'もう一度「LivePocket決済確認を反映」を実行してください。'
+    );
+    return;
+  }
+
+  const lastRow = Math.max(paymentSheet.getLastRow(), 1);
+  const gameIdValues = paymentSheet.getRange(1, 1, lastRow, 1).getDisplayValues();
+  const firstValue = preResMailerNormalizeGameId_(gameIdValues[0][0]);
+  const hasHeader = preResMailerIsGameIdHeader_(firstValue);
+
+  if (!firstValue && lastRow === 1) {
+    preResMailerPrepareLivePocketGameIdSheet_(paymentSheet);
+    SpreadsheetApp.getUi().alert(
+      PRE_RES_TEMPLATE_MAILER.livePocketGameIdSheetName + ' のA2以降に、\n' +
+      'LivePocketで決済完了した全Game IDを貼り付けてください。'
+    );
+    return;
+  }
+
+  if (hasHeader) {
+    paymentSheet.getRange(1, 1, 1, PRE_RES_TEMPLATE_MAILER.livePocketGameIdHeaders.length)
+      .setValues([PRE_RES_TEMPLATE_MAILER.livePocketGameIdHeaders])
+      .setFontWeight('bold')
+      .setBackground('#d9ead3');
+    paymentSheet.setFrozenRows(1);
+  }
+
+  const source = preResMailerReadSourceRowsWithoutUpdates_(ctx.sourceSheet, map);
+  const activeCandidates = source.rows.filter(row =>
+    (row.email || row.gameId) &&
+    !preResMailerIsManualSkip_(row.manualAction)
+  );
+  const activeGroups = preResMailerGroupRowsByIdentity_(activeCandidates);
+  const activeCandidateRows = {};
+  const activeLatestRows = {};
+  activeCandidates.forEach(row => {
+    activeCandidateRows[row.sourceRow] = true;
+  });
+  activeGroups.forEach(group => {
+    activeLatestRows[group.latest.sourceRow] = true;
+  });
+
+  const livePocketRowsByGameId = {};
+  source.rows.forEach(row => {
+    if (!preResMailerIsLivePocket_(row.paymentMethod)) return;
+    const gameId = preResMailerNormalizeGameId_(row.gameId);
+    if (!gameId) return;
+    if (!livePocketRowsByGameId[gameId]) livePocketRowsByGameId[gameId] = [];
+    livePocketRowsByGameId[gameId].push(row);
+  });
+
+  const results = gameIdValues.map(() => ['', '', '']);
+  if (hasHeader) {
+    results[0] = PRE_RES_TEMPLATE_MAILER.livePocketGameIdHeaders.slice(1);
+  }
+
+  const seenInput = {};
+  const newlyConfirmedRows = {};
+  const newlyConfirmedDetails = [];
+  let inputCount = 0;
+  let alreadyConfirmed = 0;
+  let unmatched = 0;
+  let oldDuplicate = 0;
+  let needsReview = 0;
+  let duplicateInput = 0;
+
+  for (let index = hasHeader ? 1 : 0; index < gameIdValues.length; index++) {
+    const gameId = preResMailerNormalizeGameId_(gameIdValues[index][0]);
+    if (!gameId) continue;
+    inputCount++;
+
+    if (seenInput[gameId]) {
+      results[index] = ['入力重複', '', ''];
+      duplicateInput++;
+      continue;
+    }
+    seenInput[gameId] = true;
+
+    const matches = livePocketRowsByGameId[gameId] || [];
+    const matchResult = preResMailerClassifyLivePocketPayment_(
+      matches,
+      activeCandidateRows,
+      activeLatestRows
+    );
+    results[index] = [
+      matchResult.status,
+      matchResult.row ? matchResult.row.playerName : '',
+      matchResult.row ? matchResult.row.sourceRow : ''
+    ];
+
+    if (matchResult.category === 'unmatched') unmatched++;
+    if (matchResult.category === 'old_duplicate') oldDuplicate++;
+    if (matchResult.category === 'needs_review') needsReview++;
+    if (matchResult.category === 'confirmed') alreadyConfirmed++;
+    if (matchResult.category !== 'new') continue;
+
+    const latestMatch = matchResult.row;
+    newlyConfirmedRows[latestMatch.sourceRow] = true;
+    newlyConfirmedDetails.push(
+      (latestMatch.playerName || '名前なし') + ' / ' + gameId + ' / 元シート' + latestMatch.sourceRow + '行'
+    );
+  }
+
+  const rowsToConfirm = Object.keys(newlyConfirmedRows).map(Number);
+  if (rowsToConfirm.length > 0) {
+    const ranges = rowsToConfirm.map(row => ctx.sourceSheet.getRange(row, map.paymentConfirmedCol).getA1Notation());
+    ctx.sourceSheet.getRangeList(ranges).setValue(true);
+  }
+
+  paymentSheet.getRange(1, 2, lastRow, 3).setValues(results);
+  paymentSheet.setColumnWidth(1, 180);
+  paymentSheet.setColumnWidth(2, 180);
+  paymentSheet.setColumnWidth(3, 180);
+  paymentSheet.setColumnWidth(4, 100);
+
+  const detailText = newlyConfirmedDetails.length
+    ? '\n\n今回新規確認:\n' + newlyConfirmedDetails.slice(0, 20).join('\n') +
+      (newlyConfirmedDetails.length > 20 ? '\nほか' + (newlyConfirmedDetails.length - 20) + '件' : '')
+    : '';
+
+  SpreadsheetApp.getUi().alert(
+    'LivePocket決済確認の反映が完了しました。\n\n' +
+    '入力Game ID: ' + inputCount + '件\n' +
+    '今回新規確認: ' + rowsToConfirm.length + '件\n' +
+    '確認済み: ' + alreadyConfirmed + '件\n' +
+    '申請なし: ' + unmatched + '件\n' +
+    '重複旧申請・要確認: ' + oldDuplicate + '件\n' +
+    'その他要確認: ' + needsReview + '件\n' +
+    '入力重複: ' + duplicateInput + '件' +
+    detailText
+  );
+}
+
+function preResMailerClassifyLivePocketPayment_(matches, activeCandidateRows, activeLatestRows) {
+  if (!matches.length) {
+    return { status: '申請なし', category: 'unmatched', row: null };
+  }
+
+  const latestMatch = matches.find(row =>
+    activeLatestRows[row.sourceRow] &&
+    !preResMailerIsManualSkip_(row.manualAction)
+  );
+
+  if (!latestMatch) {
+    const manuallyDuplicated = matches.some(row => /重複/.test(preResMailerText_(row.manualAction)));
+    const supersededApplication = matches.some(row =>
+      activeCandidateRows[row.sourceRow] &&
+      !activeLatestRows[row.sourceRow]
+    );
+    const isOldDuplicate = manuallyDuplicated || supersededApplication;
+    return {
+      status: isOldDuplicate ? '重複旧申請・要確認' : '対象外・要確認',
+      category: isOldDuplicate ? 'old_duplicate' : 'needs_review',
+      row: matches[0]
+    };
+  }
+
+  if (latestMatch.cancelMailSent || /キャンセル/.test(preResMailerText_(latestMatch.manualAction))) {
+    return { status: 'キャンセル済・要確認', category: 'needs_review', row: latestMatch };
+  }
+
+  if (latestMatch.paymentConfirmed) {
+    return { status: '確認済み', category: 'confirmed', row: latestMatch };
+  }
+
+  return { status: '今回新規確認', category: 'new', row: latestMatch };
 }
 
 function buildPreReservationTemplateDrivenMailReport() {
@@ -109,6 +353,7 @@ function buildPreReservationCancelReport() {
 
 function preResMailerBuildReport_(mailTypeFilter, reportLabel) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  preResMailerEnsureTokyoTimezone_(ss);
   const ctx = preResMailerResolveContext_(ss);
   const templates = preResMailerLoadTemplates_(ss, ctx);
   const rows = preResMailerReadSourceRows_(ctx.sourceSheet, ctx.sourceMap);
@@ -278,6 +523,12 @@ function preResMailerResolveContext_(ss) {
     eventName: preResMailerResolveEventName_(ss, controlSheet, sourceSheet),
     livePocketUrl: controlSheet ? preResMailerFindLivePocketUrl_(controlSheet) : ''
   };
+}
+
+function preResMailerEnsureTokyoTimezone_(ss) {
+  if (ss.getSpreadsheetTimeZone() !== PRE_RES_TEMPLATE_MAILER.timezone) {
+    ss.setSpreadsheetTimeZone(PRE_RES_TEMPLATE_MAILER.timezone);
+  }
 }
 
 function preResMailerFindSourceSheet_(ss, activeSheet) {
@@ -466,11 +717,12 @@ function preResMailerLoadTemplates_(ss, ctx) {
 }
 
 function preResMailerReadSourceRows_(sheet, map) {
-  const startRow = map.headerRow + 1;
-  if (sheet.getLastRow() < startRow) return [];
-  const rowCount = Math.min(sheet.getLastRow() - startRow + 1, PRE_RES_TEMPLATE_MAILER.maxReadRows);
-  const values = sheet.getRange(startRow, 1, rowCount, sheet.getLastColumn()).getValues();
-  const rows = values.map((row, index) => preResMailerParseSourceRow_(row, startRow + index, map));
+  const source = preResMailerReadSourceRowsWithoutUpdates_(sheet, map);
+  const startRow = source.startRow;
+  const rowCount = source.rowCount;
+  const values = source.values;
+  const rows = source.rows;
+  if (rowCount < 1) return rows;
 
   if (map.paymentDeadlineCol) {
     const deadlineValues = [];
@@ -485,14 +737,28 @@ function preResMailerReadSourceRows_(sheet, map) {
       }
     }
 
-    if (hasUpdate) {
-      sheet.getRange(startRow, map.paymentDeadlineCol, rowCount, 1)
-        .setValues(deadlineValues)
-        .setNumberFormat('m/d(aaa)');
-    }
+    const deadlineRange = sheet.getRange(startRow, map.paymentDeadlineCol, rowCount, 1);
+    if (hasUpdate) deadlineRange.setValues(deadlineValues);
+    deadlineRange.setNumberFormat('m/d(aaa)');
   }
 
   return rows;
+}
+
+function preResMailerReadSourceRowsWithoutUpdates_(sheet, map) {
+  const startRow = map.headerRow + 1;
+  if (sheet.getLastRow() < startRow) {
+    return { startRow: startRow, rowCount: 0, values: [], rows: [] };
+  }
+
+  const rowCount = Math.min(sheet.getLastRow() - startRow + 1, PRE_RES_TEMPLATE_MAILER.maxReadRows);
+  const values = sheet.getRange(startRow, 1, rowCount, sheet.getLastColumn()).getValues();
+  return {
+    startRow: startRow,
+    rowCount: rowCount,
+    values: values,
+    rows: values.map((row, index) => preResMailerParseSourceRow_(row, startRow + index, map))
+  };
 }
 
 function preResMailerParseSourceRow_(values, sourceRow, map) {
@@ -526,9 +792,13 @@ function preResMailerKeepLatestRows_(rows) {
     !/重複申請/.test(row.manualAction) &&
     !preResMailerIsManualSkip_(row.manualAction)
   );
-  if (!filtered.length) return [];
+  return preResMailerGroupRowsByIdentity_(filtered).map(group => group.latest);
+}
 
-  const parent = filtered.map((_, index) => index);
+function preResMailerGroupRowsByIdentity_(rows) {
+  if (!rows.length) return [];
+
+  const parent = rows.map((_, index) => index);
   function find(x) {
     while (parent[x] !== x) {
       parent[x] = parent[parent[x]];
@@ -544,9 +814,9 @@ function preResMailerKeepLatestRows_(rows) {
 
   const byEmail = {};
   const byGameId = {};
-  filtered.forEach((row, index) => {
+  rows.forEach((row, index) => {
     const emailKey = row.email ? row.email.toLowerCase() : '';
-    const gameKey = row.gameId || '';
+    const gameKey = preResMailerNormalizeGameId_(row.gameId);
     if (emailKey && byEmail[emailKey] != null) union(index, byEmail[emailKey]);
     if (gameKey && byGameId[gameKey] != null) union(index, byGameId[gameKey]);
     if (emailKey) byEmail[emailKey] = index;
@@ -554,14 +824,23 @@ function preResMailerKeepLatestRows_(rows) {
   });
 
   const groups = {};
-  filtered.forEach((row, index) => {
+  rows.forEach((row, index) => {
     const root = find(index);
-    if (!groups[root] || preResMailerToDate_(row.timestamp) >= preResMailerToDate_(groups[root].timestamp)) {
-      groups[root] = row;
+    if (!groups[root]) groups[root] = { rows: [], latest: null };
+    groups[root].rows.push(row);
+    if (!groups[root].latest || preResMailerIsLaterApplication_(row, groups[root].latest)) {
+      groups[root].latest = row;
     }
   });
 
   return Object.keys(groups).map(key => groups[key]);
+}
+
+function preResMailerIsLaterApplication_(candidate, current) {
+  const candidateTime = preResMailerToDate_(candidate.timestamp).getTime();
+  const currentTime = preResMailerToDate_(current.timestamp).getTime();
+  if (candidateTime !== currentTime) return candidateTime > currentTime;
+  return Number(candidate.sourceRow || 0) > Number(current.sourceRow || 0);
 }
 
 function preResMailerMailTypeForRow_(row) {
@@ -670,6 +949,18 @@ function preResMailerGetOrCreateReportSheet_(ss) {
   return sheet;
 }
 
+function preResMailerPrepareLivePocketGameIdSheet_(sheet) {
+  sheet.getRange(1, 1, 1, PRE_RES_TEMPLATE_MAILER.livePocketGameIdHeaders.length)
+    .setValues([PRE_RES_TEMPLATE_MAILER.livePocketGameIdHeaders])
+    .setFontWeight('bold')
+    .setBackground('#d9ead3');
+  sheet.setFrozenRows(1);
+  sheet.setColumnWidth(1, 180);
+  sheet.setColumnWidth(2, 180);
+  sheet.setColumnWidth(3, 180);
+  sheet.setColumnWidth(4, 100);
+}
+
 function preResMailerGetActiveReportSheet_() {
   const sheet = SpreadsheetApp.getActiveSheet();
   if (sheet.getName() !== PRE_RES_TEMPLATE_MAILER.reportSheetName) {
@@ -699,46 +990,50 @@ function preResMailerValidDate_(value) {
   if (value === '' || value == null) return null;
   const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
   if (isNaN(date.getTime())) return null;
-  date.setHours(0, 0, 0, 0);
-  return date;
+  const parts = Utilities.formatDate(date, PRE_RES_TEMPLATE_MAILER.timezone, 'yyyy,M,d').split(',');
+  return preResMailerCreateTokyoDate_(Number(parts[0]), Number(parts[1]), Number(parts[2]));
 }
 
 function preResMailerCalculateBusinessDeadline_(timestamp) {
   const base = timestamp instanceof Date ? new Date(timestamp.getTime()) : new Date(timestamp);
   if (isNaN(base.getTime())) return null;
-  const timezone = Session.getScriptTimeZone();
+  const timezone = PRE_RES_TEMPLATE_MAILER.timezone;
   const parts = Utilities.formatDate(base, timezone, 'yyyy,M,d,H').split(',');
   const year = Number(parts[0]);
   const month = Number(parts[1]);
   const day = Number(parts[2]);
   const hour = Number(parts[3]);
 
-  const start = new Date(year, month - 1, day, 12, 0, 0, 0);
-  if (hour >= 19) start.setDate(start.getDate() + 1);
+  const start = preResMailerCreateTokyoDate_(year, month, day);
+  if (hour >= 19) start.setUTCDate(start.getUTCDate() + 1);
 
   let counted = 0;
   const cursor = new Date(start.getTime());
-  cursor.setDate(cursor.getDate() + 1);
+  cursor.setUTCDate(cursor.getUTCDate() + 1);
   while (counted < 3) {
     if (preResMailerIsBusinessDay_(cursor, timezone)) {
       counted++;
       if (counted >= 3) break;
     }
-    cursor.setDate(cursor.getDate() + 1);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
-  cursor.setHours(0, 0, 0, 0);
   return cursor;
 }
 
+function preResMailerCreateTokyoDate_(year, month, day) {
+  return new Date(Date.UTC(year, month - 1, day) - 9 * 60 * 60 * 1000);
+}
+
 function preResMailerIsBusinessDay_(date, timezone) {
-  const dayOfWeek = Number(Utilities.formatDate(date, timezone || Session.getScriptTimeZone(), 'u'));
+  const dayOfWeek = Number(Utilities.formatDate(date, timezone || PRE_RES_TEMPLATE_MAILER.timezone, 'u'));
   return dayOfWeek !== 3 && dayOfWeek !== 7;
 }
 
 function preResMailerFormatDeadline_(date, includeTime) {
   if (!date) return '';
-  const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
-  const text = (date.getMonth() + 1) + '月' + date.getDate() + '日(' + weekdays[date.getDay()] + ')';
+  const parts = Utilities.formatDate(date, PRE_RES_TEMPLATE_MAILER.timezone, 'M,d,u').split(',');
+  const weekdays = ['月', '火', '水', '木', '金', '土', '日'];
+  const text = parts[0] + '月' + parts[1] + '日(' + weekdays[Number(parts[2]) - 1] + ')';
   return includeTime ? text + '23:59まで' : text;
 }
 
@@ -781,4 +1076,12 @@ function preResMailerText_(value) {
     .replace(/\u00a0/g, ' ')
     .replace(/[ \t\r\n]+/g, ' ')
     .trim();
+}
+
+function preResMailerNormalizeGameId_(value) {
+  return preResMailerText_(value);
+}
+
+function preResMailerIsGameIdHeader_(value) {
+  return /^(?:Game\s*ID|ゲーム\s*ID)$/i.test(preResMailerText_(value));
 }
