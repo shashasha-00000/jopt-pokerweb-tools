@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PW 大会作成 Auto
 // @namespace    pw-tournament-create-auto
-// @version      0.2.2
-// @description  API-first tournament create flow from fixed TSV: create, settings, items, and Ticket Link in 10-tournament rounds.
+// @version      0.3.0
+// @description  API-first tournament create flow from fixed TSV with independent per-tournament workers.
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js
 // @author       xhpc007 + ChatGPT
@@ -24,12 +24,12 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t\t\t-74998
   };
 
   const SPEED = {
-    tournamentBatchSize: 10,
+    maxConcurrentTournaments: 10,
     afterCreateMs: 120,
     afterUsdtMs: 30,
     afterItemMs: 30,
-    afterTicketRoundMs: 50,
-    betweenBatchMs: 120,
+    afterTicketMs: 50,
+    betweenWorkerTasksMs: 120,
     refetchAfterEachItem: false
   };
 
@@ -80,6 +80,7 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t\t\t-74998
 
   const $ = sel => document.querySelector(sel);
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  let running = false;
 
   function normalizeText(value) {
     return String(value ?? "")
@@ -108,6 +109,14 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t\t\t-74998
     const s = normalizeText(value).replace(/[￥¥,\s]/g, "");
     if (!s) return true;
     return /^[-+]?0+(?:\.0+)?$/.test(s);
+  }
+
+  function configuredConcurrency() {
+    const value = Number(SPEED.maxConcurrentTournaments);
+    if (!Number.isInteger(value) || value < 1) {
+      throw new Error(`SPEED.maxConcurrentTournaments must be a positive integer: ${SPEED.maxConcurrentTournaments}`);
+    }
+    return value;
   }
 
   function normalizeDateToDdMmYyyy(value) {
@@ -303,10 +312,10 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t\t\t-74998
     return res;
   }
 
-  async function applyGeneralSettings(id) {
+  async function applyGeneralSettings(id, context) {
     for (const setting of GENERAL_SETTINGS) {
       await setGeneralSetting(id, setting);
-      log(`GENERAL_SETTING_OK ${setting.label} ${setting.campo}=${setting.status}`);
+      log(`GENERAL_SETTING_OK worker=${context.workerId} row=${context.t.rowNo} id=${id} ${setting.label} ${setting.campo}=${setting.status}`);
       await sleep(30);
     }
   }
@@ -469,23 +478,27 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t\t\t-74998
   }
 
   async function prepareTournament(context) {
-    const { t, index, total, batchNo, batchCount } = context;
-    log(`START_TOURNAMENT ${index + 1}/${total} batch=${batchNo}/${batchCount} row=${t.rowNo} ${t.name}`);
+    const { t, index, total, workerId } = context;
+    context.stage = "CREATE";
+    log(`START_TOURNAMENT ${index + 1}/${total} worker=${workerId} row=${t.rowNo} ${t.name}`);
     const id = await createTournament(t);
     context.id = id;
-    log(`CREATE_OK ${index + 1}/${total} ${t.name} id=${id} url=${location.origin}/cb/torneio/painel/${id}`);
+    log(`CREATE_OK ${index + 1}/${total} worker=${workerId} row=${t.rowNo} ${t.name} id=${id} url=${location.origin}/cb/torneio/painel/${id}`);
     await sleep(SPEED.afterCreateMs);
 
-    await applyGeneralSettings(id);
-    log(`GENERAL_SETTINGS_OK ${index + 1}/${total} ${t.name} 1/2/4/5=ON 3=OFF`);
+    context.stage = "GENERAL_SETTINGS";
+    await applyGeneralSettings(id, context);
+    log(`GENERAL_SETTINGS_OK ${index + 1}/${total} worker=${workerId} row=${t.rowNo} id=${id} ${t.name} 1/2/4/5=ON 3=OFF`);
     await sleep(SPEED.afterUsdtMs);
 
+    context.stage = "ITEM_PAGE_FETCH";
     let doc = await fetchTournamentDoc(id);
     const items = [t.entry, t.reEntry, t.ticketEntry].filter(Boolean);
-    if (!t.ticketEntry) log(`ITEM_SKIP ${index + 1}/${total} ${t.name} Ticket Entry/TE reason=not configured`);
+    if (!t.ticketEntry) log(`ITEM_SKIP ${index + 1}/${total} worker=${workerId} row=${t.rowNo} id=${id} ${t.name} Ticket Entry/TE reason=not configured`);
     for (const item of items) {
+      context.stage = `ITEM_${item.siglas || item.nome}`;
       const result = await saveItemByHtml(id, doc, item);
-      log(`ITEM_${result.action}_OK ${index + 1}/${total} ${t.name} ${item.nome}/${item.siglas} value=${item.valor} id_item=${result.id_item || "(new)"}`);
+      log(`ITEM_${result.action}_OK ${index + 1}/${total} worker=${workerId} row=${t.rowNo} id=${id} ${t.name} ${item.nome}/${item.siglas} value=${item.valor} id_item=${result.id_item || "(new)"}`);
       await sleep(SPEED.afterItemMs);
       if (SPEED.refetchAfterEachItem) doc = await fetchTournamentDoc(id);
     }
@@ -494,104 +507,43 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t\t\t-74998
     return context;
   }
 
-  async function linkTicketRound(contexts, ticketIndex, batchNo, batchCount) {
-    const active = contexts.filter(context =>
-      !context.failed &&
-      context.prepared &&
-      context.t.tickets.length > ticketIndex
-    );
+  async function processTournament(context) {
+    const { t, index, total, workerId } = context;
 
-    if (!active.length) return;
+    try {
+      await prepareTournament(context);
 
-    log(`LINK_ROUND_START batch=${batchNo}/${batchCount} ticket=${ticketIndex + 1} tournaments=${active.length}`);
+      for (let ticketIndex = 0; ticketIndex < t.tickets.length; ticketIndex++) {
+        const ticket = t.tickets[ticketIndex];
+        context.stage = `TICKET_${ticketIndex + 1}_PAGE_FETCH`;
+        const doc = await fetchTournamentDoc(context.id);
 
-    const pageResults = await Promise.allSettled(active.map(async context => ({
-      context,
-      doc: await fetchTournamentDoc(context.id),
-      ticket: context.t.tickets[ticketIndex]
-    })));
-
-    const ready = [];
-    pageResults.forEach((result, i) => {
-      const context = active[i];
-      if (result.status === "fulfilled") {
-        ready.push(result.value);
-        return;
-      }
-      context.failed = true;
-      context.error = result.reason?.message || String(result.reason || "FETCH_FAILED");
-      log(`LINK_PAGE_ERROR batch=${batchNo}/${batchCount} row=${context.t.rowNo} id=${context.id} ${context.t.name} ticket=${ticketIndex + 1}/${context.t.tickets.length} ${context.error}`);
-    });
-
-    const postResults = await Promise.allSettled(ready.map(async item => ({
-      ...item,
-      result: await linkTicketByHtml(item.context.id, item.doc, item.ticket)
-    })));
-
-    postResults.forEach((result, i) => {
-      const item = ready[i];
-      const context = item.context;
-      if (result.status === "fulfilled") {
-        const found = result.value.result;
+        context.stage = `TICKET_${ticketIndex + 1}_LINK`;
+        const found = await linkTicketByHtml(context.id, doc, ticket);
         context.linkedTickets = ticketIndex + 1;
-        log(`LINK_OK batch=${batchNo}/${batchCount} row=${context.t.rowNo} id=${context.id} ${context.t.name} ticket=${ticketIndex + 1}/${context.t.tickets.length} ${item.ticket} value=${found.option.value} match=${found.matchType}`);
-        return;
+        log(`LINK_OK ${index + 1}/${total} worker=${workerId} row=${t.rowNo} id=${context.id} ${t.name} ticket=${ticketIndex + 1}/${t.tickets.length} ${ticket} value=${found.option.value} match=${found.matchType}`);
+        await sleep(SPEED.afterTicketMs);
       }
+
+      context.stage = "DONE";
+      log(`DONE_TOURNAMENT ${index + 1}/${total} worker=${workerId} row=${t.rowNo} id=${context.id} tickets=${context.linkedTickets}/${t.tickets.length} ${location.origin}/cb/torneio/painel/${context.id}`);
+    } catch (e) {
       context.failed = true;
-      context.error = result.reason?.message || String(result.reason || "LINK_FAILED");
-      log(`LINK_ERROR batch=${batchNo}/${batchCount} row=${context.t.rowNo} id=${context.id} ${context.t.name} ticket=${ticketIndex + 1}/${context.t.tickets.length} ${item.ticket} ${context.error}`);
-    });
-
-    log(`LINK_ROUND_DONE batch=${batchNo}/${batchCount} ticket=${ticketIndex + 1} ok=${postResults.filter(x => x.status === "fulfilled").length} failed=${pageResults.filter(x => x.status === "rejected").length + postResults.filter(x => x.status === "rejected").length}`);
-    await sleep(SPEED.afterTicketRoundMs);
-  }
-
-  async function processTournamentBatch(tournaments, batchStart, total, batchNo, batchCount) {
-    const contexts = tournaments.map((t, offset) => ({
-      t,
-      index: batchStart + offset,
-      total,
-      batchNo,
-      batchCount,
-      id: "",
-      prepared: false,
-      linkedTickets: 0,
-      failed: false,
-      error: ""
-    }));
-
-    log(`BATCH_START ${batchNo}/${batchCount} tournaments=${contexts.length}`);
-
-    const prepareResults = await Promise.allSettled(contexts.map(context => prepareTournament(context)));
-    prepareResults.forEach((result, i) => {
-      if (result.status === "fulfilled") return;
-      const context = contexts[i];
-      context.failed = true;
-      context.error = result.reason?.message || String(result.reason || "PREPARE_FAILED");
-      log(`PREPARE_ERROR batch=${batchNo}/${batchCount} row=${context.t.rowNo} id=${context.id || "(not-created)"} ${context.t.name} ${context.error}`);
-    });
-
-    const maxTickets = contexts.reduce((max, context) =>
-      context.failed ? max : Math.max(max, context.t.tickets.length), 0);
-
-    for (let ticketIndex = 0; ticketIndex < maxTickets; ticketIndex++) {
-      await linkTicketRound(contexts, ticketIndex, batchNo, batchCount);
+      context.error = e?.message || String(e || "UNKNOWN_ERROR");
+      log(`TOURNAMENT_ERROR ${index + 1}/${total} worker=${workerId} row=${t.rowNo} id=${context.id || "(not-created)"} stage=${context.stage} ${t.name} ${context.error}`);
     }
 
-    contexts.forEach(context => {
-      if (context.failed) return;
-      log(`DONE_TOURNAMENT ${context.index + 1}/${total} row=${context.t.rowNo} tickets=${context.t.tickets.length} ${location.origin}/cb/torneio/painel/${context.id}`);
-    });
-
-    log(`BATCH_DONE ${batchNo}/${batchCount} ok=${contexts.filter(x => !x.failed).length} failed=${contexts.filter(x => x.failed).length}`);
-    return contexts;
+    return context;
   }
 
   async function runCreate() {
+    if (running) return alert("CREATE is already running.");
+
     clearLog();
     const raw = $("#pw-bg-poc-input").value;
     localStorage.setItem(STORAGE.input, raw);
     const tournaments = parseInput(raw);
+    const maxConcurrency = configuredConcurrency();
     const summary = tournaments
       .map((t, i) => `${i + 1}. row=${t.rowNo} ${t.name}\n   ${t.date} ${t.time} / tickets=${t.tickets.length}`)
       .join("\n\n");
@@ -603,31 +555,56 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t\t\t-74998
     );
     if (!ok) return;
 
-    const batchSize = SPEED.tournamentBatchSize;
-    const batchCount = Math.ceil(tournaments.length / batchSize);
-    log(`START batch count=${tournaments.length} batchSize=${batchSize} batches=${batchCount}`);
-    const results = [];
+    running = true;
+    const runButton = $("#pw-bg-poc-run");
+    if (runButton) runButton.disabled = true;
 
-    for (let batchStart = 0; batchStart < tournaments.length; batchStart += batchSize) {
-      const batchNo = Math.floor(batchStart / batchSize) + 1;
-      const batch = tournaments.slice(batchStart, batchStart + batchSize);
-      const contexts = await processTournamentBatch(
-        batch,
-        batchStart,
-        tournaments.length,
-        batchNo,
-        batchCount
-      );
-      results.push(...contexts);
-      await sleep(SPEED.betweenBatchMs);
+    try {
+      const contexts = tournaments.map((t, index) => ({
+        t,
+        index,
+        total: tournaments.length,
+        workerId: 0,
+        id: "",
+        prepared: false,
+        linkedTickets: 0,
+        failed: false,
+        stage: "QUEUED",
+        error: ""
+      }));
+      const workerCount = Math.min(maxConcurrency, contexts.length);
+      let nextIndex = 0;
+      let completed = 0;
+
+      log(`START count=${contexts.length} workers=${workerCount}`);
+
+      const worker = async workerId => {
+        while (true) {
+          const contextIndex = nextIndex++;
+          if (contextIndex >= contexts.length) return;
+
+          const context = contexts[contextIndex];
+          context.workerId = workerId;
+          log(`WORKER_CLAIM worker=${workerId} task=${context.index + 1}/${context.total} row=${context.t.rowNo} ${context.t.name}`);
+          await processTournament(context);
+          completed++;
+          log(`WORKER_RELEASE worker=${workerId} task=${context.index + 1}/${context.total} completed=${completed}/${contexts.length} status=${context.failed ? "ERROR" : "OK"} id=${context.id || "(not-created)"}`);
+          await sleep(SPEED.betweenWorkerTasksMs);
+        }
+      };
+
+      await Promise.all(Array.from({ length: workerCount }, (_, index) => worker(index + 1)));
+
+      const successful = contexts.filter(result => !result.failed);
+      const failed = contexts.filter(result => result.failed);
+      log(`DONE count=${contexts.length} workers=${workerCount} ok=${successful.length} failed=${failed.length}`);
+      contexts.forEach(result => log(
+        `RESULT ${result.index + 1}. status=${result.failed ? "ERROR" : "OK"} worker=${result.workerId} row=${result.t.rowNo} id=${result.id || ""} stage=${result.stage} tickets=${result.linkedTickets}/${result.t.tickets.length} ${result.t.name}${result.error ? ` error=${result.error}` : ""}`
+      ));
+    } finally {
+      running = false;
+      if (runButton && runButton.isConnected) runButton.disabled = false;
     }
-
-    const successful = results.filter(result => !result.failed);
-    const failed = results.filter(result => result.failed);
-    log(`DONE batch count=${results.length} ok=${successful.length} failed=${failed.length}`);
-    results.forEach(result => log(
-      `RESULT ${result.index + 1}. status=${result.failed ? "ERROR" : "OK"} row=${result.t.rowNo} id=${result.id || ""} tickets=${result.linkedTickets}/${result.t.tickets.length} ${result.t.name}${result.error ? ` error=${result.error}` : ""}`
-    ));
   }
 
   function addPanel() {

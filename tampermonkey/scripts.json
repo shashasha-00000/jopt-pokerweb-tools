@@ -11,7 +11,7 @@
     {
         "file":  "pw-existing-item-fee-patch.user.js",
         "name":  "PW Existing Tournament Patch",
-        "version":  "0.2.6",
+        "version":  "0.2.7",
         "description":  "Patch existing tournament item fees, EN/RE chips, and/or tournament names from TSV. Uses pasted URL/TournamentId, Shared Cache, then OPEN/CLOSED URL pool.",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-item-fee-patch.user.js",
         "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-item-fee-patch.user.js",
@@ -119,8 +119,8 @@
     {
         "file":  "pw-tournament-create-auto.user.js",
         "name":  "PW 大会作成 Auto",
-        "version":  "0.2.2",
-        "description":  "API-first tournament create flow from fixed TSV: create, settings, items, and Ticket Link in 10-tournament rounds.",
+        "version":  "0.3.0",
+        "description":  "API-first tournament create flow from fixed TSV with independent per-tournament workers.",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js",
         "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js",
         "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js"

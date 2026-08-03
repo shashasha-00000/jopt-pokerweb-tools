@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW Existing Tournament Patch
 // @namespace    pw-existing-item-fee-patch
-// @version      0.2.6
+// @version      0.2.7
 // @description  Patch existing tournament item fees, EN/RE chips, and/or tournament names from TSV. Uses pasted URL/TournamentId, Shared Cache, then OPEN/CLOSED URL pool.
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-item-fee-patch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-item-fee-patch.user.js
@@ -20,6 +20,7 @@
     candidateKey: "PW_EXISTING_ITEM_FEE_PATCH_CANDIDATES_V01",
     reportKey: "PW_EXISTING_ITEM_FEE_PATCH_REPORT_V01",
     searchWaitTimeoutMs: 10000,
+    maxConcurrentTournaments: 10,
     betweenTournamentsMs: 120,
     afterItemMs: 50
   };
@@ -1188,6 +1189,84 @@
     return { status: "OK", currentName, targetName };
   }
 
+  function findDuplicateTournamentIds(rows) {
+    const byId = new Map();
+
+    rows.forEach((row, index) => {
+      const id = norm(row["TournamentId"] || extractTournamentIdFromUrl(row["URL"]));
+      if (!id) return;
+      if (!byId.has(id)) byId.set(id, []);
+      byId.get(id).push({ index, name: cleanTournamentName(row["大会名"]) });
+    });
+
+    return [...byId.entries()]
+      .filter(([, matches]) => matches.length > 1)
+      .map(([id, matches]) => ({ id, matches }));
+  }
+
+  async function processTournamentPatchRow(row, index, total) {
+    const result = { ok: 0, skip: 0, error: 0, lines: [] };
+    const write = line => result.lines.push(line);
+    const name = cleanTournamentName(row["大会名"]);
+    const newName = cleanTournamentName(row["新大会名"]);
+    const id = row["TournamentId"] || extractTournamentIdFromUrl(row["URL"]);
+    const patches = parsePatchText(row["Patch"]);
+
+    write("");
+    write(`${index + 1}/${total} ${name}`);
+    write(`   id=${id} url=${row["URL"] || getTournamentUrl(id)}`);
+
+    if (!id) {
+      result.error++;
+      write("   ERROR TournamentId empty");
+      return result;
+    }
+
+    if (!patches.length && !newName) {
+      result.error++;
+      write("   ERROR Item patch and new tournament name are both empty");
+      return result;
+    }
+
+    try {
+      let doc = await fetchTournamentDoc(id);
+      const nameCheck = validateFetchedTournamentName(doc, name);
+      if (!nameCheck.ok) throw new Error(nameCheck.reason);
+      if (nameCheck.actual) write(`   actual=${nameCheck.actual}`);
+
+      for (const patch of patches) {
+        const patchResult = await patchItemByHtml(id, doc, patch);
+        if (patchResult.status === "SKIP") {
+          result.skip++;
+          write(`   SKIP ${patch.label} ${patch.valueLabel}=${amountDisplay(patchResult.currentValue)} already target`);
+        } else {
+          result.ok++;
+          write(`   OK ${patch.label} id_item=${patchResult.id_item} ${patch.valueLabel} ${amountDisplay(patchResult.currentValue)} -> ${amountDisplay(patchResult.targetValue)}`);
+          doc = await fetchTournamentDoc(id);
+        }
+        await sleep(CONFIG.afterItemMs);
+      }
+
+      if (newName) {
+        const currentName = nameCheck.actual || name;
+        const renameResult = await patchTournamentNameByHtml(id, doc, currentName, newName);
+        if (renameResult.status === "SKIP") {
+          result.skip++;
+          write(`   SKIP 大会名 already target: ${renameResult.targetName}`);
+        } else {
+          result.ok++;
+          write(`   OK 大会名 ${renameResult.currentName} -> ${renameResult.targetName}`);
+        }
+      }
+    } catch (e) {
+      result.error++;
+      console.error(e);
+      write(`   ERROR ${e.message || e}`);
+    }
+
+    return result;
+  }
+
   async function executeTournamentPatch() {
     if (running) return alert("処理中です");
 
@@ -1199,13 +1278,23 @@
       return alert(`URL未解決の使用対象があります: ${unresolved.length}件。先にURL pool検索してください。`);
     }
 
+    const duplicateIds = findDuplicateTournamentIds(rows);
+    if (duplicateIds.length) {
+      const detail = duplicateIds.map(({ id, matches }) => {
+        const labels = matches.map(match => `${match.index + 1}:${match.name}`).join(" / ");
+        return `TournamentId ${id} -> ${labels}`;
+      }).join("\n");
+      return alert(`同じTournamentIdが複数の使用対象にあります。並行実行できません。\n\n${detail}`);
+    }
+
     const summary = rows.map((row, i) => {
       const changes = [];
       if (row["Patch"]) changes.push(`Item: ${row["Patch"]}`);
       if (row["新大会名"]) changes.push(`大会名: ${row["大会名"]} -> ${row["新大会名"]}`);
       return `${i + 1}. ${row["大会名"]}\n   ${changes.join("\n   ")}\n   ${row["URL"]}`;
     }).join("\n\n");
-    if (!confirm(`既存大会の設定を修正します。Item修正の後、最後に大会名を変更します。\n\n対象: ${rows.length}大会\n\n${summary}\n\n続行しますか？`)) return;
+    const concurrency = Math.max(1, Math.min(CONFIG.maxConcurrentTournaments, rows.length));
+    if (!confirm(`既存大会の設定を修正します。Item修正の後、最後に大会名を変更します。\n\n対象: ${rows.length}大会\n同時処理: 最大${concurrency}大会\n\n${summary}\n\n続行しますか？`)) return;
 
     running = true;
     stopRequested = false;
@@ -1215,77 +1304,35 @@
     let ok = 0;
     let skip = 0;
     let error = 0;
+    let completed = 0;
+    let nextIndex = 0;
 
     try {
-      for (let i = 0; i < rows.length; i++) {
-        if (stopRequested) break;
+      setStatus(`EXEC 0/${rows.length} / concurrency=${concurrency}`);
 
-        const row = rows[i];
-        const name = cleanTournamentName(row["大会名"]);
-        const newName = cleanTournamentName(row["新大会名"]);
-        const id = row["TournamentId"] || extractTournamentIdFromUrl(row["URL"]);
-        const patches = parsePatchText(row["Patch"]);
+      const worker = async () => {
+        while (!stopRequested) {
+          const index = nextIndex++;
+          if (index >= rows.length) return;
 
-        setStatus(`EXEC ${i + 1}/${rows.length}: ${name}`);
-        logLine("");
-        logLine(`${i + 1}/${rows.length} ${name}`);
-        logLine(`   id=${id} url=${row["URL"] || getTournamentUrl(id)}`);
+          const rowResult = await processTournamentPatchRow(rows[index], index, rows.length);
+          ok += rowResult.ok;
+          skip += rowResult.skip;
+          error += rowResult.error;
+          completed++;
+          rowResult.lines.forEach(logLine);
+          setStatus(`EXEC ${completed}/${rows.length} / concurrency=${concurrency}`);
 
-        if (!id) {
-          error++;
-          logLine("   ERROR TournamentId empty");
-          continue;
+          await sleep(CONFIG.betweenTournamentsMs);
         }
+      };
 
-        if (!patches.length && !newName) {
-          error++;
-          logLine("   ERROR Item patch and new tournament name are both empty");
-          continue;
-        }
-
-        try {
-          let doc = await fetchTournamentDoc(id);
-          const nameCheck = validateFetchedTournamentName(doc, name);
-          if (!nameCheck.ok) throw new Error(nameCheck.reason);
-          if (nameCheck.actual) logLine(`   actual=${nameCheck.actual}`);
-
-          for (const patch of patches) {
-            const result = await patchItemByHtml(id, doc, patch);
-            if (result.status === "SKIP") {
-              skip++;
-              logLine(`   SKIP ${patch.label} ${patch.valueLabel}=${amountDisplay(result.currentValue)} already target`);
-            } else {
-              ok++;
-              logLine(`   OK ${patch.label} id_item=${result.id_item} ${patch.valueLabel} ${amountDisplay(result.currentValue)} -> ${amountDisplay(result.targetValue)}`);
-              doc = await fetchTournamentDoc(id);
-            }
-            await sleep(CONFIG.afterItemMs);
-          }
-
-          if (newName) {
-            const currentName = nameCheck.actual || name;
-            const result = await patchTournamentNameByHtml(id, doc, currentName, newName);
-            if (result.status === "SKIP") {
-              skip++;
-              logLine(`   SKIP 大会名 already target: ${result.targetName}`);
-            } else {
-              ok++;
-              logLine(`   OK 大会名 ${result.currentName} -> ${result.targetName}`);
-            }
-          }
-        } catch (e) {
-          error++;
-          console.error(e);
-          logLine(`   ERROR ${e.message || e}`);
-        }
-
-        await sleep(CONFIG.betweenTournamentsMs);
-      }
+      await Promise.all(Array.from({ length: concurrency }, () => worker()));
 
       logLine("");
-      logLine(`DONE OK=${ok} SKIP=${skip} ERROR=${error}`);
-      setStatus(`DONE OK=${ok} SKIP=${skip} ERROR=${error}`);
-      alert(`完了\n\nOK: ${ok}\nSKIP: ${skip}\nERROR: ${error}`);
+      logLine(`DONE TOURNAMENTS=${completed}/${rows.length} CONCURRENCY=${concurrency} OK=${ok} SKIP=${skip} ERROR=${error}${stopRequested ? " STOPPED" : ""}`);
+      setStatus(`DONE ${completed}/${rows.length} OK=${ok} SKIP=${skip} ERROR=${error}`);
+      alert(`完了\n\n大会: ${completed}/${rows.length}\n同時処理: 最大${concurrency}\nOK: ${ok}\nSKIP: ${skip}\nERROR: ${error}${stopRequested ? "\nSTOP済み" : ""}`);
     } finally {
       running = false;
       stopRequested = false;
