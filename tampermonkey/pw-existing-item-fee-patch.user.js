@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW Existing Tournament Patch
 // @namespace    pw-existing-item-fee-patch
-// @version      0.2.5
+// @version      0.2.6
 // @description  Patch existing tournament item fees, EN/RE chips, and/or tournament names from TSV. Uses pasted URL/TournamentId, Shared Cache, then OPEN/CLOSED URL pool.
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-item-fee-patch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-item-fee-patch.user.js
@@ -1080,6 +1080,7 @@
     setIfPresentOrDefault(fd, "pts_ranking", existing.pts_ranking, "0");
     setIfPresentOrDefault(fd, "gameid_bloqueio", existing.gameid_bloqueio, "1");
     setIfPresentOrDefault(fd, "valor", normalizeAmount(existing.valor), "0");
+    setIfPresentOrDefault(fd, "taxa", normalizeAmount(existing.taxa), "0");
     fd.set(patch.property, targetValue);
     setIfPresentOrDefault(fd, "rake", normalizeAmount(existing.rake), "0");
     setIfPresentOrDefault(fd, "taxa_extras", existing.taxa_extras, "");
