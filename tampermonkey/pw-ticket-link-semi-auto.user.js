@@ -1,10 +1,10 @@
 ﻿// ==UserScript==
 // @name         PW Ticket Link Semi Auto
 // @namespace    pw-ticket-link-semi-auto
-// @version      1.0.6
+// @version      1.1.0
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
-// @description  TicketLink用ルール表から候補作成 → Shared Cache / URL pool / 手動強制URLでURL確認 → 已确认比赛へ后台fetchでTicket Link実行。Ticket optionはtn_のみ。
+// @description  TicketLink用ルール表から候補作成 → URL確認 → 独立大会workerで后台Ticket Link実行。大会内は逐次処理、Ticket optionはtn_のみ。
 // @author       xhpc007 + ChatGPT
 // @match        https://japanopt.pokerweb.com.br/*
 // @grant        GM_setClipboard
@@ -27,6 +27,7 @@
     reportKey: "PW_TICKET_LINK_MANUAL_V10_REPORT",
     flowKey: "PW_TICKET_LINK_MANUAL_V10_FLOW",
 
+    maxConcurrentTournaments: 10,
     searchWaitTimeoutMs: 10000,
     searchPollMs: 350,
     afterSearchMs: 250,
@@ -84,13 +85,30 @@
   }
 
   function nowText() {
-    const d = new Date();
-    const pad = n => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Tokyo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23"
+    }).formatToParts(new Date());
+    const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second}`;
+  }
+
+  function configuredConcurrency() {
+    const value = Number(CONFIG.maxConcurrentTournaments);
+    if (!Number.isInteger(value) || value < 1) {
+      throw new Error(`CONFIG.maxConcurrentTournaments must be a positive integer: ${CONFIG.maxConcurrentTournaments}`);
+    }
+    return value;
   }
 
   function log(...args) {
-    console.log("[PW-TICKET-LINK-v1.0]", ...args);
+    console.log("[PW-TICKET-LINK-v1.1]", ...args);
     const el = document.querySelector("#pw-ticket-link-status");
     if (el) el.textContent = args.map(String).join(" ");
   }
@@ -1969,8 +1987,6 @@
       doc.querySelector('[name="codbloq"]')?.value ||
       htmlAttrValue(form.outerHTML, "codbloq") ||
       htmlAttrValue(rawHtml, "codbloq") ||
-      document.querySelector('form[action*="vincular_grupos_vagas"] [name="codbloq"]')?.value ||
-      document.querySelector('[name="codbloq"]')?.value ||
       "";
 
     const idTorneio =
@@ -2149,6 +2165,147 @@
     return usable;
   }
 
+  function findDuplicateExecutionTournamentIds(rows) {
+    const byId = new Map();
+
+    rows.forEach((row, index) => {
+      const id = norm(row["TournamentId"] || extractTournamentIdFromUrl(row["URL"]));
+      if (!id) return;
+      if (!byId.has(id)) byId.set(id, []);
+      byId.get(id).push({ index, name: cleanTournamentName(row["大会名"]) });
+    });
+
+    return [...byId.entries()]
+      .filter(([, matches]) => matches.length > 1)
+      .map(([id, matches]) => ({ id, matches }));
+  }
+
+  async function processTicketLinkTournament(context) {
+    const { row, index, total, workerId, tickets } = context;
+    const expectedName = cleanTournamentName(row["大会名"]);
+    const expectedUrl = row["URL"] || getTournamentUrl(row["TournamentId"]);
+
+    appendReportLine(
+      `[${nowText()}] TASK_START worker=${workerId} task=${index + 1}/${total} id=${row["TournamentId"]} tickets=${tickets.length} / ${expectedName}`
+    );
+
+    try {
+      for (let ticketIndex = 0; ticketIndex < tickets.length; ticketIndex++) {
+        if (stopRequested) {
+          context.stopped = true;
+          context.stage = "STOPPED";
+          appendReportLine(
+            `[${nowText()}] TASK_STOPPED worker=${workerId} task=${index + 1}/${total} id=${row["TournamentId"]} linked=${context.linkedTickets}/${tickets.length} / ${expectedName}`
+          );
+          return context;
+        }
+
+        const ticketName = tickets[ticketIndex];
+        context.stage = `TICKET_${ticketIndex + 1}_PAGE_FETCH`;
+        const doc = await fetchTicketLinkPage(expectedUrl);
+        const actualTitle = verifyFetchedPageMatchesExpected(doc, expectedName);
+        const { select } = getTicketLinkFormFromDoc(doc, row["TournamentId"]);
+
+        context.stage = `TICKET_${ticketIndex + 1}_LINK`;
+        log(`LINK worker=${workerId} task=${index + 1}/${total} ticket=${ticketIndex + 1}/${tickets.length}: ${ticketName}`);
+        const found = findTicketOptionStrict(select, ticketName);
+        const res = await postTicketLinkByDoc(doc, row["TournamentId"], ticketName, found.option.value);
+        context.linkedTickets = ticketIndex + 1;
+
+        appendReportLine(
+          `[${nowText()}] LINK_OK worker=${workerId} task=${index + 1}/${total} ticket=${ticketIndex + 1}/${tickets.length} id=${row["TournamentId"]} / ${expectedName} / actual=${actualTitle} / ticket=${ticketName} / value=${found.option.value} / match=${found.matchType} / status=${res.status} / mode=BACKGROUND`
+        );
+
+        await sleep(CONFIG.betweenTicketsMs);
+      }
+
+      context.stage = "DONE";
+      appendReportLine(
+        `[${nowText()}] TASK_OK worker=${workerId} task=${index + 1}/${total} id=${row["TournamentId"]} tickets=${context.linkedTickets}/${tickets.length} / ${expectedName}`
+      );
+    } catch (e) {
+      console.error("[PW-TICKET-LINK] execute error", e);
+      context.failed = true;
+      context.error = e?.message || String(e || "UNKNOWN_ERROR");
+      appendReportLine(
+        `[${nowText()}] TASK_ERROR worker=${workerId} task=${index + 1}/${total} id=${row["TournamentId"] || ""} stage=${context.stage} linked=${context.linkedTickets}/${tickets.length} / ${expectedName} / ${context.error}`
+      );
+      warn("失敗:", context.error);
+    }
+
+    return context;
+  }
+
+  async function runExecuteWorkers(rows, ticketTotal, maxConcurrency) {
+    const contexts = rows.map((row, index) => ({
+      row,
+      index,
+      total: rows.length,
+      workerId: 0,
+      tickets: parseTicketListFromCandidate(row),
+      linkedTickets: 0,
+      failed: false,
+      stopped: false,
+      stage: "QUEUED",
+      error: ""
+    }));
+    const workerCount = Math.min(maxConcurrency, contexts.length);
+    let nextIndex = 0;
+    let completed = 0;
+
+    setFlowState({ running: true, total: contexts.length, completed, nextIndex, workers: workerCount });
+    appendReportLine(`[${nowText()}] WORKERS_START tournaments=${contexts.length} workers=${workerCount}`);
+
+    const worker = async workerId => {
+      while (!stopRequested) {
+        const contextIndex = nextIndex++;
+        if (contextIndex >= contexts.length) return;
+
+        const context = contexts[contextIndex];
+        context.workerId = workerId;
+        appendReportLine(
+          `[${nowText()}] WORKER_CLAIM worker=${workerId} task=${context.index + 1}/${context.total} id=${context.row["TournamentId"]} / ${context.row["大会名"]}`
+        );
+        setFlowState({ running: true, total: contexts.length, completed, nextIndex, workers: workerCount });
+
+        await processTicketLinkTournament(context);
+        completed++;
+        appendReportLine(
+          `[${nowText()}] WORKER_RELEASE worker=${workerId} task=${context.index + 1}/${context.total} completed=${completed}/${contexts.length} status=${context.failed ? "ERROR" : context.stopped ? "STOPPED" : "OK"} id=${context.row["TournamentId"]}`
+        );
+        setFlowState({ running: true, total: contexts.length, completed, nextIndex, workers: workerCount, stopRequested });
+
+        await sleep(CONFIG.betweenTournamentsMs);
+      }
+    };
+
+    try {
+      await Promise.all(Array.from({ length: workerCount }, (_, index) => worker(index + 1)));
+
+      const successful = contexts.filter(context => context.stage === "DONE");
+      const failed = contexts.filter(context => context.failed);
+      const stopped = contexts.filter(context => context.stopped);
+      const queued = contexts.filter(context => context.workerId === 0);
+      const finalLabel = stopRequested ? "STOPPED" : "DONE";
+      appendReportLine(
+        `[${nowText()}] ${finalLabel} tournaments=${contexts.length} workers=${workerCount} ok=${successful.length} failed=${failed.length} stopped=${stopped.length} queued=${queued.length} tickets=${contexts.reduce((sum, context) => sum + context.linkedTickets, 0)}/${ticketTotal}`
+      );
+      contexts.forEach(context => appendReportLine(
+        `RESULT ${context.index + 1}. status=${context.failed ? "ERROR" : context.stopped ? "STOPPED" : context.stage === "DONE" ? "OK" : "QUEUED"} worker=${context.workerId || "-"} id=${context.row["TournamentId"]} stage=${context.stage} tickets=${context.linkedTickets}/${context.tickets.length} ${context.row["大会名"]}${context.error ? ` error=${context.error}` : ""}`
+      ));
+
+      log(stopRequested ? "停止完了" : "全部完成");
+      alert(stopRequested
+        ? "Ticket Link停止完了。進行中だった処理の結果はReportを確認してください。"
+        : `Ticket Link 全部完成。\n\nOK: ${successful.length}\nERROR: ${failed.length}\nReportを確認してください。`
+      );
+    } finally {
+      clearFlowState();
+      running = false;
+      stopRequested = false;
+    }
+  }
+
   function startExecuteLink() {
     if (running) {
       alert("処理中です");
@@ -2156,9 +2313,18 @@
     }
 
     let rows;
+    let maxConcurrency;
 
     try {
       rows = prepareExecutionRows();
+      maxConcurrency = configuredConcurrency();
+      const duplicateIds = findDuplicateExecutionTournamentIds(rows);
+      if (duplicateIds.length) {
+        const detail = duplicateIds.map(({ id, matches }) =>
+          `TournamentId ${id}: ${matches.map(match => `${match.index + 1}:${match.name}`).join(" / ")}`
+        ).join("\n");
+        throw new Error(`同じTournamentIdが複数の使用対象にあります。\n${detail}`);
+      }
     } catch (e) {
       alert("ERROR: " + (e.message || String(e)));
       return;
@@ -2186,107 +2352,29 @@
 
     const startReport = [
       `[${nowText()}] START  Ticket Link実行`,
-      `大会数=${rows.length} / Ticket Link予定数=${ticketTotal}`,
+      `大会数=${rows.length} / Ticket Link予定数=${ticketTotal} / workers=${Math.min(maxConcurrency, rows.length)}`,
       ""
     ].join("\n");
 
     setReportText(startReport);
-
-    const state = {
-      running: true,
-      rowIndex: 0,
-      ticketIndex: 0,
-      rows
-    };
-
-    setFlowState(state);
-
-    runExecuteCurrentStep();
-  }
-
-  async function runExecuteCurrentStep() {
-    const state = getFlowState();
-
-    if (!state.running) return;
-
-    if (stopRequested) {
-      appendReportLine(`[${nowText()}] STOP_REQUESTED`);
-      state.running = false;
-      setFlowState(state);
-      return;
-    }
-
-    const rows = state.rows || [];
-    const rowIndex = Number(state.rowIndex || 0);
-
-    if (rowIndex >= rows.length) {
-      appendReportLine(`[${nowText()}] DONE  全大会Ticket Link完了`);
-      clearFlowState();
-      running = false;
-      stopRequested = false;
-      log("全部完成");
-      alert("Ticket Link 全部完成。Reportを確認してください。");
-      return;
-    }
-
-    const row = rows[rowIndex];
-    const tickets = parseTicketListFromCandidate(row);
-    const ticketIndex = Number(state.ticketIndex || 0);
-
-    try {
-      const expectedName = cleanTournamentName(row["大会名"]);
-      const expectedUrl = row["URL"] || getTournamentUrl(row["TournamentId"]);
-
-      if (ticketIndex >= tickets.length) {
-        appendReportLine(`[${nowText()}] TASK_OK  ${expectedName} / ${tickets.length} tickets 完了`);
-        state.rowIndex = rowIndex + 1;
-        state.ticketIndex = 0;
-        setFlowState(state);
-
-        await sleep(CONFIG.betweenTournamentsMs);
-        runExecuteCurrentStep();
-        return;
-      }
-
-      const doc = await fetchTicketLinkPage(expectedUrl);
-      const actualTitle = verifyFetchedPageMatchesExpected(doc, expectedName);
-      const { select } = getTicketLinkFormFromDoc(doc, row["TournamentId"]);
-
-      const ticketName = tickets[ticketIndex];
-      log(`LINK ${rowIndex + 1}/${rows.length} ticket ${ticketIndex + 1}/${tickets.length}: ${ticketName}`);
-
-      const found = findTicketOptionStrict(select, ticketName);
-      const res = await postTicketLinkByDoc(doc, row["TournamentId"], ticketName, found.option.value);
-
-      appendReportLine(
-        `[${nowText()}] LINK_OK  ${expectedName} / actual=${actualTitle} / ticket=${ticketName} / value=${found.option.value} / match=${found.matchType} / status=${res.status} / mode=BACKGROUND`
-      );
-
-      state.ticketIndex = ticketIndex + 1;
-      setFlowState(state);
-
-      await sleep(CONFIG.betweenTicketsMs);
-      runExecuteCurrentStep();
-
-    } catch (e) {
-      console.error("[PW-TICKET-LINK] execute error", e);
-      appendReportLine(`[${nowText()}] ERROR  row=${rowIndex + 1} ticket=${ticketIndex + 1} / ${row?.["大会名"] || ""} / ${e.message || e}`);
-      warn("失敗:", e.message || e);
-
-      state.running = false;
-      setFlowState(state);
-      running = false;
-      stopRequested = false;
-
-      alert("ERROR: " + (e.message || String(e)) + "\n\n状態は残しています。ReportとConsoleを確認してください。");
-    }
+    runExecuteWorkers(rows, ticketTotal, maxConcurrency).catch(e => {
+      console.error("[PW-TICKET-LINK] worker pool error", e);
+      appendReportLine(`[${nowText()}] FATAL_ERROR ${e.message || e}`);
+      alert("FATAL ERROR: " + (e.message || String(e)) + "\n\nReportとConsoleを確認してください。");
+    });
   }
 
   function stopRun() {
+    if (!running) {
+      stopRequested = false;
+      clearFlowState();
+      log("停止状態をクリアしました。");
+      return;
+    }
+
     stopRequested = true;
-    running = false;
-    clearFlowState();
-    log("停止しました。状態をクリアしました。");
+    appendReportLine(`[${nowText()}] STOP_REQUESTED active workers will stop before the next Ticket`);
+    log("停止要求を受け付けました。進行中のTicket完了後、新しいTicketと大会を開始しません。");
   }
 
   // ============================================================
@@ -2550,7 +2638,6 @@ Satellite	s01"
       resolveUrlForCandidates,
       forceSetTournamentUrls,
       startExecuteLink,
-      runExecuteCurrentStep,
       stopRun,
       loadSharedCache,
       saveSharedCache,
@@ -2564,8 +2651,9 @@ Satellite	s01"
       const state = getFlowState();
 
       if (state.running) {
-        running = true;
-        runExecuteCurrentStep();
+        clearFlowState();
+        appendReportLine(`[${nowText()}] PREVIOUS_RUN_INTERRUPTED automatic resume disabled; confirm current Ticket Link state before rerun`);
+        log("前回の実行状態を検出しました。並行処理は自動再開しません。Reportと各大会のTicket Link状態を確認してください。");
       } else {
         log(`ready / Shared URL Cache: ${cacheToRows().length}件`);
       }
