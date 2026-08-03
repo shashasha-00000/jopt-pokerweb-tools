@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PW 大会作成 Auto
 // @namespace    pw-tournament-create-auto
-// @version      0.1.3
-// @description  API-first tournament create flow from fixed TSV: create, USDT, items, and Ticket Link without page-step pipeline.
+// @version      0.2.2
+// @description  API-first tournament create flow from fixed TSV: create, settings, items, and Ticket Link in 10-tournament rounds.
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js
 // @author       xhpc007 + ChatGPT
@@ -15,8 +15,8 @@
 (function () {
   "use strict";
 
-  const DEFAULT_INPUT = `大会名\t日付\t開始時間\tEN金額\tEN手数料\tEN回数\tRE金額\tRE手数料\tRE回数\tTE金額\tTE手数料\tTE回数\tチケット名称
-test7777\t2026/07/02\t13:00\t80000\t1000\t1\t80000\t0\t3\t-74998\t0\t0\t【SPADIE TOKYO 42nd】Main Event / -2026.08.31`;
+  const DEFAULT_INPUT = `大会名\t日付\t開始時間\tEN名称\tEN略称\tEN金額\tEN手数料\tEN回数\tENチップ数\tRE名称\tRE略称\tRE金額\tRE手数料\tRE回数\tREチップ数\tTE名称\tTE略称\tTE金額\tTE手数料\tTE回数\tチケット名称
+test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t\t\t-74998\t0\t0\t【SPADIE TOKYO 42nd】Main Event / -2026.08.31`;
 
   const STORAGE = {
     input: "PW_BG_CREATE_INPUT_V01",
@@ -24,13 +24,13 @@ test7777\t2026/07/02\t13:00\t80000\t1000\t1\t80000\t0\t3\t-74998\t0\t0\t【SPADI
   };
 
   const SPEED = {
+    tournamentBatchSize: 10,
     afterCreateMs: 120,
     afterUsdtMs: 30,
     afterItemMs: 30,
-    afterTicketMs: 50,
-    betweenTournamentMs: 120,
-    refetchAfterEachItem: false,
-    refetchAfterEachTicket: true
+    afterTicketRoundMs: 50,
+    betweenBatchMs: 120,
+    refetchAfterEachItem: false
   };
 
   const DEFAULTS = {
@@ -170,27 +170,33 @@ test7777\t2026/07/02\t13:00\t80000\t1000\t1\t80000\t0\t3\t-74998\t0\t0\t【SPADI
         date,
         time,
         entry: {
-          nome: "Entry",
-          siglas: "En",
+          nome: cell("EN名称") || "Entry",
+          siglas: cell("EN略称") || "En",
+          lookupNome: "Entry",
+          lookupSiglas: "En",
           valor: normalizeAmount(cell("EN金額")),
           taxa: normalizeAmount(cell("EN手数料")),
           limite: normalizeLimit(cell("EN回数")),
-          fichas: DEFAULTS.entryChips,
+          fichas: normalizeAmount(cell("ENチップ数")) || DEFAULTS.entryChips,
           reposicionar: DEFAULTS.entryReposicionar
         },
         reEntry: {
-          nome: "Re Entry",
-          siglas: "Re",
+          nome: cell("RE名称") || "Re Entry",
+          siglas: cell("RE略称") || "Re",
+          lookupNome: "Re Entry",
+          lookupSiglas: "Re",
           valor: normalizeAmount(cell("RE金額")),
           taxa: normalizeAmount(cell("RE手数料")),
           limite: normalizeLimit(cell("RE回数")),
-          fichas: DEFAULTS.reEntryChips,
+          fichas: normalizeAmount(cell("REチップ数")) || DEFAULTS.reEntryChips,
           reposicionar: DEFAULTS.reEntryReposicionar
         },
         ticketEntry: hasTicketEntry
           ? {
-              nome: "Ticket Entry",
-              siglas: "TE",
+              nome: cell("TE名称") || "Ticket Entry",
+              siglas: cell("TE略称") || "TE",
+              lookupNome: "Ticket Entry",
+              lookupSiglas: "TE",
               valor: teAmount,
               taxa: teFee,
               limite: teLimit,
@@ -227,11 +233,11 @@ test7777\t2026/07/02\t13:00\t80000\t1000\t1\t80000\t0\t3\t-74998\t0\t0\t【SPADI
     tournaments.forEach((t, i) => {
       log(`${i + 1}. row=${t.rowNo} ${t.name}`);
       log(`   Start: ${t.date} ${t.time}`);
-      log(`   Entry: ${t.entry.valor} + ${t.entry.taxa} / limit=${t.entry.limite}`);
-      log(`   Re Entry: ${t.reEntry.valor} + ${t.reEntry.taxa} / limit=${t.reEntry.limite}`);
+      log(`   EN: ${t.entry.nome}/${t.entry.siglas} / ${t.entry.valor} + ${t.entry.taxa} / limit=${t.entry.limite} / chips=${t.entry.fichas}`);
+      log(`   RE: ${t.reEntry.nome}/${t.reEntry.siglas} / ${t.reEntry.valor} + ${t.reEntry.taxa} / limit=${t.reEntry.limite} / chips=${t.reEntry.fichas}`);
       log(t.ticketEntry
-        ? `   Ticket Entry: ${t.ticketEntry.valor} + ${t.ticketEntry.taxa} / limit=${t.ticketEntry.limite}`
-        : "   Ticket Entry: (none)");
+        ? `   TE: ${t.ticketEntry.nome}/${t.ticketEntry.siglas} / ${t.ticketEntry.valor} + ${t.ticketEntry.taxa} / limit=${t.ticketEntry.limite}`
+        : "   TE: (none)");
       log(`   Tickets: ${t.tickets.length ? t.tickets.join(" | ") : "(none)"}`);
     });
   }
@@ -341,10 +347,16 @@ test7777\t2026/07/02\t13:00\t80000\t1000\t1\t80000\t0\t3\t-74998\t0\t0\t【SPADI
   }
 
   function findExistingItem(items, item) {
-    const siglas = normalizeText(item.siglas);
-    const name = normalizeText(item.nome);
-    return items.find(x => siglas && x.siglas === siglas) ||
-      items.find(x => name && x.nome === name) ||
+    const siglasCandidates = [...new Set([
+      normalizeText(item.lookupSiglas),
+      normalizeText(item.siglas)
+    ].filter(Boolean))];
+    const nameCandidates = [...new Set([
+      normalizeText(item.lookupNome),
+      normalizeText(item.nome)
+    ].filter(Boolean))];
+    return items.find(x => siglasCandidates.includes(x.siglas)) ||
+      items.find(x => nameCandidates.includes(x.nome)) ||
       null;
   }
 
@@ -456,39 +468,123 @@ test7777\t2026/07/02\t13:00\t80000\t1000\t1\t80000\t0\t3\t-74998\t0\t0\t【SPADI
     return found;
   }
 
-  async function processTournament(t, index, total) {
-    log(`START_TOURNAMENT ${index + 1}/${total} row=${t.rowNo} ${t.name}`);
+  async function prepareTournament(context) {
+    const { t, index, total, batchNo, batchCount } = context;
+    log(`START_TOURNAMENT ${index + 1}/${total} batch=${batchNo}/${batchCount} row=${t.rowNo} ${t.name}`);
     const id = await createTournament(t);
-    log(`CREATE_OK id=${id} url=${location.origin}/cb/torneio/painel/${id}`);
+    context.id = id;
+    log(`CREATE_OK ${index + 1}/${total} ${t.name} id=${id} url=${location.origin}/cb/torneio/painel/${id}`);
     await sleep(SPEED.afterCreateMs);
 
     await applyGeneralSettings(id);
-    log("GENERAL_SETTINGS_OK 1/2/4/5=ON 3=OFF");
+    log(`GENERAL_SETTINGS_OK ${index + 1}/${total} ${t.name} 1/2/4/5=ON 3=OFF`);
     await sleep(SPEED.afterUsdtMs);
 
     let doc = await fetchTournamentDoc(id);
     const items = [t.entry, t.reEntry, t.ticketEntry].filter(Boolean);
-    if (!t.ticketEntry) log("ITEM_SKIP Ticket Entry/TE reason=not configured");
+    if (!t.ticketEntry) log(`ITEM_SKIP ${index + 1}/${total} ${t.name} Ticket Entry/TE reason=not configured`);
     for (const item of items) {
       const result = await saveItemByHtml(id, doc, item);
-      log(`ITEM_${result.action}_OK ${item.nome}/${item.siglas} value=${item.valor} id_item=${result.id_item || "(new)"}`);
+      log(`ITEM_${result.action}_OK ${index + 1}/${total} ${t.name} ${item.nome}/${item.siglas} value=${item.valor} id_item=${result.id_item || "(new)"}`);
       await sleep(SPEED.afterItemMs);
       if (SPEED.refetchAfterEachItem) doc = await fetchTournamentDoc(id);
     }
 
-    if (t.tickets.length && !SPEED.refetchAfterEachItem) {
-      doc = await fetchTournamentDoc(id);
+    context.prepared = true;
+    return context;
+  }
+
+  async function linkTicketRound(contexts, ticketIndex, batchNo, batchCount) {
+    const active = contexts.filter(context =>
+      !context.failed &&
+      context.prepared &&
+      context.t.tickets.length > ticketIndex
+    );
+
+    if (!active.length) return;
+
+    log(`LINK_ROUND_START batch=${batchNo}/${batchCount} ticket=${ticketIndex + 1} tournaments=${active.length}`);
+
+    const pageResults = await Promise.allSettled(active.map(async context => ({
+      context,
+      doc: await fetchTournamentDoc(context.id),
+      ticket: context.t.tickets[ticketIndex]
+    })));
+
+    const ready = [];
+    pageResults.forEach((result, i) => {
+      const context = active[i];
+      if (result.status === "fulfilled") {
+        ready.push(result.value);
+        return;
+      }
+      context.failed = true;
+      context.error = result.reason?.message || String(result.reason || "FETCH_FAILED");
+      log(`LINK_PAGE_ERROR batch=${batchNo}/${batchCount} row=${context.t.rowNo} id=${context.id} ${context.t.name} ticket=${ticketIndex + 1}/${context.t.tickets.length} ${context.error}`);
+    });
+
+    const postResults = await Promise.allSettled(ready.map(async item => ({
+      ...item,
+      result: await linkTicketByHtml(item.context.id, item.doc, item.ticket)
+    })));
+
+    postResults.forEach((result, i) => {
+      const item = ready[i];
+      const context = item.context;
+      if (result.status === "fulfilled") {
+        const found = result.value.result;
+        context.linkedTickets = ticketIndex + 1;
+        log(`LINK_OK batch=${batchNo}/${batchCount} row=${context.t.rowNo} id=${context.id} ${context.t.name} ticket=${ticketIndex + 1}/${context.t.tickets.length} ${item.ticket} value=${found.option.value} match=${found.matchType}`);
+        return;
+      }
+      context.failed = true;
+      context.error = result.reason?.message || String(result.reason || "LINK_FAILED");
+      log(`LINK_ERROR batch=${batchNo}/${batchCount} row=${context.t.rowNo} id=${context.id} ${context.t.name} ticket=${ticketIndex + 1}/${context.t.tickets.length} ${item.ticket} ${context.error}`);
+    });
+
+    log(`LINK_ROUND_DONE batch=${batchNo}/${batchCount} ticket=${ticketIndex + 1} ok=${postResults.filter(x => x.status === "fulfilled").length} failed=${pageResults.filter(x => x.status === "rejected").length + postResults.filter(x => x.status === "rejected").length}`);
+    await sleep(SPEED.afterTicketRoundMs);
+  }
+
+  async function processTournamentBatch(tournaments, batchStart, total, batchNo, batchCount) {
+    const contexts = tournaments.map((t, offset) => ({
+      t,
+      index: batchStart + offset,
+      total,
+      batchNo,
+      batchCount,
+      id: "",
+      prepared: false,
+      linkedTickets: 0,
+      failed: false,
+      error: ""
+    }));
+
+    log(`BATCH_START ${batchNo}/${batchCount} tournaments=${contexts.length}`);
+
+    const prepareResults = await Promise.allSettled(contexts.map(context => prepareTournament(context)));
+    prepareResults.forEach((result, i) => {
+      if (result.status === "fulfilled") return;
+      const context = contexts[i];
+      context.failed = true;
+      context.error = result.reason?.message || String(result.reason || "PREPARE_FAILED");
+      log(`PREPARE_ERROR batch=${batchNo}/${batchCount} row=${context.t.rowNo} id=${context.id || "(not-created)"} ${context.t.name} ${context.error}`);
+    });
+
+    const maxTickets = contexts.reduce((max, context) =>
+      context.failed ? max : Math.max(max, context.t.tickets.length), 0);
+
+    for (let ticketIndex = 0; ticketIndex < maxTickets; ticketIndex++) {
+      await linkTicketRound(contexts, ticketIndex, batchNo, batchCount);
     }
 
-    for (const ticket of t.tickets) {
-      const result = await linkTicketByHtml(id, doc, ticket);
-      log(`LINK_OK ${ticket} value=${result.option.value} match=${result.matchType}`);
-      await sleep(SPEED.afterTicketMs);
-      if (SPEED.refetchAfterEachTicket) doc = await fetchTournamentDoc(id);
-    }
+    contexts.forEach(context => {
+      if (context.failed) return;
+      log(`DONE_TOURNAMENT ${context.index + 1}/${total} row=${context.t.rowNo} tickets=${context.t.tickets.length} ${location.origin}/cb/torneio/painel/${context.id}`);
+    });
 
-    log(`DONE_TOURNAMENT ${index + 1}/${total} ${location.origin}/cb/torneio/painel/${id}`);
-    return id;
+    log(`BATCH_DONE ${batchNo}/${batchCount} ok=${contexts.filter(x => !x.failed).length} failed=${contexts.filter(x => x.failed).length}`);
+    return contexts;
   }
 
   async function runCreate() {
@@ -507,15 +603,31 @@ test7777\t2026/07/02\t13:00\t80000\t1000\t1\t80000\t0\t3\t-74998\t0\t0\t【SPADI
     );
     if (!ok) return;
 
-    log(`START batch count=${tournaments.length}`);
-    const ids = [];
-    for (let i = 0; i < tournaments.length; i++) {
-      const id = await processTournament(tournaments[i], i, tournaments.length);
-      ids.push(id);
-      await sleep(SPEED.betweenTournamentMs);
+    const batchSize = SPEED.tournamentBatchSize;
+    const batchCount = Math.ceil(tournaments.length / batchSize);
+    log(`START batch count=${tournaments.length} batchSize=${batchSize} batches=${batchCount}`);
+    const results = [];
+
+    for (let batchStart = 0; batchStart < tournaments.length; batchStart += batchSize) {
+      const batchNo = Math.floor(batchStart / batchSize) + 1;
+      const batch = tournaments.slice(batchStart, batchStart + batchSize);
+      const contexts = await processTournamentBatch(
+        batch,
+        batchStart,
+        tournaments.length,
+        batchNo,
+        batchCount
+      );
+      results.push(...contexts);
+      await sleep(SPEED.betweenBatchMs);
     }
-    log(`DONE batch count=${ids.length}`);
-    ids.forEach((id, i) => log(`RESULT ${i + 1}. ${location.origin}/cb/torneio/painel/${id}`));
+
+    const successful = results.filter(result => !result.failed);
+    const failed = results.filter(result => result.failed);
+    log(`DONE batch count=${results.length} ok=${successful.length} failed=${failed.length}`);
+    results.forEach(result => log(
+      `RESULT ${result.index + 1}. status=${result.failed ? "ERROR" : "OK"} row=${result.t.rowNo} id=${result.id || ""} tickets=${result.linkedTickets}/${result.t.tickets.length} ${result.t.name}${result.error ? ` error=${result.error}` : ""}`
+    ));
   }
 
   function addPanel() {

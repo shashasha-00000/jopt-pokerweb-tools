@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PW Existing Tournament Patch
 // @namespace    pw-existing-item-fee-patch
-// @version      0.2.3
-// @description  Patch existing tournament item fees and/or tournament names from TSV. Uses pasted URL/TournamentId, Shared Cache, then OPEN/CLOSED URL pool.
+// @version      0.2.5
+// @description  Patch existing tournament item fees, EN/RE chips, and/or tournament names from TSV. Uses pasted URL/TournamentId, Shared Cache, then OPEN/CLOSED URL pool.
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-item-fee-patch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-item-fee-patch.user.js
 // @author       xhpc007 + ChatGPT
@@ -24,13 +24,15 @@
     afterItemMs: 50
   };
 
-  const DEFAULT_INPUT = `大会名\tURL\t新大会名\tEN手数料
-【Test】NLH Main Event / Day 1A\t\t\t0`;
+  const DEFAULT_INPUT = `大会名\tURL\t新大会名\tEN手数料\tENチップ数\tREチップ数
+【Test】NLH Main Event / Day 1A\t\t\t0\t\t`;
 
   const PATCH_FIELDS = [
-    { header: "EN手数料", key: "EN", nome: "Entry", siglas: "En", label: "Entry/En" },
-    { header: "RE手数料", key: "RE", nome: "Re Entry", siglas: "Re", label: "Re Entry/Re" },
-    { header: "TE手数料", key: "TE", nome: "Ticket Entry", siglas: "TE", label: "Ticket/TE" }
+    { header: "EN手数料", key: "EN", property: "taxa", valueLabel: "taxa", nome: "Entry", siglas: "En", label: "Entry/En" },
+    { header: "RE手数料", key: "RE", property: "taxa", valueLabel: "taxa", nome: "Re Entry", siglas: "Re", label: "Re Entry/Re" },
+    { header: "TE手数料", key: "TE", property: "taxa", valueLabel: "taxa", nome: "Ticket Entry", siglas: "TE", label: "Ticket/TE" },
+    { header: "ENチップ数", key: "EN", property: "fichas", valueLabel: "chips", nome: "Entry", siglas: "En", label: "Entry/En" },
+    { header: "REチップ数", key: "RE", property: "fichas", valueLabel: "chips", nome: "Re Entry", siglas: "Re", label: "Re Entry/Re" }
   ];
 
   const CANDIDATE_HEADERS = [
@@ -298,7 +300,7 @@
     const tasks = [];
 
     if (!rows.length) {
-      errors.push("入力が空です。大会名 + 新大会名または手数料列のTSVを貼ってください。");
+      errors.push("入力が空です。大会名 + 新大会名、手数料、またはチップ数列のTSVを貼ってください。");
       return { tasks, errors, warnings };
     }
 
@@ -309,7 +311,7 @@
     const activeFields = PATCH_FIELDS.filter(f => headers.includes(f.header));
     const hasNewNameField = headers.includes("新大会名");
     if (!activeFields.length && !hasNewNameField) {
-      errors.push("修正列がありません: 新大会名 / EN手数料 / RE手数料 / TE手数料 のどれかを入れてください。");
+      errors.push("修正列がありません: 新大会名 / EN手数料 / RE手数料 / TE手数料 / ENチップ数 / REチップ数 のどれかを入れてください。");
     }
 
     if (errors.length) return { tasks, errors, warnings };
@@ -354,20 +356,26 @@
       for (const field of activeFields) {
         const rawValue = row[field.header];
         if (rawValue === undefined || rawValue === "") continue;
-        const targetTaxa = normalizeAmount(rawValue);
-        if (targetTaxa === "") continue;
-        if (!/^-?\d+(?:\.\d+)?$/.test(targetTaxa)) {
-          errors.push(`Row ${rowNo}: ${field.header} が数値ではありません: ${rawValue}`);
+        const targetValue = normalizeAmount(rawValue);
+        if (targetValue === "") continue;
+        const validValue = field.property === "fichas"
+          ? /^\d+$/.test(targetValue)
+          : /^-?\d+(?:\.\d+)?$/.test(targetValue);
+        if (!validValue) {
+          const expected = field.property === "fichas" ? "0以上の整数" : "数値";
+          errors.push(`Row ${rowNo}: ${field.header} が${expected}ではありません: ${rawValue}`);
           continue;
         }
 
         patches.push({
           key: field.key,
           header: field.header,
+          property: field.property,
+          valueLabel: field.valueLabel,
           nome: field.nome,
           siglas: field.siglas,
           label: field.label,
-          targetTaxa
+          targetValue
         });
       }
 
@@ -385,7 +393,7 @@
   }
 
   function buildPatchText(patches) {
-    return patches.map(p => `${p.header}=${p.targetTaxa}`).join(" | ");
+    return patches.map(p => `${p.header}=${p.targetValue}`).join(" | ");
   }
 
   function parsePatchText(text) {
@@ -402,10 +410,12 @@
         return {
           key: field.key,
           header: field.header,
+          property: field.property,
+          valueLabel: field.valueLabel,
           nome: field.nome,
           siglas: field.siglas,
           label: field.label,
-          targetTaxa: normalizeAmount(m[2])
+          targetValue: normalizeAmount(m[2])
         };
       })
       .filter(Boolean);
@@ -625,9 +635,11 @@
   function waitForNextDraw(win, dt, timeoutMs = CONFIG.searchWaitTimeoutMs) {
     return new Promise(resolve => {
       let done = false;
+      let timer = null;
       const finish = value => {
         if (done) return;
         done = true;
+        if (timer !== null) clearTimeout(timer);
         try {
           win.jQuery(dt.table().node()).off("draw.dt", onDraw);
         } catch (_) {}
@@ -642,7 +654,7 @@
         return;
       }
 
-      setTimeout(() => finish(false), timeoutMs);
+      timer = setTimeout(() => finish(false), timeoutMs);
     });
   }
 
@@ -654,8 +666,10 @@
 
     const drawPromise = waitForNextDraw(win, dt, CONFIG.searchWaitTimeoutMs);
     try { dt.draw(); } catch (e) { throw new Error("DataTable draw failed: " + (e.message || String(e))); }
-    await drawPromise;
-    await waitForProcessingGone(win, dt, CONFIG.searchWaitTimeoutMs);
+    const drawn = await drawPromise;
+    if (!drawn) throw new Error("DataTable search draw timeout");
+    const processingGone = await waitForProcessingGone(win, dt, CONFIG.searchWaitTimeoutMs);
+    if (!processingGone) throw new Error("DataTable search processing timeout");
     await sleep(150);
   }
 
@@ -717,18 +731,23 @@
 
   async function goDataTablePageAndWait(win, dt, pageIndex) {
     if (!dt) return;
+    const drawPromise = waitForNextDraw(win, dt, CONFIG.searchWaitTimeoutMs);
     try {
       dt.page(pageIndex).draw("page");
-    } catch (_) {
-      return;
+    } catch (e) {
+      throw new Error(`DataTable page ${pageIndex + 1} draw failed: ${e.message || e}`);
     }
 
-    const start = Date.now();
-    while (Date.now() - start < CONFIG.searchWaitTimeoutMs) {
-      if (!win || win.closed) throw new Error("WINDOW_CLOSED");
-      const info = getDataTablePageInfo(dt);
-      if (info.page === pageIndex) return;
-      await sleep(150);
+    const drawn = await drawPromise;
+    if (!drawn) throw new Error(`DataTable page ${pageIndex + 1} draw timeout`);
+    const processingGone = await waitForProcessingGone(win, dt, CONFIG.searchWaitTimeoutMs);
+    if (!processingGone) throw new Error(`DataTable page ${pageIndex + 1} processing timeout`);
+    await sleep(150);
+
+    if (!win || win.closed) throw new Error("WINDOW_CLOSED");
+    const info = getDataTablePageInfo(dt);
+    if (info.page !== pageIndex) {
+      throw new Error(`DataTable page mismatch expected=${pageIndex + 1} actual=${info.page + 1}`);
     }
   }
 
@@ -1029,7 +1048,7 @@
     fd.set(key, finalValue);
   }
 
-  async function patchItemFeeByHtml(id, doc, patch) {
+  async function patchItemByHtml(id, doc, patch) {
     const form = doc.querySelector('form[action*="item_editar"]');
     if (!form) throw new Error(`${patch.label}: item_editar form not found`);
 
@@ -1037,14 +1056,14 @@
     const existing = findExistingItem(items, patch);
     if (!existing) throw new Error(`${patch.label}: existing item not found`);
 
-    const currentTaxa = normalizeAmount(existing.taxa || "0");
-    const targetTaxa = normalizeAmount(patch.targetTaxa);
-    if (currentTaxa === targetTaxa) {
+    const currentValue = normalizeAmount(existing[patch.property] || "0");
+    const targetValue = normalizeAmount(patch.targetValue);
+    if (currentValue === targetValue) {
       return {
         status: "SKIP",
         id_item: existing.id_item,
-        currentTaxa,
-        targetTaxa,
+        currentValue,
+        targetValue,
         message: "already target"
       };
     }
@@ -1061,7 +1080,7 @@
     setIfPresentOrDefault(fd, "pts_ranking", existing.pts_ranking, "0");
     setIfPresentOrDefault(fd, "gameid_bloqueio", existing.gameid_bloqueio, "1");
     setIfPresentOrDefault(fd, "valor", normalizeAmount(existing.valor), "0");
-    fd.set("taxa", targetTaxa);
+    fd.set(patch.property, targetValue);
     setIfPresentOrDefault(fd, "rake", normalizeAmount(existing.rake), "0");
     setIfPresentOrDefault(fd, "taxa_extras", existing.taxa_extras, "");
 
@@ -1080,8 +1099,8 @@
     return {
       status: "OK",
       id_item: existing.id_item,
-      currentTaxa,
-      targetTaxa
+      currentValue,
+      targetValue
     };
   }
 
@@ -1224,19 +1243,20 @@
         }
 
         try {
-          const doc = await fetchTournamentDoc(id);
+          let doc = await fetchTournamentDoc(id);
           const nameCheck = validateFetchedTournamentName(doc, name);
           if (!nameCheck.ok) throw new Error(nameCheck.reason);
           if (nameCheck.actual) logLine(`   actual=${nameCheck.actual}`);
 
           for (const patch of patches) {
-            const result = await patchItemFeeByHtml(id, doc, patch);
+            const result = await patchItemByHtml(id, doc, patch);
             if (result.status === "SKIP") {
               skip++;
-              logLine(`   SKIP ${patch.label} taxa=${amountDisplay(result.currentTaxa)} already target`);
+              logLine(`   SKIP ${patch.label} ${patch.valueLabel}=${amountDisplay(result.currentValue)} already target`);
             } else {
               ok++;
-              logLine(`   OK ${patch.label} id_item=${result.id_item} taxa ${amountDisplay(result.currentTaxa)} -> ${amountDisplay(result.targetTaxa)}`);
+              logLine(`   OK ${patch.label} id_item=${result.id_item} ${patch.valueLabel} ${amountDisplay(result.currentValue)} -> ${amountDisplay(result.targetValue)}`);
+              doc = await fetchTournamentDoc(id);
             }
             await sleep(CONFIG.afterItemMs);
           }

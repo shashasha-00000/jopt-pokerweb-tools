@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW Tournament CLOSE + AUDIT Background Batch
 // @namespace    xhpc007-pw-close-audit-batch-private
-// @version      1.0.1
+// @version      1.0.2
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-close-audit-batch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-close-audit-batch.user.js
 // @description  PW比赛批量 CLOSE / 監査。读取TSV、用Shared Cache / URL pool补全URL、分开执行CLOSE与監査。
@@ -796,6 +796,33 @@
     }
   }
 
+  function waitForNextDataTableDraw(win, dt, timeoutMs = 8000) {
+    return new Promise(resolve => {
+      let done = false;
+      let timer = null;
+      const node = dt?.table?.().node?.();
+      if (!node || !win?.jQuery) return resolve(false);
+
+      const finish = value => {
+        if (done) return;
+        done = true;
+        if (timer !== null) win.clearTimeout(timer);
+        try { win.jQuery(node).off('draw.dt', onDraw); } catch (_) {}
+        resolve(value);
+      };
+      const onDraw = () => finish(true);
+
+      try {
+        win.jQuery(node).one('draw.dt', onDraw);
+      } catch (_) {
+        finish(false);
+        return;
+      }
+
+      timer = win.setTimeout(() => finish(false), timeoutMs);
+    });
+  }
+
   async function dataTableSearchAndWait(win, dt, value) {
     const input = findDataTablesSearchInputInWindow(win);
 
@@ -816,20 +843,23 @@
   }
 
   async function goDataTablePageAndWait(win, dt, pageIndex) {
-    if (!dt) return;
+    if (!dt) throw new Error('DataTable not found');
+    const drawPromise = waitForNextDataTableDraw(win, dt, 8000);
 
     try {
       dt.page(pageIndex).draw('page');
-    } catch (_) {
-      return;
+    } catch (e) {
+      throw new Error(`DataTable page ${pageIndex + 1} draw failed: ${e.message || e}`);
     }
 
-    const start = Date.now();
-    while (Date.now() - start < 8000) {
-      if (win.closed) throw new Error('WINDOW_CLOSED');
-      const info = getDataTablePageInfo(dt);
-      if (info.page === pageIndex) return;
-      await sleep(200);
+    const drawn = await drawPromise;
+    if (!drawn) throw new Error(`DataTable page ${pageIndex + 1} draw timeout`);
+    await sleep(150);
+
+    if (win.closed) throw new Error('WINDOW_CLOSED');
+    const info = getDataTablePageInfo(dt);
+    if (info.page !== pageIndex) {
+      throw new Error(`DataTable page mismatch expected=${pageIndex + 1} actual=${info.page + 1}`);
     }
   }
 

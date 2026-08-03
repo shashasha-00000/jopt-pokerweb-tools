@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW Prize Plan 書込・確認
 // @namespace    https://japanopt.pokerweb.com.br/
-// @version      2.0.0
+// @version      2.0.1
 // @description  大会Prize表からPLANを作成し、PokerWebへの書込または読取確認を行います。
 // @match        https://japanopt.pokerweb.com.br/*
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-batch-manual.user.js
@@ -454,17 +454,18 @@
       const node = dataTableNode(dt);
       if (!node || !win.jQuery) return resolve(false);
       let done = false;
+      let timer = null;
       const finish = ok => {
         if (done) return;
         done = true;
+        if (timer !== null) win.clearTimeout(timer);
         try { win.jQuery(node).off('draw.dt', onDraw); } catch (_) {}
         resolve(ok);
       };
-      const timer = win.setTimeout(() => finish(false), APP.waitMs);
       function onDraw() {
-        win.clearTimeout(timer);
         finish(true);
       }
+      timer = win.setTimeout(() => finish(false), APP.waitMs);
       try { win.jQuery(node).one('draw.dt', onDraw); } catch (_) { finish(false); }
     });
   }
@@ -494,13 +495,21 @@
   }
 
   async function goTablePage(win, dt, page) {
-    if (!dt) return;
+    if (!dt) throw new Error('DataTable not found');
     const draw = waitDraw(win, dt);
     try {
       dt.page(page).draw('page');
-      await draw;
-      await sleep(120);
-    } catch (_) {}
+    } catch (e) {
+      throw new Error(`DataTable page ${page + 1} draw failed: ${e.message || e}`);
+    }
+    const drawn = await draw;
+    if (!drawn) throw new Error(`DataTable page ${page + 1} draw timeout`);
+    await sleep(120);
+
+    const actualPage = Number(dt.page.info()?.page ?? -1);
+    if (actualPage !== page) {
+      throw new Error(`DataTable page mismatch expected=${page + 1} actual=${actualPage + 1}`);
+    }
   }
 
   function cleanTournamentName(name) {
@@ -887,6 +896,17 @@
     );
   }
 
+  function itemWritable(item) {
+    return !!(
+      item &&
+      item.planJudgement !== '要確認' &&
+      item.tournamentId &&
+      item.url &&
+      item.variantId &&
+      item.rows?.length
+    );
+  }
+
   function matrixLog(plan, stage = 'PLAN') {
     const items = plan?.items || [];
     const maxRank = Math.max(0, ...items.map(item => Math.max(0, ...(item.rows || []).map(r => r.rank))));
@@ -1101,6 +1121,11 @@
     return Number.isFinite(n) ? n.toLocaleString('en-US') : String(value || 0);
   }
 
+  function responseLabel(response) {
+    if (!response) return 'HTTP ?';
+    return response.status === 0 ? 'HTTP 0 redirect/unknown' : `HTTP ${response.status}`;
+  }
+
   async function postPrizeList(item, doc) {
     const codbloq = getDocValue(doc, 'codbloq');
     if (!codbloq) {
@@ -1144,10 +1169,27 @@
   async function writePlan() {
     const state = loadState();
     const plan = state.plan;
-    if (!planReady(plan)) return alert('未確認項目があります。先に修正してください。');
-    if (!confirm(`このPrize Planを書き込みます。\n対象: ${plan.items.length}件\n\n実行しますか？`)) return;
-    for (const [index, item] of plan.items.entries()) {
-      setStatus(`WRITE ${index + 1}/${plan.items.length}: ${item.tournamentName}`);
+    if (!plan?.items?.length) return alert('先にPlanを作成してください。');
+    const writableItems = plan.items.filter(itemWritable);
+    const skippedItems = plan.items.filter(item => !itemWritable(item));
+    for (const item of skippedItems) {
+      item.writeStatus = '書込スキップ';
+      item.writeNote = [
+        item.planNote || '',
+        !item.tournamentId || !item.url ? 'URL未確定' : '',
+        item.planJudgement === '要確認' ? '要確認未解決' : '',
+        !item.rows?.length ? 'Prize未確定' : ''
+      ].filter(Boolean).join(' / ');
+    }
+    if (!writableItems.length) {
+      saveState({ ...state, plan });
+      renderPlan(plan);
+      await copyText(matrixLog(plan, 'WRITE'));
+      return alert('書込できる項目がありません。書込コピーでスキップ内容を確認してください。');
+    }
+    if (!confirm(`このPrize Planを書き込みます。\n書込対象: ${writableItems.length}件\nスキップ: ${skippedItems.length}件\n\n実行しますか？`)) return;
+    for (const [index, item] of writableItems.entries()) {
+      setStatus(`WRITE ${index + 1}/${writableItems.length}: ${item.tournamentName}`);
       try {
         const doc1 = await fetchDoc(item.url);
         const res1 = await postPrizeList(item, doc1);
@@ -1162,8 +1204,8 @@
         const verifyOk = !diff.length && totalOk;
         item.writeStatus = verifyOk ? '書込OK' : '書込失敗';
         item.writeNote = [
-          `Prize HTTP ${res1.status}`,
-          `Total HTTP ${res2.status}`,
+          `Prize ${responseLabel(res1)}`,
+          `Total ${responseLabel(res2)}`,
           verifyOk ? 'Verify OK' : '',
           !totalOk ? `Verify Total ${yen(actual.total)} != ${yen(item.total)}` : '',
           diff.slice(0, 3).join(' / ')

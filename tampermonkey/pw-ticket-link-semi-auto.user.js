@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW Ticket Link Semi Auto
 // @namespace    pw-ticket-link-semi-auto
-// @version      1.0.5
+// @version      1.0.6
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
 // @description  TicketLink用ルール表から候補作成 → Shared Cache / URL pool / 手動強制URLでURL確認 → 已确认比赛へ后台fetchでTicket Link実行。Ticket optionはtn_のみ。
@@ -1216,10 +1216,12 @@
   function waitForNextDraw(win, dt, timeoutMs = CONFIG.searchWaitTimeoutMs) {
     return new Promise(resolve => {
       let done = false;
+      let timer = null;
 
       const finish = value => {
         if (done) return;
         done = true;
+        if (timer !== null) clearTimeout(timer);
         try {
           win.jQuery(dt.table().node()).off("draw.dt", onDraw);
         } catch (_) {}
@@ -1235,7 +1237,7 @@
         return;
       }
 
-      setTimeout(() => finish(false), timeoutMs);
+      timer = setTimeout(() => finish(false), timeoutMs);
     });
   }
 
@@ -1264,8 +1266,10 @@
       throw new Error("DataTable draw failed: " + (e.message || String(e)));
     }
 
-    await drawPromise;
-    await waitForProcessingGone(win, dt, CONFIG.searchWaitTimeoutMs);
+    const drawn = await drawPromise;
+    if (!drawn) throw new Error("DataTable search draw timeout");
+    const processingGone = await waitForProcessingGone(win, dt, CONFIG.searchWaitTimeoutMs);
+    if (!processingGone) throw new Error("DataTable search processing timeout");
     await sleep(150);
   }
 
@@ -1300,16 +1304,23 @@
   }
 
   async function goDataTablePageAndWait(win, dt, pageIndex) {
-    if (!dt) return false;
+    if (!dt) throw new Error("DataTable not found");
     const drawPromise = waitForNextDraw(win, dt, CONFIG.searchWaitTimeoutMs);
     try {
       dt.page(pageIndex).draw("page");
-    } catch (_) {
-      return false;
+    } catch (e) {
+      throw new Error(`DataTable page ${pageIndex + 1} draw failed: ${e.message || e}`);
     }
-    await drawPromise;
-    await waitForProcessingGone(win, dt, CONFIG.searchWaitTimeoutMs);
+    const drawn = await drawPromise;
+    if (!drawn) throw new Error(`DataTable page ${pageIndex + 1} draw timeout`);
+    const processingGone = await waitForProcessingGone(win, dt, CONFIG.searchWaitTimeoutMs);
+    if (!processingGone) throw new Error(`DataTable page ${pageIndex + 1} processing timeout`);
     await sleep(120);
+
+    const info = getDataTablePageInfo(dt);
+    if (info.page !== pageIndex) {
+      throw new Error(`DataTable page mismatch expected=${pageIndex + 1} actual=${info.page + 1}`);
+    }
     return true;
   }
 

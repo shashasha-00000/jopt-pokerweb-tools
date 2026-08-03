@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW Sprinter・Chip Leader 追加
 // @namespace    https://japanopt.pokerweb.com.br/
-// @version      0.2.0
+// @version      0.2.1
 // @description  Sprinter / Chip Leader の特殊賞を既存Prize末尾に追加・確認します。
 // @match        https://japanopt.pokerweb.com.br/*
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-sprinter-chip-leader-award.user.js
@@ -155,17 +155,18 @@
       const node = dataTableNode(dt);
       if (!node || !win.jQuery) return resolve(false);
       let done = false;
+      let timer = null;
       const finish = ok => {
         if (done) return;
         done = true;
+        if (timer !== null) win.clearTimeout(timer);
         try { win.jQuery(node).off('draw.dt', onDraw); } catch (_) {}
         resolve(ok);
       };
-      const timer = win.setTimeout(() => finish(false), APP.waitMs);
       function onDraw() {
-        win.clearTimeout(timer);
         finish(true);
       }
+      timer = win.setTimeout(() => finish(false), APP.waitMs);
       try { win.jQuery(node).one('draw.dt', onDraw); } catch (_) { finish(false); }
     });
   }
@@ -195,13 +196,21 @@
   }
 
   async function goTablePage(win, dt, page) {
-    if (!dt) return;
+    if (!dt) throw new Error('DataTable not found');
     const draw = waitDraw(win, dt);
     try {
       dt.page(page).draw('page');
-      await draw;
-      await sleep(120);
-    } catch (_) {}
+    } catch (e) {
+      throw new Error(`DataTable page ${page + 1} draw failed: ${e.message || e}`);
+    }
+    const drawn = await draw;
+    if (!drawn) throw new Error(`DataTable page ${page + 1} draw timeout`);
+    await sleep(120);
+
+    const actualPage = Number(dt.page.info()?.page ?? -1);
+    if (actualPage !== page) {
+      throw new Error(`DataTable page mismatch expected=${page + 1} actual=${actualPage + 1}`);
+    }
   }
 
   function tournamentNoFromName(name) {
