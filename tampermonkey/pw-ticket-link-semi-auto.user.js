@@ -1,10 +1,10 @@
 ﻿// ==UserScript==
 // @name         PW Ticket Link Semi Auto
 // @namespace    pw-ticket-link-semi-auto
-// @version      1.1.0
+// @version      1.1.1
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
-// @description  TicketLink用ルール表から候補作成 → URL確認 → 独立大会workerで后台Ticket Link実行。大会内は逐次処理、Ticket optionはtn_のみ。
+// @description  TicketLink用ルール表から候補作成 → URL確認 → 独立大会workerで后台Ticket Link実行。大会内は逐次処理、Ticket optionはtn_のみ。通信段階/worker耗时をReport出力。
 // @author       xhpc007 + ChatGPT
 // @match        https://japanopt.pokerweb.com.br/*
 // @grant        GM_setClipboard
@@ -57,6 +57,24 @@
 
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+  function monotonicNowMs() {
+    return typeof performance !== "undefined" && typeof performance.now === "function"
+      ? performance.now()
+      : Date.now();
+  }
+
+  function elapsedMs(startMs) {
+    return Math.max(0, Math.round(monotonicNowMs() - startMs));
+  }
+
+  function formatDurationMs(value) {
+    const ms = Math.max(0, Number(value) || 0);
+    if (ms < 60000) return `${(ms / 1000).toFixed(3)}s`;
+    const minutes = Math.floor(ms / 60000);
+    const seconds = ((ms % 60000) / 1000).toFixed(3).padStart(6, "0");
+    return `${minutes}m${seconds}s`;
+  }
+
   // ============================================================
   // Basic Utils
   // ============================================================
@@ -108,7 +126,7 @@
   }
 
   function log(...args) {
-    console.log("[PW-TICKET-LINK-v1.1]", ...args);
+    console.log("[PW-TICKET-LINK-v1.1.1]", ...args);
     const el = document.querySelector("#pw-ticket-link-status");
     if (el) el.textContent = args.map(String).join(" ");
   }
@@ -2184,6 +2202,8 @@
     const { row, index, total, workerId, tickets } = context;
     const expectedName = cleanTournamentName(row["大会名"]);
     const expectedUrl = row["URL"] || getTournamentUrl(row["TournamentId"]);
+    context.startedAtMs = monotonicNowMs();
+    context.stageStartedAtMs = context.startedAtMs;
 
     appendReportLine(
       `[${nowText()}] TASK_START worker=${workerId} task=${index + 1}/${total} id=${row["TournamentId"]} tickets=${tickets.length} / ${expectedName}`
@@ -2194,41 +2214,59 @@
         if (stopRequested) {
           context.stopped = true;
           context.stage = "STOPPED";
+          context.elapsedMs = elapsedMs(context.startedAtMs);
           appendReportLine(
-            `[${nowText()}] TASK_STOPPED worker=${workerId} task=${index + 1}/${total} id=${row["TournamentId"]} linked=${context.linkedTickets}/${tickets.length} / ${expectedName}`
+            `[${nowText()}] TASK_STOPPED worker=${workerId} task=${index + 1}/${total} id=${row["TournamentId"]} linked=${context.linkedTickets}/${tickets.length} task_elapsed_ms=${context.elapsedMs} task_elapsed=${formatDurationMs(context.elapsedMs)} / ${expectedName}`
           );
           return context;
         }
 
         const ticketName = tickets[ticketIndex];
+        const ticketStartedAtMs = monotonicNowMs();
         context.stage = `TICKET_${ticketIndex + 1}_PAGE_FETCH`;
+        context.stageStartedAtMs = monotonicNowMs();
         const doc = await fetchTicketLinkPage(expectedUrl);
+        const pageFetchMs = elapsedMs(context.stageStartedAtMs);
         const actualTitle = verifyFetchedPageMatchesExpected(doc, expectedName);
         const { select } = getTicketLinkFormFromDoc(doc, row["TournamentId"]);
 
-        context.stage = `TICKET_${ticketIndex + 1}_LINK`;
+        context.stage = `TICKET_${ticketIndex + 1}_OPTION_MATCH`;
+        context.stageStartedAtMs = monotonicNowMs();
         log(`LINK worker=${workerId} task=${index + 1}/${total} ticket=${ticketIndex + 1}/${tickets.length}: ${ticketName}`);
         const found = findTicketOptionStrict(select, ticketName);
+        context.stage = `TICKET_${ticketIndex + 1}_LINK`;
+        context.stageStartedAtMs = monotonicNowMs();
         const res = await postTicketLinkByDoc(doc, row["TournamentId"], ticketName, found.option.value);
+        const postMs = elapsedMs(context.stageStartedAtMs);
+        const ticketTotalMs = elapsedMs(ticketStartedAtMs);
         context.linkedTickets = ticketIndex + 1;
+        context.ticketTimings.push({
+          ticketIndex,
+          pageFetchMs,
+          postMs,
+          ticketTotalMs
+        });
 
         appendReportLine(
-          `[${nowText()}] LINK_OK worker=${workerId} task=${index + 1}/${total} ticket=${ticketIndex + 1}/${tickets.length} id=${row["TournamentId"]} / ${expectedName} / actual=${actualTitle} / ticket=${ticketName} / value=${found.option.value} / match=${found.matchType} / status=${res.status} / mode=BACKGROUND`
+          `[${nowText()}] LINK_OK worker=${workerId} task=${index + 1}/${total} ticket=${ticketIndex + 1}/${tickets.length} id=${row["TournamentId"]} page_fetch_ms=${pageFetchMs} post_ms=${postMs} ticket_total_ms=${ticketTotalMs} ticket_elapsed=${formatDurationMs(ticketTotalMs)} / ${expectedName} / actual=${actualTitle} / ticket=${ticketName} / value=${found.option.value} / match=${found.matchType} / status=${res.status} / mode=BACKGROUND`
         );
 
         await sleep(CONFIG.betweenTicketsMs);
       }
 
       context.stage = "DONE";
+      context.elapsedMs = elapsedMs(context.startedAtMs);
       appendReportLine(
-        `[${nowText()}] TASK_OK worker=${workerId} task=${index + 1}/${total} id=${row["TournamentId"]} tickets=${context.linkedTickets}/${tickets.length} / ${expectedName}`
+        `[${nowText()}] TASK_OK worker=${workerId} task=${index + 1}/${total} id=${row["TournamentId"]} tickets=${context.linkedTickets}/${tickets.length} task_elapsed_ms=${context.elapsedMs} task_elapsed=${formatDurationMs(context.elapsedMs)} / ${expectedName}`
       );
     } catch (e) {
       console.error("[PW-TICKET-LINK] execute error", e);
       context.failed = true;
       context.error = e?.message || String(e || "UNKNOWN_ERROR");
+      context.elapsedMs = elapsedMs(context.startedAtMs);
+      const stageElapsedMs = elapsedMs(context.stageStartedAtMs);
       appendReportLine(
-        `[${nowText()}] TASK_ERROR worker=${workerId} task=${index + 1}/${total} id=${row["TournamentId"] || ""} stage=${context.stage} linked=${context.linkedTickets}/${tickets.length} / ${expectedName} / ${context.error}`
+        `[${nowText()}] TASK_ERROR worker=${workerId} task=${index + 1}/${total} id=${row["TournamentId"] || ""} stage=${context.stage} stage_elapsed_ms=${stageElapsedMs} task_elapsed_ms=${context.elapsedMs} task_elapsed=${formatDurationMs(context.elapsedMs)} linked=${context.linkedTickets}/${tickets.length} / ${expectedName} / ${context.error}`
       );
       warn("失敗:", context.error);
     }
@@ -2247,9 +2285,24 @@
       failed: false,
       stopped: false,
       stage: "QUEUED",
-      error: ""
+      error: "",
+      startedAtMs: 0,
+      stageStartedAtMs: 0,
+      elapsedMs: 0,
+      ticketTimings: []
     }));
     const workerCount = Math.min(maxConcurrency, contexts.length);
+    const runStartedAtMs = monotonicNowMs();
+    const workerStats = Array.from({ length: workerCount }, (_, index) => ({
+      workerId: index + 1,
+      startedAtMs: 0,
+      endedAtMs: 0,
+      tournaments: 0,
+      successful: 0,
+      failed: 0,
+      stopped: 0,
+      linkedTickets: 0
+    }));
     let nextIndex = 0;
     let completed = 0;
 
@@ -2257,21 +2310,29 @@
     appendReportLine(`[${nowText()}] WORKERS_START tournaments=${contexts.length} workers=${workerCount}`);
 
     const worker = async workerId => {
+      const stats = workerStats[workerId - 1];
       while (!stopRequested) {
         const contextIndex = nextIndex++;
         if (contextIndex >= contexts.length) return;
 
         const context = contexts[contextIndex];
         context.workerId = workerId;
+        if (!stats.startedAtMs) stats.startedAtMs = monotonicNowMs();
         appendReportLine(
           `[${nowText()}] WORKER_CLAIM worker=${workerId} task=${context.index + 1}/${context.total} id=${context.row["TournamentId"]} / ${context.row["大会名"]}`
         );
         setFlowState({ running: true, total: contexts.length, completed, nextIndex, workers: workerCount });
 
         await processTicketLinkTournament(context);
+        stats.tournaments++;
+        stats.linkedTickets += context.linkedTickets;
+        if (context.failed) stats.failed++;
+        else if (context.stopped) stats.stopped++;
+        else if (context.stage === "DONE") stats.successful++;
+        stats.endedAtMs = monotonicNowMs();
         completed++;
         appendReportLine(
-          `[${nowText()}] WORKER_RELEASE worker=${workerId} task=${context.index + 1}/${context.total} completed=${completed}/${contexts.length} status=${context.failed ? "ERROR" : context.stopped ? "STOPPED" : "OK"} id=${context.row["TournamentId"]}`
+          `[${nowText()}] WORKER_RELEASE worker=${workerId} task=${context.index + 1}/${context.total} completed=${completed}/${contexts.length} status=${context.failed ? "ERROR" : context.stopped ? "STOPPED" : "OK"} id=${context.row["TournamentId"]} task_elapsed_ms=${context.elapsedMs}`
         );
         setFlowState({ running: true, total: contexts.length, completed, nextIndex, workers: workerCount, stopRequested });
 
@@ -2287,11 +2348,20 @@
       const stopped = contexts.filter(context => context.stopped);
       const queued = contexts.filter(context => context.workerId === 0);
       const finalLabel = stopRequested ? "STOPPED" : "DONE";
+      const runElapsedMs = elapsedMs(runStartedAtMs);
       appendReportLine(
-        `[${nowText()}] ${finalLabel} tournaments=${contexts.length} workers=${workerCount} ok=${successful.length} failed=${failed.length} stopped=${stopped.length} queued=${queued.length} tickets=${contexts.reduce((sum, context) => sum + context.linkedTickets, 0)}/${ticketTotal}`
+        `[${nowText()}] ${finalLabel} tournaments=${contexts.length} workers=${workerCount} ok=${successful.length} failed=${failed.length} stopped=${stopped.length} queued=${queued.length} tickets=${contexts.reduce((sum, context) => sum + context.linkedTickets, 0)}/${ticketTotal} run_elapsed_ms=${runElapsedMs} run_elapsed=${formatDurationMs(runElapsedMs)}`
       );
+      workerStats.forEach(stats => {
+        const workerElapsedMs = stats.startedAtMs && stats.endedAtMs
+          ? Math.max(0, Math.round(stats.endedAtMs - stats.startedAtMs))
+          : 0;
+        appendReportLine(
+          `WORKER_SUMMARY worker=${stats.workerId} tournaments=${stats.tournaments} tickets=${stats.linkedTickets} ok=${stats.successful} failed=${stats.failed} stopped=${stats.stopped} worker_elapsed_ms=${workerElapsedMs} worker_elapsed=${formatDurationMs(workerElapsedMs)}`
+        );
+      });
       contexts.forEach(context => appendReportLine(
-        `RESULT ${context.index + 1}. status=${context.failed ? "ERROR" : context.stopped ? "STOPPED" : context.stage === "DONE" ? "OK" : "QUEUED"} worker=${context.workerId || "-"} id=${context.row["TournamentId"]} stage=${context.stage} tickets=${context.linkedTickets}/${context.tickets.length} ${context.row["大会名"]}${context.error ? ` error=${context.error}` : ""}`
+        `RESULT ${context.index + 1}. status=${context.failed ? "ERROR" : context.stopped ? "STOPPED" : context.stage === "DONE" ? "OK" : "QUEUED"} worker=${context.workerId || "-"} id=${context.row["TournamentId"]} stage=${context.stage} tickets=${context.linkedTickets}/${context.tickets.length} task_elapsed_ms=${context.elapsedMs} task_elapsed=${formatDurationMs(context.elapsedMs)} ${context.row["大会名"]}${context.error ? ` error=${context.error}` : ""}`
       ));
 
       log(stopRequested ? "停止完了" : "全部完成");
@@ -2481,7 +2551,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <div style="font-weight:bold;">PW Ticket Link Semi Auto v1.0.5</div>
+        <div style="font-weight:bold;">PW Ticket Link Semi Auto v1.1.1</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-ticket-link-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-ticket-link-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>

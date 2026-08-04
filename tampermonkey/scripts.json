@@ -92,8 +92,8 @@
     {
         "file":  "pw-ticket-link-semi-auto.user.js",
         "name":  "PW Ticket Link Semi Auto",
-        "version":  "1.1.0",
-        "description":  "TicketLink用ルール表から候補作成 → URL確認 → 独立大会workerで后台Ticket Link実行。大会内は逐次処理、Ticket optionはtn_のみ。",
+        "version":  "1.1.1",
+        "description":  "TicketLink用ルール表から候補作成 → URL確認 → 独立大会workerで后台Ticket Link実行。大会内は逐次処理、Ticket optionはtn_のみ。通信段階/worker耗时をReport出力。",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js",
         "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js",
         "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js"
