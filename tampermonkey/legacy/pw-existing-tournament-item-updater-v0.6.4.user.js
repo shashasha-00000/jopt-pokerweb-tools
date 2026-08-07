@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW 既存大会 Item 更新 人工確認版
 // @namespace    pw-existing-tournament-item-updater-ui
-// @version      0.6.4
+// @version      0.6.5
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js
 // @description  既存大会URLをPreview/Resolveで人工確認してから、USDT販売許可ON、任意数の販売項目を更新する。作成・時間変更・Ticket Linkなし。
@@ -1493,11 +1493,17 @@
   }
 
   function findExistingItemForApi(existingItems, item, mode, itemIndex) {
-    if (mode === 'position') return existingItems[itemIndex] || null;
-
     const wantedName = normalizeText(item.nome);
     const wantedSiglas = normalizeText(item.siglas);
     const wantedNameCompact = compactText(wantedName);
+
+    const exact = existingItems.find(x =>
+      (!wantedName || normalizeText(x.nome) === wantedName) &&
+      (!wantedSiglas || normalizeText(x.siglas) === wantedSiglas)
+    );
+    if (exact) return exact;
+
+    if (mode === 'position') return existingItems[itemIndex] || null;
 
     return existingItems.find(x =>
       (wantedName && normalizeText(x.nome) === wantedName) ||
@@ -1505,6 +1511,91 @@
       (wantedNameCompact && compactText(x.rawText).includes(wantedNameCompact)) ||
       (wantedSiglas && normalizeText(x.siglas) === wantedSiglas)
     ) || null;
+  }
+
+  function getExistingItemDataValue(existing, aliases) {
+    const wanted = aliases.map(x => normalizeText(x).toLowerCase().replace(/[_-]/g, ''));
+
+    for (const [key, value] of Object.entries(existing?.data || {})) {
+      const normalizedKey = normalizeText(key)
+        .toLowerCase()
+        .replace(/^data-/, '')
+        .replace(/[_-]/g, '');
+
+      if (wanted.includes(normalizedKey)) return normalizeText(value);
+    }
+
+    return '';
+  }
+
+  function normalizeItemNumberForCompare(value) {
+    let s = normalizeText(value).replace(/[¥￥\s]/g, '');
+    if (!s) return '';
+
+    if (/^-?\d+[.,]0{1,2}$/.test(s)) s = s.replace(/[.,]0{1,2}$/, '');
+    return s.replace(/[.,]/g, '').replace(/[^\d-]/g, '');
+  }
+
+  function findSavedItemForVerification(existingItems, pending, mode) {
+    if (pending.existingId) {
+      const byId = existingItems.find(x => String(x.id_item || '') === String(pending.existingId));
+      if (byId) return byId;
+    }
+
+    const item = pending.item || {};
+    const wantedName = normalizeText(item.nome);
+    const wantedSiglas = normalizeText(item.siglas);
+    const exactMatches = existingItems.filter(x =>
+      (!wantedName || normalizeText(x.nome) === wantedName) &&
+      (!wantedSiglas || normalizeText(x.siglas) === wantedSiglas)
+    );
+
+    if (exactMatches.length === 1) return exactMatches[0];
+    if (mode === 'position') return existingItems[Number(pending.index)] || null;
+    return null;
+  }
+
+  function verifySavedItem(existingItems, pending, mode) {
+    const item = pending.item || {};
+    const saved = findSavedItemForVerification(existingItems, pending, mode);
+
+    if (!saved) {
+      throw new Error(`ITEM_VERIFY_NOT_FOUND: ${Number(pending.index) + 1} ${getItemLabel(item)}`);
+    }
+
+    const errors = [];
+    if (normalizeText(saved.nome) !== normalizeText(item.nome)) {
+      errors.push(`Name expected=${item.nome} actual=${saved.nome || '(empty)'}`);
+    }
+    if (item.siglas && normalizeText(saved.siglas) !== normalizeText(item.siglas)) {
+      errors.push(`Siglas expected=${item.siglas} actual=${saved.siglas || '(empty)'}`);
+    }
+
+    const fields = [
+      { label: 'Value', expected: item.valor, aliases: ['valor', 'value'], required: true },
+      { label: 'Tax', expected: item.taxa || '0', aliases: ['taxa', 'tax', 'fee'] },
+      { label: 'Chips', expected: item.fichas || '0', aliases: ['fichas', 'chips'] },
+      { label: 'Limit', expected: item.limite || '1', aliases: ['limite', 'limit'] },
+      { label: 'Reposicionar', expected: item.reposicionar || '0', aliases: ['reposicionar', 'repo'] }
+    ];
+
+    fields.forEach(field => {
+      const actual = getExistingItemDataValue(saved, field.aliases);
+      if (!actual) {
+        if (field.required) errors.push(`${field.label} verification field missing`);
+        return;
+      }
+
+      if (normalizeItemNumberForCompare(actual) !== normalizeItemNumberForCompare(field.expected)) {
+        errors.push(`${field.label} expected=${field.expected} actual=${actual}`);
+      }
+    });
+
+    if (errors.length) {
+      throw new Error(`ITEM_VERIFY_MISMATCH: ${Number(pending.index) + 1} ${getItemLabel(item)} / ${errors.join(' / ')}`);
+    }
+
+    return saved;
   }
 
   async function postItemApi(endpoint, fd, label) {
@@ -1518,6 +1609,16 @@
     });
 
     log(`${label} POST 完成 status=${res.status}`);
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`${label}: HTTP ${res.status} ${body.slice(0, 300)}`);
+    }
+
+    if (/\/login|\/entrar/i.test(res.url || '')) {
+      throw new Error(`${label}: LOGIN_REDIRECT ${res.url}`);
+    }
+
+    await sleep(CONFIG.afterPostMs);
     return res;
   }
 
@@ -1539,53 +1640,42 @@
     const idTorneio = state.tournamentId || getTournamentIdFromUrl();
     if (!idTorneio) throw new Error('ITEM_API_DIAG_FAIL: id_torneio 取得不可');
 
+    const items = t.items || [];
+    const itemIndex = Number(state.itemIndex || 0);
+    const item = items[itemIndex];
+    if (!item) throw new Error(`ITEM_INDEX_OUT_OF_RANGE: ${itemIndex}/${items.length}`);
+
     const mode = getItemUpdateMode(t);
-    const results = [];
+    const existing = findExistingItemForApi(info.existingItems, item, mode, itemIndex);
+    appendReportToState(
+      state,
+      'ITEM_ORDER_CHECK',
+      `${itemIndex + 1}: oldName=${existing?.nome || '(new)'} / oldSiglas=${existing?.siglas || ''} → update as ${item.nome} / ${item.siglas || ''}`
+    );
 
-    (t.items || []).forEach((item, i) => {
-      const existing = findExistingItemForApi(info.existingItems, item, mode, i);
-      appendReportToState(
-        state,
-        'ITEM_ORDER_CHECK',
-        `${i + 1}: oldName=${existing?.nome || '(new)'} / oldSiglas=${existing?.siglas || ''} → update as ${item.nome} / ${item.siglas || ''}`
-      );
-    });
+    const extra = { id_torneio: idTorneio };
+    let endpoint = info.insertEndpoint;
+    let action = 'INSERT_ITEM';
+    let fields = info.insertFormFields;
 
-    if (info.existingItems.length > (t.items || []).length) {
-      appendReportToState(
-        state,
-        'ITEM_ORDER_WARN',
-        `item count=${info.existingItems.length}, only first/matched ${t.items.length} will be updated`
-      );
+    if (existing) {
+      endpoint = info.editEndpoint;
+      action = 'EDIT_ITEM';
+      fields = info.editFormFields;
+      extra.id_item = existing.id_item;
     }
 
-    for (let i = 0; i < (t.items || []).length; i++) {
-      const item = t.items[i];
-      const existing = findExistingItemForApi(info.existingItems, item, mode, i);
-      const extra = { id_torneio: idTorneio };
-      let endpoint = info.insertEndpoint;
-      let action = 'INSERT_ITEM';
-      let fields = info.insertFormFields;
+    const fd = makeApiFormData(fields, item, extra);
+    const res = await postItemApi(endpoint, fd, `${action} ${itemIndex + 1}/${items.length} ${getItemLabel(item)}`);
+    const result = {
+      action,
+      status: res.status,
+      item,
+      existing,
+      index: itemIndex
+    };
 
-      if (existing) {
-        endpoint = info.editEndpoint;
-        action = 'EDIT_ITEM';
-        fields = info.editFormFields;
-        extra.id_item = existing.id_item;
-      }
-
-      const fd = makeApiFormData(fields, item, extra);
-      const res = await postItemApi(endpoint, fd, `${action} ${i + 1}/${t.items.length} ${getItemLabel(item)}`);
-
-      results.push({
-        action,
-        status: res.status,
-        item,
-        existing
-      });
-    }
-
-    return { mode, results, existingItems: info.existingItems };
+    return { mode, results: [result], existingItems: info.existingItems };
   }
 
   async function diagnoseItemApiFromUi() {
@@ -1844,20 +1934,62 @@
           return;
         }
 
+        const itemIndex = Number(state.itemIndex || 0);
+        if (itemIndex >= items.length) {
+          state.step = 'ITEMS_RELOAD';
+          setState(state);
+          location.reload();
+          return;
+        }
+
         const batch = await saveItemsByApiBatch(t, state);
-
-        batch.results.forEach((result, i) => {
-          appendReportToState(
-            state,
-            'ITEM_OK',
-            `${t.name} / mode=${batch.mode} / ${i + 1}/${items.length} / ${result.action} / ${getItemLabel(result.item)} / ${itemFeeText(result.item)} / Chips=${result.item.fichas || '0'} / status=${result.status}`
-          );
-        });
-
-        state.step = 'ITEMS_RELOAD';
+        const result = batch.results[0];
+        state.pendingItemVerification = {
+          index: result.index,
+          action: result.action,
+          status: result.status,
+          existingId: result.existing?.id_item || '',
+          item: result.item
+        };
+        state.step = 'ITEM_VERIFY';
         setState(state);
 
-        log(`项目批量保存完成，刷新后进入下一场：${items.length} 件`);
+        appendReportToState(
+          state,
+          'ITEM_POSTED',
+          `${t.name} / mode=${batch.mode} / ${result.index + 1}/${items.length} / ${result.action} / ${getItemLabel(result.item)} / status=${result.status} / reload verification pending`
+        );
+
+        log(`项目 ${result.index + 1}/${items.length} POST完成，刷新后验证`);
+        await sleep(800);
+        location.reload();
+        return;
+      }
+
+      if (state.step === 'ITEM_VERIFY') {
+        const items = t.items || [];
+        const pending = state.pendingItemVerification;
+        if (!pending || !pending.item) {
+          throw new Error('ITEM_VERIFY_STATE_MISSING');
+        }
+
+        await openConfiguracao();
+        const info = collectItemApiInfo();
+        const mode = getItemUpdateMode(t);
+        const saved = verifySavedItem(info.existingItems, pending, mode);
+
+        appendReportToState(
+          state,
+          'ITEM_OK',
+          `${t.name} / mode=${mode} / ${Number(pending.index) + 1}/${items.length} / ${pending.action} / ${getItemLabel(pending.item)} / ${itemFeeText(pending.item)} / Chips=${pending.item.fichas || '0'} / id_item=${saved.id_item} / verified after reload`
+        );
+
+        state.itemIndex = Number(pending.index) + 1;
+        delete state.pendingItemVerification;
+        state.step = state.itemIndex < items.length ? 'ITEMS' : 'ITEMS_RELOAD';
+        setState(state);
+
+        log(`项目 ${state.itemIndex}/${items.length} 验证成功，刷新后继续`);
         await sleep(800);
         location.reload();
         return;
@@ -2348,6 +2480,9 @@ document.querySelector('#pw-item-update-close').onclick = () => {
       enableVirtualCurrencySales,
       saveItemDirectSmart,
       saveItemsByApiBatch,
+      verifySavedItem,
+      findSavedItemForVerification,
+      findExistingItemForApi,
       diagnoseItemApiFromUi,
       collectItemApiInfo,
       buildItemData,

@@ -1,10 +1,10 @@
 ﻿// ==UserScript==
 // @name         PW Ticket Link Semi Auto
 // @namespace    pw-ticket-link-semi-auto
-// @version      1.1.1
+// @version      1.2.0
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
-// @description  TicketLink用ルール表から候補作成 → URL確認 → 独立大会workerで后台Ticket Link実行。大会内は逐次処理、Ticket optionはtn_のみ。通信段階/worker耗时をReport出力。
+// @description  幅広Ticketルール表の無関係列を無視し、対応外大会はSKIP報告。確認済み大会だけを独立workerで逐次Ticket Linkし、tn_ optionのみPOST。
 // @author       xhpc007 + ChatGPT
 // @match        https://japanopt.pokerweb.com.br/*
 // @grant        GM_setClipboard
@@ -126,7 +126,7 @@
   }
 
   function log(...args) {
-    console.log("[PW-TICKET-LINK-v1.1.1]", ...args);
+    console.log("[PW-TICKET-LINK-v1.2.0]", ...args);
     const el = document.querySelector("#pw-ticket-link-status");
     if (el) el.textContent = args.map(String).join(" ");
   }
@@ -698,6 +698,8 @@
     const warnings = [];
     const suspiciousRows = [];
     const blankRows = [];
+    const ignoredRows = [];
+    const ignoredColumns = [];
 
     if (!rawLines.some(x => norm(x))) {
       errors.push("Ticketルール表が空です / Ticket规则表为空");
@@ -706,6 +708,8 @@
         warnings,
         suspiciousRows,
         blankRows,
+        ignoredRows,
+        ignoredColumns,
         headerIndex: -1,
         ticketNameCol: -1,
         keyCols: [],
@@ -720,9 +724,7 @@
     for (let i = 0; i < rawLines.length; i++) {
       const cells = splitTSVLine(rawLines[i]).map(norm);
       const hasTicketName = cells.some(c => c === "チケット名称" || c === "チケット名" || c.toLowerCase() === "ticket" || c.toLowerCase() === "ticket name");
-      const hasKeys = cells.some(looksLikeMatrixKey);
-
-      if (hasTicketName && hasKeys) {
+      if (hasTicketName) {
         headerIndex = i;
         headerCells = cells;
         break;
@@ -730,12 +732,14 @@
     }
 
     if (headerIndex < 0) {
-      errors.push("Ticketルール表のヘッダー行が見つかりません / 找不到表头行。请从包含「チケット名称」和「#02 / #01A / s01」的行开始复制。");
+      errors.push("Ticketルール表のヘッダー行が見つかりません / 找不到表头行。请复制包含「チケット名称」的行。");
       return {
         errors,
         warnings,
         suspiciousRows,
         blankRows,
+        ignoredRows,
+        ignoredColumns,
         headerIndex: -1,
         ticketNameCol: -1,
         keyCols: [],
@@ -753,7 +757,12 @@
     const keyCols = [];
 
     headerCells.forEach((cell, colIndex) => {
-      if (!looksLikeMatrixKey(cell)) return;
+      if (!cell || colIndex === ticketNameCol) return;
+
+      if (!looksLikeMatrixKey(cell)) {
+        ignoredColumns.push({ colIndex, name: cell });
+        return;
+      }
 
       keyCols.push({
         colIndex,
@@ -763,7 +772,7 @@
     });
 
     if (!keyCols.length) {
-      errors.push("ヘッダー内に大会Key列が見つかりません / 表头里没有识别到任何比赛Key列，例如 #02 / #01A / s01");
+      warnings.push("ヘッダー内に大会Key列がありません。入力大会はすべてSKIPになります / 表头里没有比赛Key列，所有比赛都会SKIP");
     }
 
     const keyToTickets = {};
@@ -787,11 +796,20 @@
       const ticketName = norm(cells[ticketNameCol] || "");
 
       if (!ticketName) {
-        suspiciousRows.push({
-          line: r + 1,
-          reason: "チケット名称列が空ですが、この行は空行ではありません。コピー時の改行崩れの可能性があります / チケット名称列为空，但这一行不是空行，可能复制断行。",
-          raw: line.slice(0, 300)
-        });
+        const keyValues = keyCols.map(kc => norm(cells[kc.colIndex] || "")).filter(Boolean);
+        if (keyValues.length) {
+          suspiciousRows.push({
+            line: r + 1,
+            reason: "チケット名称が空なのに大会Key列に値があります / Ticket名称为空，但比赛Key列存在内容。",
+            raw: line.slice(0, 300)
+          });
+        } else {
+          ignoredRows.push({
+            line: r + 1,
+            reason: "Ticket名称が空で、認識対象の大会Key列にも値がないため無視 / Ticket名称和比赛Key列均为空，已忽略",
+            raw: line.slice(0, 300)
+          });
+        }
         continue;
       }
 
@@ -838,6 +856,8 @@
       warnings,
       suspiciousRows,
       blankRows,
+      ignoredRows,
+      ignoredColumns,
       headerIndex,
       headerCells,
       ticketNameCol,
@@ -882,14 +902,15 @@
     const tasks = [];
 
     if (!errors.length) {
-      for (const name of tournamentNames) {
+      tournamentNames.forEach((name, inputIndex) => {
         tasks.push({
           name,
           key: "SIMPLE",
           keySource: "簡単モード / 简单模式",
-          tickets: ticketParsed.tickets
+          tickets: ticketParsed.tickets,
+          inputIndex
         });
-      }
+      });
     }
 
     return {
@@ -898,6 +919,7 @@
       errors,
       warnings,
       tasks,
+      skippedTasks: [],
       tournamentNames,
       simpleTicketParsed: ticketParsed
     };
@@ -921,6 +943,7 @@
     warnings.push(...matrix.warnings);
 
     const tasks = [];
+    const skippedTasks = [];
 
     if (!errors.length) {
       tournamentNames.forEach((name, i) => {
@@ -928,19 +951,43 @@
         const key = normalizeKey(resolved.key);
 
         if (!key) {
-          errors.push(`大会 第${i + 1}行のKeyを認識できません / 比赛第${i + 1}行无法识别Key：${name}`);
+          skippedTasks.push({
+            name,
+            key: "",
+            keySource: resolved.source,
+            tickets: [],
+            inputIndex: i,
+            status: "SKIP_KEY_UNRECOGNIZED",
+            reason: `大会Keyを認識できないためSKIP / 无法识别比赛Key，已跳过`
+          });
           return;
         }
 
-        if (!matrix.keyToTickets[key]) {
-          errors.push(`大会 第${i + 1}行 Key=${key} がTicketルール表に存在しません / 规则表中没有这个列：${name}`);
+        if (!Object.prototype.hasOwnProperty.call(matrix.keyToTickets, key)) {
+          skippedTasks.push({
+            name,
+            key,
+            keySource: resolved.source,
+            tickets: [],
+            inputIndex: i,
+            status: "SKIP_MATRIX_COLUMN_MISSING",
+            reason: `Key=${key} がTicketルール表にないためSKIP / 规则表无此列，已跳过`
+          });
           return;
         }
 
         const tickets = matrix.keyToTickets[key] || [];
 
         if (!tickets.length) {
-          errors.push(`大会 第${i + 1}行 Key=${key} に対応するTicketが0件です / 对应Ticket数为0：${name}`);
+          skippedTasks.push({
+            name,
+            key,
+            keySource: resolved.source,
+            tickets: [],
+            inputIndex: i,
+            status: "SKIP_NO_TICKETS",
+            reason: `Key=${key} のTRUEが0件のためSKIP / 该列没有TRUE，已跳过`
+          });
           return;
         }
 
@@ -948,7 +995,8 @@
           name,
           key,
           keySource: resolved.source,
-          tickets
+          tickets,
+          inputIndex: i
         });
       });
     }
@@ -959,6 +1007,7 @@
       errors,
       warnings,
       tasks,
+      skippedTasks,
       tournamentNames,
       overrides: overrideResult.overrides,
       matrix
@@ -996,9 +1045,29 @@
         "TournamentId": cache ? cache.tournamentId : "",
         "URL": cache ? cache.url : "",
         "判定": cacheResult.status,
-        "理由": cacheResult.reason
+        "理由": cacheResult.reason,
+        __inputIndex: t.inputIndex
       });
     }
+
+    for (const t of parsed.skippedTasks || []) {
+      rows.push({
+        "本次处理": "不使用",
+        "大会名": cleanTournamentName(t.name),
+        "Key": t.key || "",
+        "Key来源": t.keySource || "",
+        "Ticket数": "0",
+        "Ticket一覧": "",
+        "TournamentId": "",
+        "URL": "",
+        "判定": t.status || "SKIP_INPUT",
+        "理由": t.reason || "入力対象外のためSKIP / 不在处理范围，已跳过",
+        __inputIndex: t.inputIndex
+      });
+    }
+
+    rows.sort((a, b) => Number(a.__inputIndex ?? 0) - Number(b.__inputIndex ?? 0));
+    rows.forEach(row => delete row.__inputIndex);
 
     return rows;
   }
@@ -1058,10 +1127,22 @@
     }
 
     const rows = buildCandidateRowsFromParsed(parsed);
+    const skippedRows = rows.filter(r => String(r["判定"] || "").startsWith("SKIP_"));
+    const executableRows = rows.filter(r => !String(r["判定"] || "").startsWith("SKIP_"));
 
     lines.push("");
-    lines.push(`大会数 / 比赛数：${rows.length}`);
+    lines.push(`入力大会数 / 输入比赛数：${rows.length}`);
+    lines.push(`Ticket候補大会数 / Ticket候选比赛数：${executableRows.length}`);
+    lines.push(`SKIP大会数 / 跳过比赛数：${skippedRows.length}`);
     lines.push(`Ticket Link予定数 / 预计Link次数：${rows.reduce((sum, r) => sum + Number(r["Ticket数"] || 0), 0)}`);
+    if (parsed.mode === "detail") {
+      lines.push(`認識した大会Key列 / 已识别比赛列：${parsed.matrix.keyCols.length}`);
+      lines.push(`無視した表頭列 / 已忽略表头列：${parsed.matrix.ignoredColumns.length}`);
+      if (parsed.matrix.ignoredColumns.length) {
+        lines.push(`   ${parsed.matrix.ignoredColumns.map(c => c.name).join(" | ")}`);
+      }
+      lines.push(`無視した補助行 / 已忽略辅助行：${parsed.matrix.ignoredRows.length}`);
+    }
     lines.push("");
     lines.push("【候補 / Candidates】");
 
@@ -1069,6 +1150,7 @@
       lines.push("");
       lines.push(`${i + 1}. ${r["大会名"]}`);
       lines.push(`   Key=${r["Key"]} / Tickets=${r["Ticket数"]} / 判定=${r["判定"]}`);
+      if (r["理由"]) lines.push(`   理由=${r["理由"]}`);
       lines.push(`   URL=${r["URL"] || "(未解決)"}`);
 
       const tickets = String(r["Ticket一覧"] || "").split("|").map(norm).filter(Boolean);
@@ -1083,7 +1165,9 @@
 
     alert(
       `候補作成完了\n\n` +
-      `大会数：${rows.length}\n` +
+      `入力大会数：${rows.length}\n` +
+      `Ticket候補大会数：${executableRows.length}\n` +
+      `SKIP：${skippedRows.length}\n` +
       `URL解決済み：${rows.filter(r => r["判定"] === "OK_CACHE").length}\n` +
       `URL未解決：${rows.filter(r => r["判定"] === "URL未解決").length}\n` +
       `URL同名複数：${rows.filter(r => r["判定"] === "URL_AMBIGUOUS").length}\n` +
@@ -1499,6 +1583,7 @@
 
     const targets = candidates.filter(row =>
       row["大会名"] &&
+      !String(row["判定"] || "").startsWith("SKIP_") &&
       (!row["TournamentId"] ||
         !row["URL"] ||
         ["URL未解決", "URL_NOT_FOUND", "URL_CACHE_BAD_ROW", "URL_AMBIGUOUS", "AMBIGUOUS"].includes(row["判定"]))
@@ -1571,6 +1656,7 @@
 
         const row = candidates[i];
         if (!row["大会名"]) continue;
+        if (String(row["判定"] || "").startsWith("SKIP_")) continue;
 
         if (row["TournamentId"] && row["URL"] && !["URL未解決", "URL_NOT_FOUND", "URL_CACHE_BAD_ROW", "URL_AMBIGUOUS", "AMBIGUOUS"].includes(row["判定"])) {
           continue;
@@ -1981,6 +2067,11 @@
     return actual;
   }
 
+  function isPageIdentitySkipError(error) {
+    const message = error?.message || String(error || "");
+    return message.startsWith("PAGE_TITLE_EMPTY:") || message.startsWith("PAGE_TITLE_MISMATCH:");
+  }
+
   function getTicketLinkFormFromDoc(doc, fallbackTournamentId = "") {
     const form =
       doc.querySelector('form[action*="vincular_grupos_vagas"]') ||
@@ -2163,24 +2254,23 @@
   }
 
   function prepareExecutionRows() {
-    const rows = getUseCandidateRows();
+    const selected = getUseCandidateRows();
+    const rows = [];
+    const skipped = [];
 
-    if (!rows.length) {
-      throw new Error("本次处理设为“使用”的比赛为空");
-    }
+    selected.forEach((row, index) => {
+      let reason = "";
+      if (!isSafeUrlStatus(row["判定"])) reason = `URL判定が未確認: ${row["判定"] || "EMPTY"}`;
+      else if (!norm(row["大会名"])) reason = "大会名が空";
+      else if (!norm(row["TournamentId"])) reason = "TournamentIdが空";
+      else if (!norm(row["URL"])) reason = "URLが空";
+      else if (!parseTicketListFromCandidate(row).length) reason = "Ticket一覧が空";
 
-    const unsafe = rows.filter(r => !isSafeUrlStatus(r["判定"]));
-    if (unsafe.length) {
-      throw new Error(`存在尚未安全确认的比赛URL：${unsafe.length}件。请先在URL Manager人工核查。`);
-    }
+      if (reason) skipped.push({ row, index, status: "SKIP_PRECHECK", reason });
+      else rows.push(row);
+    });
 
-    const usable = rows.filter(r => r["大会名"] && r["TournamentId"] && r["URL"] && parseTicketListFromCandidate(r).length > 0);
-
-    if (!usable.length) {
-      throw new Error("使用可能な候補がありません。TournamentId / URL / Ticket一覧 を確認してください。");
-    }
-
-    return usable;
+    return { rows, skipped, selectedCount: selected.length };
   }
 
   function findDuplicateExecutionTournamentIds(rows) {
@@ -2261,14 +2351,23 @@
       );
     } catch (e) {
       console.error("[PW-TICKET-LINK] execute error", e);
-      context.failed = true;
       context.error = e?.message || String(e || "UNKNOWN_ERROR");
       context.elapsedMs = elapsedMs(context.startedAtMs);
       const stageElapsedMs = elapsedMs(context.stageStartedAtMs);
-      appendReportLine(
-        `[${nowText()}] TASK_ERROR worker=${workerId} task=${index + 1}/${total} id=${row["TournamentId"] || ""} stage=${context.stage} stage_elapsed_ms=${stageElapsedMs} task_elapsed_ms=${context.elapsedMs} task_elapsed=${formatDurationMs(context.elapsedMs)} linked=${context.linkedTickets}/${tickets.length} / ${expectedName} / ${context.error}`
-      );
-      warn("失敗:", context.error);
+      if (isPageIdentitySkipError(e)) {
+        context.skipped = true;
+        context.stage = "SKIP_PAGE_IDENTITY";
+        appendReportLine(
+          `[${nowText()}] TASK_SKIP worker=${workerId} task=${index + 1}/${total} id=${row["TournamentId"] || ""} stage=${context.stage} stage_elapsed_ms=${stageElapsedMs} task_elapsed_ms=${context.elapsedMs} task_elapsed=${formatDurationMs(context.elapsedMs)} linked=${context.linkedTickets}/${tickets.length} / ${expectedName} / ${context.error}`
+        );
+        warn("SKIP:", context.error);
+      } else {
+        context.failed = true;
+        appendReportLine(
+          `[${nowText()}] TASK_ERROR worker=${workerId} task=${index + 1}/${total} id=${row["TournamentId"] || ""} stage=${context.stage} stage_elapsed_ms=${stageElapsedMs} task_elapsed_ms=${context.elapsedMs} task_elapsed=${formatDurationMs(context.elapsedMs)} linked=${context.linkedTickets}/${tickets.length} / ${expectedName} / ${context.error}`
+        );
+        warn("失敗:", context.error);
+      }
     }
 
     return context;
@@ -2283,6 +2382,7 @@
       tickets: parseTicketListFromCandidate(row),
       linkedTickets: 0,
       failed: false,
+      skipped: false,
       stopped: false,
       stage: "QUEUED",
       error: "",
@@ -2300,6 +2400,7 @@
       tournaments: 0,
       successful: 0,
       failed: 0,
+      skipped: 0,
       stopped: 0,
       linkedTickets: 0
     }));
@@ -2327,12 +2428,13 @@
         stats.tournaments++;
         stats.linkedTickets += context.linkedTickets;
         if (context.failed) stats.failed++;
+        else if (context.skipped) stats.skipped++;
         else if (context.stopped) stats.stopped++;
         else if (context.stage === "DONE") stats.successful++;
         stats.endedAtMs = monotonicNowMs();
         completed++;
         appendReportLine(
-          `[${nowText()}] WORKER_RELEASE worker=${workerId} task=${context.index + 1}/${context.total} completed=${completed}/${contexts.length} status=${context.failed ? "ERROR" : context.stopped ? "STOPPED" : "OK"} id=${context.row["TournamentId"]} task_elapsed_ms=${context.elapsedMs}`
+          `[${nowText()}] WORKER_RELEASE worker=${workerId} task=${context.index + 1}/${context.total} completed=${completed}/${contexts.length} status=${context.failed ? "ERROR" : context.skipped ? "SKIP" : context.stopped ? "STOPPED" : "OK"} id=${context.row["TournamentId"]} task_elapsed_ms=${context.elapsedMs}`
         );
         setFlowState({ running: true, total: contexts.length, completed, nextIndex, workers: workerCount, stopRequested });
 
@@ -2345,29 +2447,30 @@
 
       const successful = contexts.filter(context => context.stage === "DONE");
       const failed = contexts.filter(context => context.failed);
+      const skipped = contexts.filter(context => context.skipped);
       const stopped = contexts.filter(context => context.stopped);
       const queued = contexts.filter(context => context.workerId === 0);
       const finalLabel = stopRequested ? "STOPPED" : "DONE";
       const runElapsedMs = elapsedMs(runStartedAtMs);
       appendReportLine(
-        `[${nowText()}] ${finalLabel} tournaments=${contexts.length} workers=${workerCount} ok=${successful.length} failed=${failed.length} stopped=${stopped.length} queued=${queued.length} tickets=${contexts.reduce((sum, context) => sum + context.linkedTickets, 0)}/${ticketTotal} run_elapsed_ms=${runElapsedMs} run_elapsed=${formatDurationMs(runElapsedMs)}`
+        `[${nowText()}] ${finalLabel} tournaments=${contexts.length} workers=${workerCount} ok=${successful.length} failed=${failed.length} skipped=${skipped.length} stopped=${stopped.length} queued=${queued.length} tickets=${contexts.reduce((sum, context) => sum + context.linkedTickets, 0)}/${ticketTotal} run_elapsed_ms=${runElapsedMs} run_elapsed=${formatDurationMs(runElapsedMs)}`
       );
       workerStats.forEach(stats => {
         const workerElapsedMs = stats.startedAtMs && stats.endedAtMs
           ? Math.max(0, Math.round(stats.endedAtMs - stats.startedAtMs))
           : 0;
         appendReportLine(
-          `WORKER_SUMMARY worker=${stats.workerId} tournaments=${stats.tournaments} tickets=${stats.linkedTickets} ok=${stats.successful} failed=${stats.failed} stopped=${stats.stopped} worker_elapsed_ms=${workerElapsedMs} worker_elapsed=${formatDurationMs(workerElapsedMs)}`
+          `WORKER_SUMMARY worker=${stats.workerId} tournaments=${stats.tournaments} tickets=${stats.linkedTickets} ok=${stats.successful} failed=${stats.failed} skipped=${stats.skipped} stopped=${stats.stopped} worker_elapsed_ms=${workerElapsedMs} worker_elapsed=${formatDurationMs(workerElapsedMs)}`
         );
       });
       contexts.forEach(context => appendReportLine(
-        `RESULT ${context.index + 1}. status=${context.failed ? "ERROR" : context.stopped ? "STOPPED" : context.stage === "DONE" ? "OK" : "QUEUED"} worker=${context.workerId || "-"} id=${context.row["TournamentId"]} stage=${context.stage} tickets=${context.linkedTickets}/${context.tickets.length} task_elapsed_ms=${context.elapsedMs} task_elapsed=${formatDurationMs(context.elapsedMs)} ${context.row["大会名"]}${context.error ? ` error=${context.error}` : ""}`
+        `RESULT ${context.index + 1}. status=${context.failed ? "ERROR" : context.skipped ? "SKIP" : context.stopped ? "STOPPED" : context.stage === "DONE" ? "OK" : "QUEUED"} worker=${context.workerId || "-"} id=${context.row["TournamentId"]} stage=${context.stage} tickets=${context.linkedTickets}/${context.tickets.length} task_elapsed_ms=${context.elapsedMs} task_elapsed=${formatDurationMs(context.elapsedMs)} ${context.row["大会名"]}${context.error ? ` error=${context.error}` : ""}`
       ));
 
       log(stopRequested ? "停止完了" : "全部完成");
       alert(stopRequested
         ? "Ticket Link停止完了。進行中だった処理の結果はReportを確認してください。"
-        : `Ticket Link 全部完成。\n\nOK: ${successful.length}\nERROR: ${failed.length}\nReportを確認してください。`
+        : `Ticket Link 全部完成。\n\nOK: ${successful.length}\nSKIP: ${skipped.length}\nERROR: ${failed.length}\nReportを確認してください。`
       );
     } finally {
       clearFlowState();
@@ -2383,11 +2486,17 @@
     }
 
     let rows;
+    let precheckSkipped;
+    let selectedCount;
     let maxConcurrency;
 
     try {
-      rows = prepareExecutionRows();
+      const prepared = prepareExecutionRows();
+      rows = prepared.rows;
+      precheckSkipped = prepared.skipped;
+      selectedCount = prepared.selectedCount;
       maxConcurrency = configuredConcurrency();
+      if (!selectedCount) throw new Error("本次处理设为“使用”的比赛为空");
       const duplicateIds = findDuplicateExecutionTournamentIds(rows);
       if (duplicateIds.length) {
         const detail = duplicateIds.map(({ id, matches }) =>
@@ -2400,6 +2509,16 @@
       return;
     }
 
+    if (!rows.length) {
+      const lines = [
+        `[${nowText()}] PRECHECK_DONE executable=0 skipped=${precheckSkipped.length} POST=0`,
+        ...precheckSkipped.map((item, i) => `PRECHECK_SKIP ${i + 1}. ${item.row["大会名"] || "(大会名空)"} / ${item.reason}`)
+      ];
+      setReportText(lines.join("\n"));
+      alert(`実行対象は0件です。${precheckSkipped.length}件を安全のためSKIPしました。Reportを確認してください。`);
+      return;
+    }
+
     const ticketTotal = rows.reduce((sum, r) => sum + parseTicketListFromCandidate(r).length, 0);
 
     const summary = rows.map((r, i) => {
@@ -2409,7 +2528,8 @@
     const ok = confirm(
       `Ticket Linkを開始しますか？\n\n` +
       `大会数：${rows.length}\n` +
-      `Ticket Link予定数：${ticketTotal}\n\n` +
+      `Ticket Link予定数：${ticketTotal}\n` +
+      `事前SKIP：${precheckSkipped.length}\n\n` +
       `この版はページを開かず、確認済みURLを后台fetchしてhidden formを直接使用します。\n` +
       `Ticket optionは value=tn_ のものだけを対象にします。\n\n` +
       `${summary}`
@@ -2422,7 +2542,8 @@
 
     const startReport = [
       `[${nowText()}] START  Ticket Link実行`,
-      `大会数=${rows.length} / Ticket Link予定数=${ticketTotal} / workers=${Math.min(maxConcurrency, rows.length)}`,
+      `選択数=${selectedCount} / 実行大会数=${rows.length} / 事前SKIP=${precheckSkipped.length} / Ticket Link予定数=${ticketTotal} / workers=${Math.min(maxConcurrency, rows.length)}`,
+      ...precheckSkipped.map((item, i) => `PRECHECK_SKIP ${i + 1}. ${item.row["大会名"] || "(大会名空)"} / ${item.reason}`),
       ""
     ].join("\n");
 
@@ -2551,7 +2672,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <div style="font-weight:bold;">PW Ticket Link Semi Auto v1.1.1</div>
+        <div style="font-weight:bold;">PW Ticket Link Semi Auto v1.2.0</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-ticket-link-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-ticket-link-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>

@@ -38,7 +38,8 @@ const PRE_RES_TEMPLATE_MAILER = {
   ],
   templateTypes: ['coin_payment', 'livepocket_payment', 'contract_confirmed', 'day_guide', 'cancel'],
   manualActionOptions: ['キャンセル', 'キャンセル通知済', 'テスト', '重複', 'スキップ'],
-  manualSkipPattern: /テスト|test|重複|除外|スキップ|skip/i
+  manualSkipPattern: /テスト|test|重複|除外|スキップ|skip/i,
+  applicantCountSummaryLabel: '申込・決済人数を監査'
 };
 
 const PRE_RES_SOURCE_HEADER_ALIASES = {
@@ -61,6 +62,7 @@ function openPreReservationTemplateDrivenMailMenu() {
     .createMenu(PRE_RES_TEMPLATE_MAILER.menuName)
     .addItem('手動指示の選択肢を設定', 'applyPreReservationManualActionDropdown')
     .addItem('重複申請を整理（最新を残す）', 'markDuplicatePreReservationApplications')
+    .addItem(PRE_RES_TEMPLATE_MAILER.applicantCountSummaryLabel, 'auditPreReservationApplicantCounts')
     .addItem('LivePocket決済確認を反映', 'syncLivePocketPaymentConfirmations')
     .addSeparator()
     .addItem('REPORT作成：全対象', 'buildPreReservationTemplateDrivenMailReport')
@@ -98,10 +100,10 @@ function markDuplicatePreReservationApplications() {
 
   const source = preResMailerReadSourceRowsWithoutUpdates_(ctx.sourceSheet, ctx.sourceMap);
   const candidates = source.rows.filter(row =>
-    (row.email || row.gameId) &&
-    !preResMailerIsManualSkip_(row.manualAction)
+    preResMailerHasApplicantIdentity_(row) &&
+    !preResMailerHasDuplicateMarker_(row)
   );
-  const groups = preResMailerGroupRowsByIdentity_(candidates);
+  const groups = preResMailerGroupRowsByApplicantIdentity_(candidates);
   const duplicateRows = [];
 
   groups.forEach(group => {
@@ -119,7 +121,11 @@ function markDuplicatePreReservationApplications() {
       source.rowCount,
       1
     );
+    const paymentInviteRange = ctx.sourceMap.paymentInviteSentCol
+      ? ctx.sourceSheet.getRange(source.startRow, ctx.sourceMap.paymentInviteSentCol, source.rowCount, 1)
+      : null;
     const actionValues = actionRange.getValues();
+    const paymentInviteValues = paymentInviteRange ? paymentInviteRange.getValues() : null;
 
     duplicateRows.forEach(row => {
       const index = row.sourceRow - source.startRow;
@@ -127,9 +133,13 @@ function markDuplicatePreReservationApplications() {
         actionValues[index][0] = '重複';
         newlyMarked++;
       }
+      if (paymentInviteValues && paymentInviteValues[index][0] !== '重複') {
+        paymentInviteValues[index][0] = '重複';
+      }
     });
 
     if (newlyMarked > 0) actionRange.setValues(actionValues);
+    if (paymentInviteRange) paymentInviteRange.setValues(paymentInviteValues);
   }
 
   SpreadsheetApp.getUi().alert(
@@ -140,6 +150,14 @@ function markDuplicatePreReservationApplications() {
     '今回「重複」を設定: ' + newlyMarked + '件\n\n' +
     'すでに手動で「重複」が選択されていた行は、判定対象から除外しています。'
   );
+}
+
+function auditPreReservationApplicantCounts() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  preResMailerEnsureTokyoTimezone_(ss);
+  const ctx = preResMailerResolveContext_(ss);
+  const audit = preResMailerBuildApplicantAudit_(ctx.sourceSheet, ctx.sourceMap, false);
+  SpreadsheetApp.getUi().alert(preResMailerFormatApplicantAuditMessage_(audit, false));
 }
 
 function syncLivePocketPaymentConfirmations() {
@@ -332,10 +350,12 @@ function buildPreReservationTemplateDrivenMailReport() {
 }
 
 function buildPreReservationCoinPaymentReport() {
+  preResMailerAssertCapacityForPaymentReport_('coin_payment', 'COIN支払案内');
   preResMailerBuildReport_('coin_payment', 'COIN支払案内');
 }
 
 function buildPreReservationLivePocketPaymentReport() {
+  preResMailerAssertCapacityForPaymentReport_('livepocket_payment', 'LivePocket支払案内');
   preResMailerBuildReport_('livepocket_payment', 'LivePocket支払案内');
 }
 
@@ -422,6 +442,34 @@ function preResMailerBuildReport_(mailTypeFilter, reportLabel) {
     '対象: ' + output.length + '件\n' +
     '元シート: ' + ctx.sourceSheet.getName()
   );
+}
+
+function preResMailerAssertCapacityForPaymentReport_(mailTypeFilter, reportLabel) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  preResMailerEnsureTokyoTimezone_(ss);
+  const ctx = preResMailerResolveContext_(ss);
+  const audit = preResMailerBuildApplicantAudit_(ctx.sourceSheet, ctx.sourceMap, true);
+  const pendingReportRows = audit.activeLatestRows.filter(row => {
+    const mailType = preResMailerMailTypeForRow_(row);
+    return mailType === mailTypeFilter;
+  });
+  const projected = audit.currentApplicants + pendingReportRows.length;
+
+  if (audit.conflictGroups.length > 0) {
+    throw new Error(
+      preResMailerFormatApplicantAuditMessage_(audit, true) +
+      '\n\n重複ではなく、メンバー重複の競合申請があります。自動送信を停止しました。'
+    );
+  }
+
+  if (audit.maxApplicants > 0 && projected > audit.maxApplicants) {
+    throw new Error(
+      preResMailerFormatApplicantAuditMessage_(audit, true) +
+      '\n\n今回の ' + reportLabel + ' 対象: ' + pendingReportRows.length + '件' +
+      '\n送信後見込み申込数: ' + projected + '件' +
+      '\n定員を超えるため、REPORT作成を停止しました。'
+    );
+  }
 }
 
 function createDraftsFromPreReservationTemplateDrivenMailReport() {
@@ -667,6 +715,20 @@ function preResMailerFindLivePocketUrl_(sheet) {
   return '';
 }
 
+function preResMailerFindMaxApplicants_(sheet) {
+  const values = sheet.getRange(1, 1, Math.min(20, sheet.getLastRow()), Math.min(12, sheet.getLastColumn())).getDisplayValues();
+  for (let row = 0; row < values.length; row++) {
+    for (let col = 0; col < values[row].length; col++) {
+      if (preResMailerText_(values[row][col]) !== 'マックス') continue;
+      const right = col + 1 < values[row].length ? Number(String(values[row][col + 1]).replace(/[^\d]/g, '')) : 0;
+      const down = row + 1 < values.length ? Number(String(values[row + 1][col]).replace(/[^\d]/g, '')) : 0;
+      if (right > 0) return right;
+      if (down > 0) return down;
+    }
+  }
+  return 0;
+}
+
 function preResMailerLoadTemplates_(ss, ctx) {
   const sheet = ss.getSheetByName(PRE_RES_TEMPLATE_MAILER.templateSourceSheetName);
   if (!sheet) throw new Error('PreReservationTemplateSource が見つかりません。先にテンプレート抽出を実行してください。');
@@ -768,14 +830,19 @@ function preResMailerParseSourceRow_(values, sourceRow, map) {
   const deadline = explicitDeadline || computedDeadline;
   return {
     sourceRow: sourceRow,
+    paymentInviteSentRaw: map.paymentInviteSentCol ? values[map.paymentInviteSentCol - 1] : '',
     paymentInviteSent: map.paymentInviteSentCol ? preResMailerIsChecked_(values[map.paymentInviteSentCol - 1]) : false,
+    paymentConfirmedRaw: map.paymentConfirmedCol ? values[map.paymentConfirmedCol - 1] : '',
     paymentConfirmed: map.paymentConfirmedCol ? preResMailerIsChecked_(values[map.paymentConfirmedCol - 1]) : false,
+    dayGuideSentRaw: map.dayGuideSentCol ? values[map.dayGuideSentCol - 1] : '',
     dayGuideSent: map.dayGuideSentCol ? preResMailerIsChecked_(values[map.dayGuideSentCol - 1]) : false,
+    cancelMailSentRaw: map.cancelMailSentCol ? values[map.cancelMailSentCol - 1] : '',
     cancelMailSent: map.cancelMailSentCol ? preResMailerIsChecked_(values[map.cancelMailSentCol - 1]) : false,
     timestamp: timestamp,
     email: map.emailCol ? preResMailerText_(values[map.emailCol - 1]) : '',
     playerName: map.playerNameCol ? preResMailerText_(values[map.playerNameCol - 1]) : '',
     gameId: map.gameIdCol ? preResMailerText_(values[map.gameIdCol - 1]) : '',
+    participantGameIds: preResMailerCollectParticipantGameIds_(values, map),
     paymentMethod: map.paymentMethodCol ? preResMailerText_(values[map.paymentMethodCol - 1]) : '',
     voucherAnswer: map.voucherAnswerCol ? preResMailerText_(values[map.voucherAnswerCol - 1]) : '',
     manualAction: map.manualActionCol ? preResMailerText_(values[map.manualActionCol - 1]) : '',
@@ -788,11 +855,12 @@ function preResMailerParseSourceRow_(values, sourceRow, map) {
 
 function preResMailerKeepLatestRows_(rows) {
   const filtered = rows.filter(row =>
-    (row.email || row.gameId) &&
-    !/重複申請/.test(row.manualAction) &&
-    !preResMailerIsManualSkip_(row.manualAction)
+    preResMailerHasApplicantIdentity_(row) &&
+    !preResMailerHasDuplicateMarker_(row)
   );
-  return preResMailerGroupRowsByIdentity_(filtered).map(group => group.latest);
+  return preResMailerGroupRowsByApplicantIdentity_(filtered)
+    .map(group => group.latest)
+    .filter(row => !preResMailerHasOverlapConflict_(row, filtered));
 }
 
 function preResMailerGroupRowsByIdentity_(rows) {
@@ -846,7 +914,8 @@ function preResMailerIsLaterApplication_(candidate, current) {
 function preResMailerMailTypeForRow_(row) {
   if (!row.email) return '';
   if (row.voucherAnswer) return '';
-  if (preResMailerIsManualSkip_(row.manualAction)) return '';
+  if (preResMailerHasDuplicateMarker_(row)) return '';
+  if (preResMailerHasInvalidManagementMarker_(row)) return '';
   if (/キャンセル通知済/.test(row.manualAction)) return '';
   if (/キャンセル/.test(row.manualAction) && !row.cancelMailSent) return 'cancel';
   if (row.cancelMailSent) return '';
@@ -859,6 +928,132 @@ function preResMailerMailTypeForRow_(row) {
 
 function preResMailerIsManualSkip_(value) {
   return PRE_RES_TEMPLATE_MAILER.manualSkipPattern.test(preResMailerText_(value));
+}
+
+function preResMailerHasDuplicateMarker_(row) {
+  if (preResMailerIsManualSkip_(row.manualAction)) return true;
+  return [
+    row.paymentInviteSentRaw,
+    row.paymentConfirmedRaw,
+    row.dayGuideSentRaw,
+    row.cancelMailSentRaw
+  ].some(value => /重複/i.test(preResMailerText_(value)));
+}
+
+function preResMailerHasInvalidManagementMarker_(row) {
+  return [
+    row.paymentInviteSentRaw,
+    row.paymentConfirmedRaw,
+    row.dayGuideSentRaw,
+    row.cancelMailSentRaw
+  ].some(value => {
+    const text = preResMailerText_(value);
+    return text && text !== 'TRUE' && text !== 'FALSE' && !/重複/i.test(text);
+  });
+}
+
+function preResMailerCollectParticipantGameIds_(values, map) {
+  const ids = [];
+  for (let index = 0; index < values.length; index++) {
+    const headerIndex = index + 1;
+    if (
+      headerIndex === map.gameIdCol ||
+      PRE_RES_SOURCE_HEADER_ALIASES.gameIdCol.indexOf('Game ID【代表者】') >= 0
+    ) {
+      const normalized = preResMailerNormalizeGameId_(values[index]);
+      if (normalized) ids.push(normalized);
+    }
+  }
+  if (!ids.length && map.gameIdCol) {
+    const fallback = preResMailerNormalizeGameId_(values[map.gameIdCol - 1]);
+    if (fallback) ids.push(fallback);
+  }
+  return [...new Set(ids)];
+}
+
+function preResMailerHasApplicantIdentity_(row) {
+  return row.participantGameIds && row.participantGameIds.length > 0;
+}
+
+function preResMailerApplicantIdentityKey_(row) {
+  return preResMailerHasApplicantIdentity_(row)
+    ? row.participantGameIds.slice().sort().join('|')
+    : '';
+}
+
+function preResMailerGroupRowsByApplicantIdentity_(rows) {
+  const keyed = {};
+  rows.forEach(row => {
+    const key = preResMailerApplicantIdentityKey_(row);
+    if (!key) return;
+    if (!keyed[key]) keyed[key] = { key: key, rows: [], latest: null };
+    keyed[key].rows.push(row);
+    if (!keyed[key].latest || preResMailerIsLaterApplication_(row, keyed[key].latest)) {
+      keyed[key].latest = row;
+    }
+  });
+  return Object.keys(keyed).map(key => keyed[key]);
+}
+
+function preResMailerRowSharesMember_(left, right) {
+  if (!preResMailerHasApplicantIdentity_(left) || !preResMailerHasApplicantIdentity_(right)) return false;
+  const leftIds = {};
+  left.participantGameIds.forEach(id => { leftIds[id] = true; });
+  return right.participantGameIds.some(id => leftIds[id]);
+}
+
+function preResMailerHasOverlapConflict_(row, candidateRows) {
+  const rowKey = preResMailerApplicantIdentityKey_(row);
+  return candidateRows.some(other =>
+    other.sourceRow !== row.sourceRow &&
+    preResMailerApplicantIdentityKey_(other) !== rowKey &&
+    preResMailerRowSharesMember_(row, other)
+  );
+}
+
+function preResMailerBuildApplicantAudit_(sourceSheet, sourceMap, includeConflicts) {
+  const rows = preResMailerReadSourceRowsWithoutUpdates_(sourceSheet, sourceMap).rows;
+  const candidateRows = rows.filter(row =>
+    preResMailerHasApplicantIdentity_(row) &&
+    !preResMailerHasDuplicateMarker_(row)
+  );
+  const groups = preResMailerGroupRowsByApplicantIdentity_(candidateRows);
+  const activeLatestRows = groups
+    .map(group => group.latest)
+    .filter(row => row.paymentInviteSent && !row.cancelMailSent);
+  const conflictGroups = includeConflicts
+    ? activeLatestRows.filter(row => preResMailerHasOverlapConflict_(row, activeLatestRows))
+    : [];
+  const currentApplicants = activeLatestRows.filter(row => conflictGroups.indexOf(row) < 0).length;
+  const currentPaid = activeLatestRows.filter(row => !preResMailerHasOverlapConflict_(row, activeLatestRows) && row.paymentConfirmed).length;
+  return {
+    maxApplicants: preResMailerFindMaxApplicants_(sourceSheet),
+    currentApplicants: currentApplicants,
+    currentPaid: currentPaid,
+    activeLatestRows: activeLatestRows,
+    conflictGroups: conflictGroups
+  };
+}
+
+function preResMailerFormatApplicantAuditMessage_(audit, includeConflictDetails) {
+  const lines = [
+    '申込・決済人数の監査結果',
+    '',
+    'マックス: ' + (audit.maxApplicants || '未設定'),
+    '現在の有効申込数: ' + audit.currentApplicants,
+    '現在の決済完了数: ' + audit.currentPaid
+  ];
+  if (audit.maxApplicants > 0) {
+    lines.push('残枠: ' + (audit.maxApplicants - audit.currentApplicants));
+  }
+  if (includeConflictDetails && audit.conflictGroups.length > 0) {
+    lines.push('');
+    lines.push('要人工確認（メンバー重複）: ' + audit.conflictGroups.length + '件');
+    audit.conflictGroups.slice(0, 10).forEach(row => {
+      lines.push('- 元シート' + row.sourceRow + '行 / ' + (row.playerName || '名前なし') + ' / ' + row.participantGameIds.join(','));
+    });
+  }
+  return lines.join('\n');
 }
 
 function preResMailerBuildMail_(template, row, ctx) {
