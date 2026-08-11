@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW ナショナルチケット Batch
 // @namespace    pw-national-ticket-batch-safe
-// @version      1.3.3
+// @version      1.3.4
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
 // @description  任意のPokerWeb管理画面からGameID・チケット名TSVを厳密検証し、ナショナルチケットを安全に一件ずつ付与する正式版
@@ -367,7 +367,7 @@
     const resolved = new Map();
     const requestedNames = [...new Set(tasks.map(task => task.ticketName))];
 
-    requestedNames.forEach(ticketName => {
+    for (const ticketName of requestedNames) {
       const matches = groups.filter(group => group.candidates.some(candidate => candidate === ticketName));
       const uniqueByGrupo = [...new Map(matches.map(group => [group.grupo, group])).values()];
 
@@ -375,12 +375,110 @@
         throw new Error(`チケット名が完全一致しません: ${ticketName}`);
       }
       if (uniqueByGrupo.length > 1) {
-        throw new Error(`チケット名が複数 group に完全一致しました: ${ticketName} / grupos=${uniqueByGrupo.map(x => x.grupo).join(',')}`);
+        const selectedGroup = await askToSelectDuplicateGroup(ticketName, uniqueByGrupo);
+        if (!selectedGroup) {
+          throw new Error(`重複するチケット名の group 選択がキャンセルされました: ${ticketName}`);
+        }
+        resolved.set(ticketName, selectedGroup);
+        continue;
       }
       resolved.set(ticketName, uniqueByGrupo[0]);
-    });
+    }
 
     return { resolved, listPage };
+  }
+
+  function askToSelectDuplicateGroup(ticketName, groups) {
+    return new Promise(resolve => {
+      document.querySelector('#pwnt-group-select-modal')?.remove();
+
+      const overlay = document.createElement('div');
+      overlay.id = 'pwnt-group-select-modal';
+      overlay.style.cssText = `
+        position:fixed;inset:0;z-index:1000001;background:rgba(0,0,0,.72);
+        display:flex;align-items:center;justify-content:center;padding:24px;
+      `;
+
+      const dialog = document.createElement('div');
+      dialog.style.cssText = `
+        width:min(820px,94vw);max-height:88vh;overflow:auto;background:#202020;color:#fff;
+        border:2px solid #ffcc66;border-radius:12px;padding:18px;
+        box-shadow:0 8px 32px rgba(0,0,0,.65);font-family:Arial,"Yu Gothic",Meiryo,sans-serif;
+      `;
+
+      const title = document.createElement('div');
+      title.textContent = '同名チケットの GROUP を選択';
+      title.style.cssText = 'font-size:18px;font-weight:bold;color:#ffcc66;margin-bottom:8px;';
+
+      const message = document.createElement('div');
+      message.textContent = `「${ticketName}」が複数の GROUP に完全一致しました。今回使用する GROUP を1つ選択してください。`;
+      message.style.cssText = 'margin-bottom:12px;line-height:1.5;overflow-wrap:anywhere;';
+
+      const choices = document.createElement('div');
+      choices.style.cssText = 'display:flex;flex-direction:column;gap:8px;';
+
+      groups.forEach((group, index) => {
+        const row = document.createElement('label');
+        row.style.cssText = `
+          display:flex;align-items:center;gap:10px;padding:10px;background:#111;
+          border:1px solid #666;border-radius:6px;cursor:pointer;
+        `;
+
+        const radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = 'pwnt-selected-group';
+        radio.value = String(index);
+
+        const grupo = document.createElement('strong');
+        grupo.textContent = `grupo=${group.grupo}`;
+        grupo.style.cssText = 'min-width:110px;color:#fff;';
+
+        const link = document.createElement('a');
+        link.href = group.groupURL;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = group.groupURL;
+        link.style.cssText = 'color:#8ecbff;overflow-wrap:anywhere;';
+        link.onclick = event => event.stopPropagation();
+
+        row.append(radio, grupo, link);
+        choices.appendChild(row);
+      });
+
+      const validation = document.createElement('div');
+      validation.style.cssText = 'min-height:18px;margin-top:8px;color:#ff9f9f;font-size:12px;';
+
+      const buttons = document.createElement('div');
+      buttons.style.cssText = 'display:flex;gap:12px;justify-content:flex-end;margin-top:8px;';
+
+      const stopButton = document.createElement('button');
+      stopButton.textContent = '停止';
+      stopButton.style.cssText = 'padding:10px 18px;background:#ddd;color:#222;';
+
+      const continueButton = document.createElement('button');
+      continueButton.textContent = '選択して DRY RUN を続行';
+      continueButton.style.cssText = 'padding:10px 18px;background:#ffcc66;color:#111;font-weight:bold;';
+
+      const finish = selectedGroup => {
+        overlay.remove();
+        resolve(selectedGroup);
+      };
+
+      stopButton.onclick = () => finish(null);
+      continueButton.onclick = () => {
+        const selected = choices.querySelector('input[name="pwnt-selected-group"]:checked');
+        if (!selected) {
+          validation.textContent = '使用する GROUP を選択してください。';
+          return;
+        }
+        finish(groups[Number(selected.value)] || null);
+      };
+
+      buttons.append(stopButton, continueButton);
+      dialog.append(title, message, choices, validation, buttons);
+      overlay.appendChild(dialog);
+      document.body.appendChild(overlay);
+    });
   }
 
   function extractStoreName(ticketElement) {
@@ -1098,7 +1196,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <strong>PW ナショナルチケット一括付与 正式版 v1.3.2</strong>
+        <strong>PW ナショナルチケット一括付与 正式版 v1.3.4</strong>
         <div><button id="pwnt-min">Min</button> <button id="pwnt-close">x</button></div>
       </div>
       <div id="pwnt-body" style="overflow:auto;margin-top:8px;">
