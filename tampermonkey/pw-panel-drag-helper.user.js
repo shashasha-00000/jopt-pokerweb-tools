@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW 共通パネル移動・最小化
 // @namespace    https://japanopt.pokerweb.com.br/
-// @version      0.2.0
+// @version      0.2.1
 // @description  PokerWeb用Tampermonkeyツールの通常パネルをドラッグ移動し、選択中のパネルを最前面に表示します。
 // @match        https://japanopt.pokerweb.com.br/*
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-panel-drag-helper.user.js
@@ -24,6 +24,7 @@
     'pwnt-panel',
     'pw-prize-plan-panel',
     'pw-prize-gameid-test-panel',
+    'pw-prize-coin-batch-panel',
     'pw-full-auto-v7-panel',
     'pw-manual-panel',
     'pwAwardPlanPanel',
