@@ -1943,8 +1943,10 @@ const RSE = (() => {
       const rowNo = index + 2;
       if (indexes.processed >= 0 && formStatusDone_(valueAt_(row, indexes.processed))) return;
       const rawEventName = valueAt_(row, indexes.eventName);
-      const rawStartDate = text_(valueAt_(row, indexes.startDate));
-      const rawEndDate = text_(valueAt_(row, indexes.endDate));
+      const rawStartDate = valueAt_(row, indexes.startDate);
+      const rawEndDate = valueAt_(row, indexes.endDate);
+      const hasStartDate = text_(rawStartDate) !== '';
+      const hasEndDate = text_(rawEndDate) !== '';
 
       const app = {
         rowNo,
@@ -1956,7 +1958,7 @@ const RSE = (() => {
         eventName: text_(rawEventName),
         startDate: normalizeIsoDate_(rawStartDate),
         endDate: normalizeIsoDate_(rawEndDate),
-        allDates: !rawStartDate && !rawEndDate
+        allDates: !hasStartDate && !hasEndDate
       };
       app.applicationKey = makeApplicationKey_(app);
 
@@ -1964,11 +1966,11 @@ const RSE = (() => {
       if (!app.gameId) errors.push('Game IDが不正または空白');
       if (!app.name) errors.push('本名が空白');
       if (!validEmail_(app.email)) errors.push('メールアドレスが不正');
-      if (Boolean(rawStartDate) !== Boolean(rawEndDate)) {
+      if (hasStartDate !== hasEndDate) {
         errors.push('対象期間は開始日・終了日の両方を入力するか、両方を空白にしてください');
       }
-      if (rawStartDate && !app.startDate) errors.push('対象期間（開始日）が不正');
-      if (rawEndDate && !app.endDate) errors.push('対象期間（終了日）が不正');
+      if (hasStartDate && !app.startDate) errors.push('対象期間（開始日）が不正');
+      if (hasEndDate && !app.endDate) errors.push('対象期間（終了日）が不正');
       if (app.startDate && app.endDate && app.startDate > app.endDate) errors.push('対象期間の開始日が終了日より後です');
       if (errors.length) {
         invalid.push({ application: app, message: 'Form ' + rowNo + '行: ' + errors.join(' / ') });
@@ -3426,7 +3428,7 @@ ${usdtBreakdownHtml}
 
   function normalizeIsoDate_(value) {
     if (value instanceof Date && !isNaN(value.getTime())) {
-      return Utilities.formatDate(value, Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd');
+      return Utilities.formatDate(value, CONFIG.TIME_ZONE, 'yyyy-MM-dd');
     }
     const source = text_(value).normalize ? text_(value).normalize('NFKC') : text_(value);
     let match = source.match(/^(\d{4})[\/.\-年](\d{1,2})[\/.\-月](\d{1,2})日?$/);
@@ -3585,7 +3587,7 @@ ${usdtBreakdownHtml}
       unresolvedGameIdSet_, receiptProcessingScope_, heldReceiptCheckRow_,
       makeReceiptCheckRow_, buildReceiptCheckRows_, groupCheckRowsForDraft_,
       completedApplicationKeysFromCheckRows_, receiptIntersectionStats_,
-      normalizeIsoDate_, parseApplicationKey_, pwMatchesApplicationPeriod_,
+      readApplications_, normalizeIsoDate_, parseApplicationKey_, pwMatchesApplicationPeriod_,
       readLedgerUpdateState_, mutateLedgerFieldsForPdfKeys_, markReplacedLedgerState_,
       readSheetUpdateState_, setUpdateStateValue_, writeSheetUpdateState_,
       normalizeMailGroupDisplay_, mailGroupInfo_, mailGroupReadyForAutoSend_,
