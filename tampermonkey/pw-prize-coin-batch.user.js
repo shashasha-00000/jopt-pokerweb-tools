@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW Prize Coin Batch
 // @namespace    https://japanopt.pokerweb.com.br/
-// @version      0.3.6
+// @version      0.3.9
 // @description  TSVを唯一の支払基準として、複数大会の未払いPrizeを照合しPW Coinを一件ずつ付与します。
 // @match        https://japanopt.pokerweb.com.br/*
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-coin-batch.user.js
@@ -14,7 +14,7 @@
   'use strict';
 
   const APP = {
-    version: '0.3.6',
+    version: '0.3.9',
     panelId: 'pw-prize-coin-batch-panel',
     inputKey: 'PW_PRIZE_COIN_BATCH_INPUT_V1',
     scopeKey: 'PW_PRIZE_COIN_BATCH_SCOPE_V1',
@@ -318,6 +318,60 @@
     );
   }
 
+  function findManualUrlMatches(entries, pastedName, scope) {
+    const wanted = strictTournamentName(pastedName);
+    if (!wanted) return [];
+    const scoped = uniqueEntries(entries).filter(entry => inEventScope(entry, scope));
+    const actualMatches = scoped.filter(entry => strictTournamentName(entry.actualName) === wanted);
+    if (actualMatches.length) return actualMatches;
+    const wantedCName = cNameFromActual(wanted);
+    return scoped.filter(entry => strictTournamentName(entry.cName) === wantedCName);
+  }
+
+  function promptManualUrlMatch(entries, cName, scope) {
+    let pastedName = cName;
+    while (true) {
+      const answer = window.prompt([
+        'C列の大会名ではTournament URLを特定できませんでした。',
+        '',
+        `C列: ${cName}`,
+        `Event Scope: ${norm(scope) || '(未指定)'}`,
+        '',
+        'PokerWebのOPEN大会一覧から、対象大会名をコピーして貼り付けてください。',
+        '【Event名】を含む完全名でも、Event名を除いた大会名でも指定できます。',
+        'キャンセルすると、この大会はERRORのまま停止します。'
+      ].join('\n'), pastedName);
+      if (answer === null) {
+        return { entry: null, error: 'Tournament URL manual selection cancelled' };
+      }
+      pastedName = strictTournamentName(answer);
+      if (!pastedName) {
+        window.alert('大会名が空です。OPEN大会一覧の大会名をコピーして貼り付けてください。');
+        continue;
+      }
+      const matches = findManualUrlMatches(entries, pastedName, scope);
+      if (matches.length === 1) {
+        return {
+          entry: { ...matches[0], source: `MANUAL ${matches[0].source}` },
+          error: ''
+        };
+      }
+      if (matches.length > 1) {
+        window.alert([
+          '貼り付けた大会名に複数のTournament URLが一致しました。',
+          `Tournament ID: ${matches.map(item => item.tournamentId).join(', ')}`,
+          '【Event名】を含む完全な大会名を貼り付けてください。'
+        ].join('\n'));
+        continue;
+      }
+      window.alert([
+        '貼り付けた大会名は、今回スキャンしたOPEN大会一覧に見つかりませんでした。',
+        `入力: ${pastedName}`,
+        'OPEN大会一覧から表示名をそのままコピーして、もう一度貼り付けてください。'
+      ].join('\n'));
+    }
+  }
+
   function isVisible(win, element) {
     if (!element) return false;
     const rect = element.getBoundingClientRect();
@@ -342,24 +396,13 @@
   }
 
   function rowsForRead(win, dt) {
-    const rows = [];
-    const seen = new Set();
-    const add = row => {
-      if (!row || !String(row.innerHTML || '').includes('/cb/torneio/painel/')) return;
-      const key = row.outerHTML || row.textContent || '';
-      if (!key || seen.has(key)) return;
-      seen.add(key);
-      rows.push(row);
-    };
     try {
-      if (dt) {
-        dt.rows({ page: 'current' }).nodes().each(add);
-        const node = dataTableNode(dt);
-        if (node) [...node.querySelectorAll('tbody tr')].forEach(add);
-      }
-      [...win.document.querySelectorAll('tr')].forEach(add);
+      const node = dataTableNode(dt);
+      const root = node || win.document;
+      return [...root.querySelectorAll('tbody tr')]
+        .filter(row => String(row.innerHTML || '').includes('/cb/torneio/painel/'));
     } catch (_) {}
-    return rows;
+    return [];
   }
 
   function cleanTournamentName(value) {
@@ -427,19 +470,71 @@
     });
   }
 
+  function isDataTableProcessing(win, dt) {
+    try {
+      const container = dt.table().container();
+      const processing = container
+        ? container.querySelector('.dataTables_processing')
+        : win.document.querySelector('.dataTables_processing');
+      return processing ? isVisible(win, processing) : false;
+    } catch (_) {
+      const processing = win.document.querySelector('.dataTables_processing');
+      return processing ? isVisible(win, processing) : false;
+    }
+  }
+
+  async function waitForProcessingGone(win, dt, timeoutMs = APP.waitMs) {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      if (!isDataTableProcessing(win, dt)) return true;
+      await sleep(100);
+    }
+    return false;
+  }
+
+  async function searchDataTableAndWait(win, dt, keyword) {
+    if (!await waitForProcessingGone(win, dt)) {
+      throw new Error('DataTable initial processing timeout');
+    }
+    dt.page.len(100);
+    dt.search(norm(keyword));
+    dt.page(0);
+    const draw = waitDraw(win, dt);
+    dt.draw();
+    if (!await draw) throw new Error('DataTable search draw timeout');
+    if (!await waitForProcessingGone(win, dt)) {
+      throw new Error('DataTable search processing timeout');
+    }
+    await sleep(150);
+    const info = dt.page.info();
+    if (Number(info.page) !== 0) {
+      throw new Error(`DataTable search page mismatch: expected=1 actual=${Number(info.page) + 1}`);
+    }
+    return info;
+  }
+
   async function goTablePage(win, dt, page) {
     const current = Number(dt.page.info().page || 0);
-    if (current === page) return;
+    if (current === page) {
+      if (!await waitForProcessingGone(win, dt)) {
+        throw new Error(`DataTable page ${page + 1} processing timeout`);
+      }
+      return;
+    }
     const draw = waitDraw(win, dt);
     dt.page(page).draw('page');
     if (!await draw) throw new Error(`DataTable page ${page + 1} draw timeout`);
+    if (!await waitForProcessingGone(win, dt)) {
+      throw new Error(`DataTable page ${page + 1} processing timeout`);
+    }
     await sleep(150);
     const actual = Number(dt.page.info().page || 0);
     if (actual !== page) throw new Error(`DataTable page mismatch: expected=${page + 1} actual=${actual + 1}`);
   }
 
-  async function scanListPage(page) {
-    setStatus(`${page.label} tournament scan...`);
+  async function scanListPage(page, scope) {
+    const searchTerm = norm(scope);
+    setStatus(`${page.label} tournament search: ${searchTerm || '(all)'}`);
     const iframe = document.createElement('iframe');
     iframe.src = page.path;
     iframe.setAttribute('aria-hidden', 'true');
@@ -455,17 +550,13 @@
       });
       const win = iframe.contentWindow;
       const dt = await waitFor(() => dataTable(win), APP.waitMs, `${page.label} DataTable`);
-      try {
-        const draw = waitDraw(win, dt);
-        dt.page.len(100).draw();
-        await draw;
-        await sleep(150);
-      } catch (_) {}
-      const pages = Math.max(1, Number(dt.page.info().pages || 1));
+      const info = await searchDataTableAndWait(win, dt, searchTerm);
+      const pages = Math.max(1, Number(info.pages || 1));
       const found = [];
       for (let pageIndex = 0; pageIndex < pages; pageIndex += 1) {
         if (state.stopRequested) throw new Error('STOP requested');
         await goTablePage(win, dt, pageIndex);
+        setStatus(`${page.label} tournament scan ${pageIndex + 1}/${pages}: ${searchTerm || '(all)'}`);
         for (const row of rowsForRead(win, dt)) {
           const entry = extractTournamentFromRow(row, `${page.label}-p${pageIndex + 1}`);
           if (entry) found.push(entry);
@@ -477,10 +568,10 @@
     }
   }
 
-  async function scanAllTournamentLists() {
+  async function scanAllTournamentLists(scope) {
     const entries = [];
     for (const page of APP.listPages) {
-      entries.push(...await scanListPage(page));
+      entries.push(...await scanListPage(page, scope));
     }
     const unique = uniqueEntries(entries);
     writeSharedCache(unique, 'prize-coin-built-in-scan');
@@ -552,6 +643,10 @@
       throw new Error(`Tournament page title mismatch: expected=${cName} / actual=${candidates.slice(0, 4).join(' | ')}`);
     }
     return matches[0];
+  }
+
+  function resolvedTournamentName(task) {
+    return cNameFromActual(task?.actualTournamentName || '') || strictTournamentName(task?.tournamentName || '');
   }
 
   function parseLooseNumber(value) {
@@ -667,7 +762,7 @@
   async function resolveTournamentUrls(tasks, scope) {
     const cachedEntries = readSharedCache();
     setStatus('OPEN Tournament scan... URL Manager cache will be cross-checked.');
-    const openEntries = await scanAllTournamentLists();
+    const openEntries = await scanAllTournamentLists(scope);
     const cachedById = new Map(cachedEntries.map(entry => [String(entry.tournamentId), entry]));
     const entries = openEntries.map(entry => {
       const cached = cachedById.get(String(entry.tournamentId));
@@ -675,13 +770,25 @@
       return { ...entry, source: 'URL MANAGER + OPEN CHECK' };
     });
     state.urlEntries = entries;
+    const manualResolutionByName = new Map();
 
     for (const task of tasks) {
-      const matches = findExactUrlMatches(entries, task.tournamentName, scope);
+      let matches = findExactUrlMatches(entries, task.tournamentName, scope);
       if (matches.length === 0) {
-        task.status = 'ERROR';
-        task.error = 'Tournament URL not found by strict C-column match';
-        continue;
+        if (!manualResolutionByName.has(task.tournamentName)) {
+          setStatus(`Manual Tournament selection: ${task.tournamentName}`);
+          manualResolutionByName.set(
+            task.tournamentName,
+            promptManualUrlMatch(entries, task.tournamentName, scope)
+          );
+        }
+        const manual = manualResolutionByName.get(task.tournamentName);
+        if (!manual.entry) {
+          task.status = 'ERROR';
+          task.error = manual.error;
+          continue;
+        }
+        matches = [manual.entry];
       }
       if (matches.length > 1) {
         task.status = 'ERROR';
@@ -717,7 +824,7 @@
       fetchRegistroInformacoesDoc(first.tournamentId),
       fetchTournamentPanelDoc(first)
     ]);
-    verifyPanelTournament(panelDoc, first.tournamentName, scope);
+    verifyPanelTournament(panelDoc, resolvedTournamentName(first), scope);
     const recordCount = tournamentRecordRows(recordDoc, null).filter(row =>
       row.querySelector('[onclick*="abrirCadastro("]')
     ).length;
@@ -871,7 +978,7 @@
       const win = iframe.contentWindow;
       const doc = iframe.contentDocument;
       if (!win || !doc) throw new Error(`Cashier token iframe inaccessible: ${task.tournamentName}`);
-      verifyPanelTournament(doc, task.tournamentName, scope);
+      verifyPanelTournament(doc, resolvedTournamentName(task), scope);
       const form = paymentFormFromDoc(doc, '', task.tournamentId, {
         allowBlankPlayerId: true,
         allowBlankTournamentId: true
@@ -908,7 +1015,7 @@
       const win = iframe.contentWindow;
       const doc = iframe.contentDocument;
       if (!win || !doc) throw new Error(`Cashier iframe inaccessible: ${task.tournamentName}`);
-      verifyPanelTournament(doc, task.tournamentName, scope);
+      verifyPanelTournament(doc, resolvedTournamentName(task), scope);
       const abrirCadastro = await waitFor(
         () => typeof win.abrirCadastro === 'function' ? win.abrirCadastro : null,
         APP.waitMs,
