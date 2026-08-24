@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JOPT 2026 Tokyo #03</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&family=Oswald:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --jopt-blue: #1a3a6e;
+    --jopt-blue-dark: #1161a8;
+    --jopt-blue-mid: #1a6bc4;
+    --jopt-blue-light: #3a7bd5;
+    --jopt-accent: #e8b84b;
+    --jopt-white: #ffffff;
+    --jopt-gray-light: #f4f6fb;
+    --jopt-gray: #8090a8;
+    --jopt-text: #1a2a3a;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Noto Sans SC', sans-serif;
+    color: var(--jopt-text);
+    background: var(--jopt-white);
+    overflow-x: hidden;
+  }
+
+  /* ── NAV ── */
+  nav {
+    background: var(--jopt-blue-dark);
+    padding: 0 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 64px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .nav-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+  }
+  .nav-logo img {
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+  }
+  .nav-logo span {
+    color: white;
+    font-family: 'Oswald', sans-serif;
+    font-size: 1.1rem;
+    font-weight: 600;
+    letter-spacing: 2px;
+  }
+  .nav-links {
+    display: flex;
+    gap: 2rem;
+    list-style: none;
+  }
+  .nav-links a {
+    color: rgba(255,255,255,0.85);
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    transition: color 0.2s;
+    cursor: pointer;
+  }
+  .nav-links a:hover { color: var(--jopt-accent); }
+
+  /* ── HERO ── */
+  .hero {
+    min-height: 520px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 4rem 2rem;
+    position: relative;
+    overflow: hidden;
+    background: #0a1a30;
+  }
+  .hero-video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0.45;
+    z-index: 0;
+  }
+  .hero::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to bottom, rgba(17,97,168,0.5) 0%, rgba(10,26,48,0.7) 100%);
+    z-index: 1;
+  }
+  .suit-row {
+    display: flex;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+    position: relative;
+    z-index: 2;
+  }
+  .suit {
+    font-size: 2.2rem;
+    animation: float 3s ease-in-out infinite;
+    opacity: 0.9;
+  }
+  .suit:nth-child(1) { animation-delay: 0s; color: white; }
+  .suit:nth-child(2) { animation-delay: 0.4s; color: #e85c5c; }
+  .suit:nth-child(3) { animation-delay: 0.8s; color: #e85c5c; }
+  .suit:nth-child(4) { animation-delay: 1.2s; color: white; }
+  .suit:nth-child(5) { animation-delay: 0.2s; color: white; }
+  .suit:nth-child(6) { animation-delay: 1.0s; color: #e85c5c; }
+  @keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-10px); }
+  }
+
+  .hero-badge {
+    background: var(--jopt-accent);
+    color: var(--jopt-blue-dark);
+    font-family: 'Oswald', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 3px;
+    padding: 6px 20px;
+    border-radius: 2px;
+    margin-bottom: 1rem;
+    position: relative;
+    z-index: 2;
+    text-transform: uppercase;
+  }
+  .hero h1 {
+    font-family: 'Oswald', sans-serif;
+    font-size: clamp(2.2rem, 6vw, 4rem);
+    font-weight: 700;
+    color: white;
+    letter-spacing: 2px;
+    line-height: 1.1;
+    margin-bottom: 0.5rem;
+    position: relative;
+    z-index: 2;
+  }
+  .hero h1 span { color: var(--jopt-accent); }
+  .hero-sub {
+    color: rgba(255,255,255,0.75);
+    font-size: 1.1rem;
+    margin-bottom: 2rem;
+    position: relative;
+    z-index: 2;
+  }
+  .hero-meta {
+    display: flex;
+    gap: 2.5rem;
+    margin-bottom: 2.5rem;
+    position: relative;
+    z-index: 2;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .hero-meta-item { text-align: center; }
+  .hero-meta-item .label {
+    font-size: 0.72rem;
+    color: var(--jopt-accent);
+    letter-spacing: 2px;
+    font-weight: 700;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .hero-meta-item .value {
+    color: white;
+    font-family: 'Oswald', sans-serif;
+    font-size: 1.05rem;
+    font-weight: 600;
+  }
+  .hero-cta {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    position: relative;
+    z-index: 2;
+  }
+  .btn-primary {
+    background: var(--jopt-accent);
+    color: var(--jopt-blue-dark);
+    font-family: 'Oswald', sans-serif;
+    font-weight: 700;
+    font-size: 1rem;
+    letter-spacing: 1px;
+    padding: 14px 36px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: transform 0.15s, box-shadow 0.15s;
+    display: inline-block;
+  }
+  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(232,184,75,0.4); }
+  .btn-outline {
+    background: transparent;
+    color: white;
+    font-family: 'Oswald', sans-serif;
+    font-weight: 600;
+    font-size: 1rem;
+    letter-spacing: 1px;
+    padding: 13px 36px;
+    border: 1.5px solid rgba(255,255,255,0.5);
+    border-radius: 3px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: border-color 0.15s, background 0.15s;
+    display: inline-block;
+  }
+  .btn-outline:hover { border-color: white; background: rgba(255,255,255,0.08); }
+
+  /* ── TICKER ── */
+  .ticker-wrap {
+    background: var(--jopt-blue-mid);
+    overflow: hidden;
+    white-space: nowrap;
+    padding: 10px 0;
+  }
+  .ticker {
+    display: inline-block;
+    animation: ticker 30s linear infinite;
+  }
+  .ticker span {
+    color: rgba(255,255,255,0.85);
+    font-size: 0.85rem;
+    font-weight: 500;
+    letter-spacing: 1px;
+    padding: 0 3rem;
+  }
+  .ticker span b { color: var(--jopt-accent); }
+  @keyframes ticker {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+
+  /* ── SECTIONS ── */
+  section { padding: 5rem 2rem; }
+  section:nth-child(even) { background: var(--jopt-gray-light); }
+  .section-inner { max-width: 1000px; margin: 0 auto; }
+  .section-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 3px;
+    color: var(--jopt-blue-light);
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+  }
+  .section-title {
+    font-family: 'Oswald', sans-serif;
+    font-size: clamp(1.7rem, 4vw, 2.5rem);
+    font-weight: 700;
+    color: var(--jopt-blue-dark);
+    margin-bottom: 1rem;
+    line-height: 1.2;
+  }
+  .section-desc {
+    color: var(--jopt-gray);
+    font-size: 1rem;
+    line-height: 1.8;
+    max-width: 600px;
+    margin-bottom: 2.5rem;
+  }
+  #about .section-desc p { margin: 0 0 1rem; }
+  #about .section-desc p:last-child { margin-bottom: 0; }
+  .divider {
+    width: 48px;
+    height: 4px;
+    background: var(--jopt-accent);
+    margin: 1rem 0 2rem;
+    border-radius: 2px;
+  }
+
+  /* ── SCHEDULE TABLE ── */
+  .badge { display: inline-block; font-size: 0.72rem; font-weight: 700; padding: 3px 10px; border-radius: 20px; letter-spacing: 0.5px; }
+  .badge-main { background: #e8f0ff; color: var(--jopt-blue-mid); }
+  .badge-side { background: #fff3d4; color: #8a5e00; }
+  .badge-free { background: #e4f9e8; color: #1a6b2e; }
+
+  /* ── HOTELS ── */
+  .hotel-group-title {
+    font-family: 'Oswald', sans-serif;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--jopt-blue-dark);
+    letter-spacing: 1px;
+    margin: 2rem 0 1rem;
+    padding-left: 12px;
+    border-left: 4px solid var(--jopt-accent);
+  }
+  .hotel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+  .hotel-card {
+    background: white;
+    border: 1px solid #dde4f0;
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    transition: box-shadow 0.2s;
+    text-decoration: none;
+  }
+  .hotel-card:hover { box-shadow: 0 4px 16px rgba(26,58,110,0.1); }
+  .hotel-num {
+    width: 36px; height: 36px;
+    background: var(--jopt-blue-dark);
+    color: white;
+    font-family: 'Oswald', sans-serif;
+    font-weight: 700;
+    font-size: 1rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .hotel-info { flex: 1; }
+  .hotel-name-zh { font-size: 0.95rem; font-weight: 700; color: var(--jopt-blue-dark); margin-bottom: 2px; }
+  .hotel-name-jp { font-size: 0.78rem; color: var(--jopt-gray); }
+  .hotel-arrow { color: var(--jopt-blue-light); font-size: 1.2rem; }
+
+  /* ── SOCIAL ── */
+  .social-section { background: var(--jopt-blue-dark); text-align: center; padding: 4rem 2rem; }
+  .social-section .section-label { color: var(--jopt-accent); }
+  .social-section .section-title { color: white; }
+  .social-section .section-desc { color: rgba(255,255,255,0.65); margin: 0 auto 2rem; }
+  .social-btns { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+
+  /* ── FOOTER ── */
+  footer {
+    background: var(--jopt-blue-dark);
+    border-top: 1px solid rgba(255,255,255,0.1);
+    padding: 1.5rem 2rem;
+    text-align: center;
+    color: rgba(255,255,255,0.4);
+    font-size: 0.82rem;
+    letter-spacing: 0.5px;
+  }
+
+  /* ── SCROLL REVEAL ── */
+  .reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.6s ease, transform 0.6s ease; }
+  .reveal.visible { opacity: 1; transform: translateY(0); }
+  .reveal-delay-1 { transition-delay: 0.1s; }
+  .reveal-delay-2 { transition-delay: 0.2s; }
+  .reveal-delay-3 { transition-delay: 0.3s; }
+
+  /* ── GUIDE TIMELINE (numbered-circle step flow, main-page entry points) ── */
+  .step-timeline { margin-top:2.5rem; }
+  .step-item { position:relative; display:flex; gap:1.5rem; padding-bottom:2rem; }
+  .step-item:last-child { padding-bottom:0; }
+  .step-item-line {
+    position:absolute; left:23px; top:52px; bottom:0; width:2px;
+    background:#dde4f0;
+  }
+  .step-item:last-child .step-item-line { display:none; }
+  .step-num {
+    flex-shrink:0; width:48px; height:48px; border-radius:50%;
+    background:var(--jopt-blue-dark); color:white;
+    font-family:'Oswald',sans-serif; font-weight:700; font-size:1.3rem;
+    display:flex; align-items:center; justify-content:center;
+    position:relative; z-index:2;
+  }
+  .step-item.final .step-num { background:var(--jopt-accent); color:var(--jopt-blue-dark); }
+  .step-card {
+    flex:1; background:white; border:1px solid #dde4f0; border-radius:12px;
+    padding:1.5rem 1.75rem; cursor:pointer; text-align:left;
+    display:flex; align-items:center; gap:1.25rem;
+    transition:transform 0.2s, box-shadow 0.2s;
+  }
+  .step-item.final .step-card { background:#fffbf0; border-color:#f0dfa8; }
+  .step-card:hover { transform:translateY(-2px); box-shadow:0 10px 26px rgba(26,58,110,0.1); }
+  .step-card-icon { font-size:1.9rem; flex-shrink:0; }
+  .step-card-body { flex:1; }
+  .step-card-label { font-family:'Oswald',sans-serif; font-size:0.72rem; font-weight:700; letter-spacing:2px; color:var(--jopt-blue-light); text-transform:uppercase; margin-bottom:0.3rem; }
+  .step-card-title { font-size:1.05rem; font-weight:700; color:var(--jopt-blue-dark); margin-bottom:0.3rem; }
+  .step-card-desc { font-size:0.86rem; color:var(--jopt-gray); line-height:1.6; }
+  .step-card-arrow { font-size:1.3rem; color:var(--jopt-blue-light); flex-shrink:0; }
+
+  .guide-extra { margin-top:2rem; padding-top:1.5rem; border-top:1px dashed #dde4f0; }
+  .guide-extra-link {
+    display:inline-flex; align-items:center; gap:0.6rem; cursor:pointer;
+    background:white; border:1px solid #dde4f0; border-radius:10px;
+    padding:0.9rem 1.4rem; transition:box-shadow 0.2s, transform 0.2s;
+  }
+  .guide-extra-link:hover { transform:translateY(-2px); box-shadow:0 8px 20px rgba(26,58,110,0.1); }
+  .guide-extra-icon { font-size:1.3rem; }
+  .guide-extra-text { font-size:0.9rem; font-weight:600; color:var(--jopt-blue-dark); }
+  .guide-extra-text::after { content:' 查看详情 →'; font-weight:500; color:var(--jopt-blue-mid); }
+
+  /* ── DETAIL PAGES (full-page tab views) ── */
+  .detail-page {
+    display: none;
+    min-height: 100vh;
+    background: #fff;
+  }
+  .detail-page.active { display: block; }
+  #main-view.hidden { display: none; }
+
+  .detail-header {
+    position: sticky;
+    top: 0;
+    background: var(--jopt-blue-dark);
+    padding: 0 1.5rem;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    z-index: 50;
+  }
+  .detail-back {
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.3);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-family: 'Noto Sans SC', sans-serif;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .detail-back:hover { background: rgba(255,255,255,0.22); }
+  .detail-header-title {
+    color: white;
+    font-family: 'Oswald', sans-serif;
+    font-weight: 600;
+    font-size: 1rem;
+    letter-spacing: 1px;
+  }
+  .detail-body { max-width: 780px; margin: 0 auto; padding: 2.75rem 1.5rem 5rem; }
+  .detail-eyebrow { font-size:0.75rem; font-weight:700; letter-spacing:3px; color:var(--jopt-blue-light); text-transform:uppercase; margin-bottom:0.5rem; }
+  .detail-title { font-family:'Oswald',sans-serif; font-size:clamp(1.5rem,4vw,2.1rem); font-weight:700; color:var(--jopt-blue-dark); margin-bottom:0.75rem; line-height:1.25; }
+  .detail-intro { color:var(--jopt-gray); font-size:0.98rem; line-height:1.8; margin-bottom:2rem; }
+
+  .flow-step {
+    display: flex;
+    gap: 1.1rem;
+    padding: 1.4rem 0;
+    border-bottom: 1px solid #eef0f6;
+  }
+  .flow-step:last-child { border-bottom: none; }
+  .flow-num {
+    flex-shrink: 0;
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: var(--jopt-blue-dark);
+    color: white;
+    font-family: 'Oswald', sans-serif;
+    font-weight: 700;
+    font-size: 0.95rem;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .flow-body { flex: 1; }
+  .flow-title { font-size: 1rem; font-weight: 700; color: var(--jopt-text); margin-bottom: 0.4rem; }
+  .flow-text { font-size: 0.92rem; color: #556; line-height: 1.75; }
+  .flow-text b { color: var(--jopt-blue-dark); }
+
+  .case-block {
+    background: var(--jopt-gray-light);
+    border-radius: 12px;
+    padding: 1.5rem 1.6rem;
+    margin-bottom: 1.25rem;
+  }
+  .case-tag {
+    display: inline-block;
+    background: var(--jopt-blue-mid);
+    color: white;
+    font-family: 'Oswald', sans-serif;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    padding: 3px 12px;
+    border-radius: 20px;
+    margin-bottom: 0.75rem;
+  }
+  .case-block.alt .case-tag { background: #8a5e00; }
+  .case-text { font-size: 0.94rem; color: var(--jopt-text); line-height: 1.8; }
+
+  .notice-box {
+    border-left: 4px solid var(--jopt-blue-mid);
+    background: #f4f8ff;
+    border-radius: 0 8px 8px 0;
+    padding: 1.1rem 1.3rem;
+    margin-bottom: 1rem;
+    font-size: 0.92rem;
+    line-height: 1.8;
+    color: var(--jopt-text);
+  }
+  .notice-box.warning { border-left-color: var(--jopt-accent); background: #fffbf0; }
+  .notice-box strong { color: var(--jopt-blue-dark); }
+
+  .photo-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin: 1.5rem 0 2rem;
+  }
+  .photo-gallery figure { margin: 0; }
+  .photo-gallery img {
+    width: 100%; height: 150px; object-fit: cover;
+    border-radius: 10px; display: block;
+    border: 1px solid #dde4f0;
+    cursor: zoom-in;
+  }
+  .photo-gallery figcaption {
+    font-size: 0.78rem; color: var(--jopt-gray); text-align: center; margin-top: 0.4rem;
+  }
+  .photo-single { margin: 1.5rem 0 2rem; }
+  .photo-single img { width: 100%; max-width: 480px; border-radius: 10px; display: block; border: 1px solid #dde4f0; cursor: zoom-in; }
+
+  .photo-sequence { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; margin: 1.5rem 0 2rem; }
+  .photo-sequence figure { margin: 0; width: 100%; max-width: 420px; }
+  .photo-sequence img { width: 100%; border-radius: 12px; display: block; border: 1px solid #dde4f0; cursor: zoom-in; }
+  .photo-sequence figcaption { text-align: center; font-size: 0.85rem; color: var(--jopt-gray); margin-top: 0.5rem; }
+  .photo-sequence-arrow { font-size: 1.8rem; color: var(--jopt-accent); line-height: 1; margin: 0.15rem 0; }
+
+  .detail-btn-row { display: flex; gap: 0.75rem; flex-wrap: wrap; margin: 1.5rem 0; }
+
+  /* ── ABOUT RESPONSIVE ── */
+  @media(max-width:768px){.jopt-about-grid{grid-template-columns:1fr !important;} .jopt-about-grid>div:first-child{order:2;} .jopt-about-grid>div:last-child{order:1;}}
+
+  /* ── MOBILE ── */
+  @media (max-width: 768px) {
+    .nav-links { display: none; }
+    .hero { padding: 3rem 1.2rem; }
+    .hero-meta { gap: 1.5rem; }
+    section { padding: 3.5rem 1.4rem !important; }
+    .section-inner { padding: 0; }
+    .step-card { padding: 1.1rem 1.25rem; gap: 0.9rem; }
+    .step-card-arrow { display: none; }
+    .step-num { width: 38px; height: 38px; font-size: 1.05rem; }
+    .step-item-line { left: 18px; top: 42px; }
+    .hotel-grid { grid-template-columns: 1fr !important; }
+    .jopt-about-grid { grid-template-columns: 1fr !important; }
+    .detail-body { padding: 2rem 1.2rem 4rem; }
+  }
+</style>
+</head>
+<body>
+
+<div id="main-view">
+
+<!-- NAV -->
+<nav>
+  <a class="nav-logo" href="#">
+    <img src="https://japanopenpoker.com/wp-content/uploads/2025/07/JOPT白透明.png" alt="JOPT Logo">
+    <span>JOPT</span>
+  </a>
+  <ul class="nav-links">
+    <li><a href="#about">赛事介绍</a></li>
+    <li><a href="#guide">参赛指南</a></li>
+    <li><a href="#access">怎么去</a></li>
+    <li><a href="#schedule">赛程</a></li>
+    <li><a href="#hotels">推荐酒店</a></li>
+  </ul>
+</nav>
+
+<!-- HERO -->
+<section class="hero" style="padding-top:4rem;padding-bottom:4rem;">
+  <video class="hero-video" autoplay muted loop playsinline>
+    <source src="https://japanopenpoker.com/wp-content/uploads/2025/02/JOPT-HP-TopMovie.mp4" type="video/mp4">
+  </video>
+  <img src="https://japanopenpoker.com/wp-content/uploads/2025/07/JOPT白透明.png" style="width:160px;margin-bottom:1rem;position:relative;z-index:2;">
+  <h1>JOPT 2026<br><span>TOKYO #03</span></h1>
+  <p class="hero-sub">すべてのポーカーに、白熱を。</p>
+  <div class="hero-meta">
+    <div class="hero-meta-item">
+      <div class="label">日期</div>
+      <div class="value">2026.10.08 — 10.12</div>
+    </div>
+    <div class="hero-meta-item">
+      <div class="label">场地</div>
+      <div class="value">Bellesalle 高田马场</div>
+    </div>
+    <div class="hero-meta-item">
+      <div class="label">报名</div>
+      <div class="value">现场报名</div>
+    </div>
+  </div>
+  <div class="hero-cta">
+    <a href="https://japanopenpoker.com/tokyo/" class="btn-primary" target="_blank">官方网站</a>
+    <a href="#schedule" class="btn-outline">查看赛程</a>
+  </div>
+</section>
+
+<!-- TICKER -->
+<div class="ticker-wrap">
+  <div class="ticker">
+    <span>♠ JOPT 2026 TOKYO #03 &nbsp;｜&nbsp; <b>2026.10.08 — 10.12</b> &nbsp;｜&nbsp; 场地：Bellesalle 高田马场 &nbsp;｜&nbsp; 现场报名 &nbsp;｜&nbsp; ♦ 欢迎首次参赛！&nbsp;｜&nbsp; ♥ 更多信息请关注官方微信账号 &nbsp;｜&nbsp;</span>
+    <span>♠ JOPT 2026 TOKYO #03 &nbsp;｜&nbsp; <b>2026.10.08 — 10.12</b> &nbsp;｜&nbsp; 场地：Bellesalle 高田马场 &nbsp;｜&nbsp; 现场报名 &nbsp;｜&nbsp; ♦ 欢迎首次参赛！&nbsp;｜&nbsp; ♥ 更多信息请关注官方微信账号 &nbsp;｜&nbsp;</span>
+  </div>
+</div>
+
+<!-- GUIDE (4 core steps + 1 extra card → full detail tabs) -->
+<section id="guide" style="background:var(--jopt-white);padding:5rem 0;">
+  <div class="section-inner">
+    <p class="section-label reveal">Player Guide</p>
+    <h2 class="section-title reveal">如何参加JOPT？</h2>
+    <div class="divider reveal"></div>
+    <p class="section-desc reveal">只需 4 步，点击卡片查看每一步的详细说明。</p>
+
+    <div class="step-timeline">
+      <div class="step-item reveal">
+        <div class="step-num">1</div>
+        <div class="step-item-line"></div>
+        <div class="step-card" onclick="showDetail('detail-step1')">
+          <div class="step-card-icon">🆔</div>
+          <div class="step-card-body">
+            <div class="step-card-label">STEP 01</div>
+            <div class="step-card-title">注册 Game ID</div>
+            <div class="step-card-desc">第一次来 JOPT？工作人员将协助您完成注册。</div>
+          </div>
+          <div class="step-card-arrow">→</div>
+        </div>
+      </div>
+
+      <div class="step-item reveal">
+        <div class="step-num">2</div>
+        <div class="step-item-line"></div>
+        <div class="step-card" onclick="showDetail('detail-step2')">
+          <div class="step-card-icon">📝</div>
+          <div class="step-card-body">
+            <div class="step-card-label">STEP 02</div>
+            <div class="step-card-title">报名参赛</div>
+            <div class="step-card-desc">寻找对应报名窗口，出示二维码完成报名。</div>
+          </div>
+          <div class="step-card-arrow">→</div>
+        </div>
+      </div>
+
+      <div class="step-item reveal">
+        <div class="step-num">3</div>
+        <div class="step-item-line"></div>
+        <div class="step-card" onclick="showDetail('detail-step3')">
+          <div class="step-card-icon">🃏</div>
+          <div class="step-card-body">
+            <div class="step-card-label">STEP 03</div>
+            <div class="step-card-title">寻找座位</div>
+            <div class="step-card-desc">寻找位置参加比赛。</div>
+          </div>
+          <div class="step-card-arrow">→</div>
+        </div>
+      </div>
+
+      <div class="step-item final reveal">
+        <div class="step-num">4</div>
+        <div class="step-item-line"></div>
+        <div class="step-card" onclick="showDetail('detail-step4')">
+          <div class="step-card-icon">🏆</div>
+          <div class="step-card-body">
+            <div class="step-card-label">STEP 04</div>
+            <div class="step-card-title">领取奖金</div>
+            <div class="step-card-desc">进入钱圈领取奖金。</div>
+          </div>
+          <div class="step-card-arrow">→</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="guide-extra reveal">
+      <div class="guide-extra-link" onclick="showDetail('detail-amenity')">
+        <span class="guide-extra-icon">🥤</span>
+        <span class="guide-extra-text">其他：饮料柜台位置</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ACCESS (standalone block, map lives on the main page) -->
+<section id="access" style="background:#f4f6fb;padding:5rem 0;">
+  <div class="section-inner">
+    <p class="section-label reveal">Access</p>
+    <h2 class="section-title reveal">怎么去</h2>
+    <div class="divider reveal"></div>
+    <div class="reveal">
+      <dl style="margin-bottom:1.5rem;">
+        <dt style="font-size:0.78rem;font-weight:700;color:var(--jopt-blue-light);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">赛场名称</dt>
+        <dd style="font-size:0.95rem;line-height:1.7;margin-bottom:1rem;">Bellesalle 高田马场（ベルサール高田馬場）</dd>
+        <dt style="font-size:0.78rem;font-weight:700;color:var(--jopt-blue-light);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">地址</dt>
+        <dd style="font-size:0.95rem;line-height:1.7;margin-bottom:1rem;">新宿区大久保3丁目8-2 ベルサール高田馬場 B2・1F</dd>
+        <dt style="font-size:0.78rem;font-weight:700;color:var(--jopt-blue-light);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">交通</dt>
+        <dd style="font-size:0.95rem;line-height:1.7;">JR山手线 / 东京地铁东西线「高田马场」站步行约9分钟<br>西武新宿线「高田马场」站步行约9分钟</dd>
+      </dl>
+      <div style="border-radius:10px;overflow:hidden;margin-bottom:1rem;">
+        <iframe src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3241.5!2d139.7007219!3d35.70897!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x60188d3af824dfbd%3A0x3ac00d4d8c8279ee!2sBelle%20Salle%20Takadanobaba!5e0!3m2!1szh-CN!2sjp!4v1" width="100%" height="300" style="border:none;display:block;" loading="lazy" title="赛场地图" allowfullscreen referrerpolicy="no-referrer-when-downgrade"></iframe>
+      </div>
+      <div class="detail-btn-row" style="margin-top:0;margin-bottom:1.5rem;">
+        <a href="https://maps.app.goo.gl/nQYCbvs8B8sjNjRT8" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:#4285f4;color:white;font-family:'Oswald',sans-serif;font-weight:600;font-size:0.88rem;padding:9px 22px;border-radius:4px;text-decoration:none;">🗺 谷歌地图</a>
+        <a href="https://j.map.baidu.com/50/a-xi" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:#2f6fbd;color:white;font-family:'Oswald',sans-serif;font-weight:600;font-size:0.88rem;padding:9px 22px;border-radius:4px;text-decoration:none;">🗺 百度地图</a>
+        <a href="https://surl.amap.com/1uxS74q1cd0W" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:#00a854;color:white;font-family:'Oswald',sans-serif;font-weight:600;font-size:0.88rem;padding:9px 22px;border-radius:4px;text-decoration:none;">🗺 高德地图</a>
+      </div>
+      <button class="btn-outline" style="color:var(--jopt-blue);border-color:var(--jopt-blue);" onclick="showDetail('detail-route')">查看图文路线导览 →</button>
+    </div>
+  </div>
+</section>
+
+<!-- SCHEDULE -->
+<section id="schedule" style="background:var(--jopt-gray-light);">
+  <div class="section-inner">
+    <p class="section-label reveal">Tournament Schedule</p>
+    <h2 class="section-title reveal">赛程总览</h2>
+    <div class="divider reveal"></div>
+    <div class="reveal" style="position:relative;">
+      <iframe src="https://schedule.joptchn.com/tokyo03" width="100%" height="600" style="border:none;border-radius:8px;" loading="lazy"></iframe>
+      <a href="https://schedule.joptchn.com/tokyo03" target="_blank" style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,0.6);color:white;width:32px;height:32px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;text-decoration:none;">⛶</a>
+    </div>
+  </div>
+</section>
+
+<!-- HOTELS -->
+<section id="hotels">
+  <div class="section-inner">
+    <p class="section-label reveal">Accommodation</p>
+    <h2 class="section-title reveal">推荐住宿</h2>
+    <div class="divider reveal"></div>
+    <p class="section-desc reveal">以下为赛场周边推荐酒店，可根据预算和需求自由选择。</p>
+
+    <div class="hotel-group-title reveal">📍 距赛场最近的酒店</div>
+    <div class="hotel-grid reveal">
+      <a href="https://hotels.ctrip.com/hotels/89326337.html?cityid=228&checkIn=2026-10-07&checkOut=2026-10-13&crn=1&adult=2&children=0" target="_blank" class="hotel-card">
+        <div class="hotel-num">1</div>
+        <div class="hotel-info">
+          <div class="hotel-name-zh">相铁GRAND FRESA 高田马场酒店</div>
+          <div class="hotel-name-jp">相鉄グランドフレッサ高田馬場</div>
+        </div>
+        <div class="hotel-arrow">→</div>
+      </a>
+      <a href="https://hotels.ctrip.com/hotels/102012305.html?cityid=228&checkIn=2026-10-07&checkOut=2026-10-13&crn=1&adult=2&children=0" target="_blank" class="hotel-card">
+        <div class="hotel-num">2</div>
+        <div class="hotel-info">
+          <div class="hotel-name-zh">东京高田马场站前船舶酒店</div>
+          <div class="hotel-name-jp">ベッセルイン高田馬場駅前</div>
+        </div>
+        <div class="hotel-arrow">→</div>
+      </a>
+      <a href="https://hotels.ctrip.com/hotels/23210349.html?cityid=228&checkIn=2026-10-07&checkOut=2026-10-13&crn=1&adult=2&children=0" target="_blank" class="hotel-card">
+        <div class="hotel-num">3</div>
+        <div class="hotel-info">
+          <div class="hotel-name-zh">利夫马克斯酒店东京高田马场站前店</div>
+          <div class="hotel-name-jp">ホテルLIVEMAX高田馬場駅前</div>
+        </div>
+        <div class="hotel-arrow">→</div>
+      </a>
+    </div>
+
+    <div class="hotel-group-title reveal">🏨 新宿高档酒店</div>
+    <div class="hotel-grid reveal">
+      <a href="https://hotels.ctrip.com/hotels/1841600.html?cityid=228&checkIn=2026-10-07&checkOut=2026-10-13&crn=1&adult=2&children=0" target="_blank" class="hotel-card">
+        <div class="hotel-num">1</div>
+        <div class="hotel-info">
+          <div class="hotel-name-zh">新宿格拉斯丽酒店</div>
+          <div class="hotel-name-jp">ホテルグレイスリー新宿</div>
+        </div>
+        <div class="hotel-arrow">→</div>
+      </a>
+      <a href="https://hotels.ctrip.com/hotels/994617.html?cityid=228&checkIn=2026-10-07&checkOut=2026-10-13&crn=1&adult=2&children=0" target="_blank" class="hotel-card">
+        <div class="hotel-num">2</div>
+        <div class="hotel-info">
+          <div class="hotel-name-zh">东京凯悦酒店</div>
+          <div class="hotel-name-jp">ハイアットリージェンシー東京</div>
+        </div>
+        <div class="hotel-arrow">→</div>
+      </a>
+      <a href="https://hotels.ctrip.com/hotels/926335.html?cityid=228&checkIn=2026-10-07&checkOut=2026-10-13&crn=1&adult=2&children=0" target="_blank" class="hotel-card">
+        <div class="hotel-num">3</div>
+        <div class="hotel-info">
+          <div class="hotel-name-zh">东京希尔顿酒店</div>
+          <div class="hotel-name-jp">ヒルトン東京</div>
+        </div>
+        <div class="hotel-arrow">→</div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ABOUT -->
+<section id="about" style="background:linear-gradient(180deg,var(--jopt-blue) 0%,var(--jopt-blue-dark) 100%);color:#fff;padding:5rem 0;">
+  <div class="section-inner">
+    <p class="section-label reveal" style="color:var(--jopt-accent);">About JOPT</p>
+    <h2 class="section-title reveal" style="color:#fff;">JOPT，日本最大级别的扑克锦标赛之一</h2>
+    <div class="divider reveal" style="background:var(--jopt-accent);"></div>
+
+    <!-- hero banner photo -->
+    <div class="reveal" style="margin:2rem 0 2.5rem;border-radius:14px;overflow:hidden;">
+      <img src="https://japanopenpoker.com/wp-content/uploads/2026/05/55244463192_84eddb7a4a_o-scaled.jpg" alt="JOPT会場俯瞰写真" style="display:block;width:100%;height:auto;">
+    </div>
+
+    <div class="jopt-about-grid reveal" style="display:grid;grid-template-columns:1.3fr 1fr;gap:2.5rem;align-items:stretch;">
+      <!-- copy card -->
+      <div style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.18);border-radius:14px;padding:2rem 2.25rem;backdrop-filter:blur(6px);display:flex;flex-direction:column;">
+        <h3 style="font-family:'Oswald',sans-serif;font-weight:700;font-size:1.5rem;letter-spacing:0.03em;color:var(--jopt-accent);margin:0 0 1.25rem;">JOPT，日本最大级别的扑克锦标赛之一</h3>
+        <div style="color:rgba(255,255,255,0.88);font-size:0.98rem;line-height:1.85;flex:1;">
+          <p style="margin:0;">JOPT 是日本最具权威的扑克巡回赛，赛程覆盖全国多个城市，吸引来自亚洲各地的顶尖玩家参赛。本次东京站设有多档买入的主赛事及边赛，包含日本国内最高奖金池、以及丰富多样的赛事形式。</p>
+        </div>
+      </div>
+
+      <!-- side photo grid -->
+      <div style="display:flex;flex-direction:column;gap:1.5rem;height:100%;">
+        <figure style="margin:0;flex:1;display:flex;flex-direction:column;">
+          <div style="border-radius:12px;overflow:hidden;flex:1;">
+            <img src="https://japanopenpoker.com/wp-content/uploads/2026/05/55250379571_7fbeb247f1_o-scaled.jpg" alt="Main Event Champion TaeQ" style="display:block;width:100%;height:100%;object-fit:cover;">
+          </div>
+          <figcaption style="margin-top:0.6rem;font-family:'Oswald',sans-serif;font-weight:600;font-size:0.8rem;letter-spacing:0.08em;color:var(--jopt-accent);text-align:center;">NLH MAIN EVENT</figcaption>
+        </figure>
+        <figure style="margin:0;flex:1;display:flex;flex-direction:column;">
+          <div style="border-radius:12px;overflow:hidden;flex:1;">
+            <img src="https://japanopenpoker.com/wp-content/uploads/2026/05/55248008371_4873f711f1_o-scaled.jpg" alt="Main Event 奖杯" style="display:block;width:100%;height:100%;object-fit:cover;">
+          </div>
+          <figcaption style="margin-top:0.6rem;font-family:'Oswald',sans-serif;font-weight:600;font-size:0.8rem;letter-spacing:0.08em;color:var(--jopt-accent);text-align:center;">MAIN EVENT TROPHY</figcaption>
+        </figure>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SOCIAL -->
+<section class="social-section" style="background:var(--jopt-blue) !important;">
+  <p class="section-label">Stay Connected</p>
+  <h2 class="section-title" style="margin:0.5rem 0 1rem;">关注 JOPT，获取最新资讯。</h2>
+  <div class="divider" style="margin:0 auto 1.5rem;"></div>
+  <p class="section-desc">最新赛程、结果公告、精彩回顾，尽在官方渠道。</p>
+  <div class="social-btns">
+    <button onclick="document.getElementById('wechat-modal').style.display='flex'" class="btn-primary">官方微信</button>
+    <a href="https://japanopenpoker.com/tokyo/" target="_blank" class="btn-outline">官方网站</a>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <p>© JOPT / Japan Open Poker Tour Co., Ltd. ALL RIGHTS RESERVED.</p>
+</footer>
+
+</div><!-- /#main-view -->
+
+
+<!-- ══════════════ DETAIL PAGE · 怎么去（图文路线导览，从"怎么去"区块打开） ══════════════ -->
+<div id="detail-route" class="detail-page">
+  <div class="detail-header">
+    <button class="detail-back" onclick="hideDetail()">← 返回</button>
+    <span class="detail-header-title">怎么去</span>
+  </div>
+  <div class="detail-body">
+    <p class="detail-eyebrow">Access · Route</p>
+    <h1 class="detail-title">车站到会场路线导览</h1>
+    <p class="detail-intro">从「高田马场」站出发，先前往站前最显眼的地标建筑 <b>BIG BOX</b> 方向，再按下方照片指引步行前往会场，全程约9分钟。</p>
+
+    <div class="photo-sequence">
+      <figure><img src="photos/route-e-rightturn-bigbox.jpg" onclick="lightbox(this.src)"><figcaption>① 经过 BIG BOX 后，站前公园处右转</figcaption></figure>
+      <div class="photo-sequence-arrow">↓</div>
+      <figure><img src="photos/route-f-straight.jpg" onclick="lightbox(this.src)"><figcaption>② 直走</figcaption></figure>
+      <div class="photo-sequence-arrow">↓</div>
+      <figure><img src="photos/route-g-venue-visible.jpg" onclick="lightbox(this.src)"><figcaption>③ 路口对面就是会场</figcaption></figure>
+      <div class="photo-sequence-arrow">↓</div>
+      <figure><img src="photos/route-03-entrance.jpg" onclick="lightbox(this.src)"><figcaption>④ 会场正面入口</figcaption></figure>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ DETAIL PAGE · STEP 01 注册 Game ID ══════════════ -->
+<div id="detail-step1" class="detail-page">
+  <div class="detail-header">
+    <button class="detail-back" onclick="hideDetail()">← 返回</button>
+    <span class="detail-header-title">STEP 01 · 注册 Game ID</span>
+  </div>
+  <div class="detail-body">
+    <p class="detail-eyebrow">STEP 01</p>
+    <h1 class="detail-title">注册 Game ID</h1>
+    <p class="detail-intro">第一次来 JOPT？请先前往<b>特别对应窗口</b>，这里有专人指导您完成注册。</p>
+    <p style="font-size:0.9rem;color:var(--jopt-gray);margin:-0.5rem 0 1rem;">位置：一楼大厅右侧</p>
+
+    <div class="photo-single"><img src="photos/step1-special-counter.jpg" onclick="lightbox(this.src)"></div>
+
+    <p style="font-size:0.9rem;line-height:1.8;margin:1.5rem 0 0.5rem;">会场 1F 平面图：</p>
+    <div class="photo-single"><img src="1F map.png" onclick="lightbox(this.src)"></div>
+  </div>
+</div>
+
+<!-- ══════════════ DETAIL PAGE · STEP 02 报名参赛 ══════════════ -->
+<div id="detail-step2" class="detail-page">
+  <div class="detail-header">
+    <button class="detail-back" onclick="hideDetail()">← 返回</button>
+    <span class="detail-header-title">STEP 02 · 报名参赛</span>
+  </div>
+  <div class="detail-body">
+    <p class="detail-eyebrow">STEP 02</p>
+    <h1 class="detail-title">寻找对应报名窗口，出示二维码完成报名</h1>
+    <p class="detail-intro">确认想参加的赛事名称，前往对应窗口排队报名，打开 Game ID App 出示报名二维码给工作人员扫描。窗口位置请参考现场L型立牌。</p>
+
+    <div class="photo-single"><img src="photos/step2-queue.jpg" onclick="lightbox(this.src)"></div>
+    <p style="font-size:0.85rem;color:var(--jopt-gray);margin-top:-1rem;">报名窗口排队区</p>
+
+    <p style="font-size:0.9rem;line-height:1.8;margin-bottom:0.5rem;">支付方式：JOPT现已全面支持微信、支付宝、银联等多种方式，详情见下图。<br><small style="color:#8090a8;">※ 现金仅支持日元，不支持人民币现金。</small></p>
+    <div class="photo-single"><img src="payment.png" onclick="lightbox(this.src)"></div>
+
+    <div class="notice-box" style="margin-top:1.5rem;">
+      <strong>Sit &amp; Go 快速赛：</strong>现场同时提供 Sit &amp; Go 快速赛（¥3,000/局），<b>报名窗口在楼下</b>（非本页所述楼上报名窗口），坐满即开局，适合等位间隙加赛一局。
+    </div>
+    <div class="photo-sequence">
+      <figure><img src="photos/step3-escalator-turn.jpg" onclick="lightbox(this.src)"><figcaption>下电梯右转</figcaption></figure>
+      <div class="photo-sequence-arrow">↓</div>
+      <figure><img src="photos/step2-sitgo.jpg" onclick="lightbox(this.src)"><figcaption>Sit &amp; Go 窗口（A 柜台）</figcaption></figure>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ DETAIL PAGE · STEP 03 寻找座位 ══════════════ -->
+<div id="detail-step3" class="detail-page">
+  <div class="detail-header">
+    <button class="detail-back" onclick="hideDetail()">← 返回</button>
+    <span class="detail-header-title">STEP 03 · 寻找座位</span>
+  </div>
+  <div class="detail-body">
+    <p class="detail-eyebrow">STEP 03</p>
+    <h1 class="detail-title">拿到座位票之后怎么做</h1>
+    <p class="detail-intro">报名成功后会拿到一张座位票，根据票面情况分两种流程：</p>
+
+    <div class="case-block">
+      <span class="case-tag">情况 A · 票上有座位号</span>
+      <div class="case-text">直接通过 <b>Floor Map（赛场地图）</b>找到对应桌子，入座后把票交给荷官（Dealer）即可。</div>
+    </div>
+
+    <div class="case-block alt">
+      <span class="case-tag">情况 B · 票上没有座位号（Alternative）</span>
+      <div class="case-text">前往票面上工作人员盖章字母（A/B/C/D/E）对应的柜台，把票交给 Floor 工作人员，抽取座位卡，等待安排座位。</div>
+    </div>
+
+    <p style="font-size:0.9rem;line-height:1.8;margin:1.25rem 0 0.5rem;">下电梯右转，右手边拐角处就是 <b>Floor Map</b>，对面就是<b>筹码柜台</b>。</p>
+    <div class="photo-sequence">
+      <figure><img src="photos/step3-escalator-turn.jpg" onclick="lightbox(this.src)"><figcaption>下电梯右转</figcaption></figure>
+      <div class="photo-sequence-arrow">↓</div>
+      <figure><img src="photos/step3-floormap-board.jpg" onclick="lightbox(this.src)"><figcaption>拐角处 Floor Map</figcaption></figure>
+      <div class="photo-sequence-arrow">↓</div>
+      <figure><img src="photos/step3-alt-counter.jpg" onclick="lightbox(this.src)"><figcaption>筹码柜台</figcaption></figure>
+    </div>
+
+    <div class="detail-btn-row">
+      <button class="btn-outline" style="color:var(--jopt-blue);border-color:var(--jopt-blue);" onclick="document.getElementById('floormap-modal').style.display='flex'">查看完整赛场地图</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ DETAIL PAGE · STEP 04 领取奖金 ══════════════ -->
+<div id="detail-step4" class="detail-page">
+  <div class="detail-header">
+    <button class="detail-back" onclick="hideDetail()">← 返回</button>
+    <span class="detail-header-title">STEP 04 · 领取奖金</span>
+  </div>
+  <div class="detail-body">
+    <p class="detail-eyebrow">STEP 04</p>
+    <h1 class="detail-title">奖金领取流程</h1>
+
+    <div class="flow-step">
+      <div class="flow-num">1</div>
+      <div class="flow-body">
+        <div class="flow-title">前往玩家契约柜台领奖</div>
+        <div class="flow-text">进入奖金圈的玩家，请当天前往玩家契约柜台领奖，<b>需本人到场，携带护照</b>。位置在穿过 Chip 柜台后，电梯下来右手最里面最深处。</div>
+      </div>
+    </div>
+
+    <div class="photo-single"><img src="photos/step4-contract-counter.jpg" onclick="lightbox(this.src)"></div>
+    <p style="font-size:0.85rem;color:var(--jopt-gray);margin-top:-1rem;">玩家契约柜台</p>
+
+    <div class="photo-single"><img src="floor map b2f.png" onclick="lightbox(this.src)"></div>
+    <p style="font-size:0.85rem;color:var(--jopt-gray);margin-top:-1rem;">赛场地图（柜台位置参考）</p>
+
+    <div class="notice-box">
+      <strong>Pokerweb Coin 领取：</strong>若选择 Pokerweb Coin 领取奖金，之后想在比赛中使用，需要在 Game ID App 上完成 <b>eKYC 本人认证</b>。审核时间视情况而定，可能较长，<b>无法保证次日即可使用</b>。
+    </div>
+    <div class="notice-box warning">
+      <strong>USDT 领取（海外玩家可选）：</strong>本次赛事获得的 USDT 奖金，<b>可立即用于第二天比赛的报名费</b>，无需等待到账；若提现至个人钱包，约赛事结束后 3 周内汇款发放。
+    </div>
+
+    <div class="photo-single"><img src="usdt-guide.png" onclick="lightbox(this.src)"></div>
+    <p style="font-size:0.85rem;color:var(--jopt-gray);margin-top:-1rem;">USDT 抵扣报名费说明</p>
+  </div>
+</div>
+
+<!-- ══════════════ DETAIL PAGE · 其他（饮料柜台） ══════════════ -->
+<div id="detail-amenity" class="detail-page">
+  <div class="detail-header">
+    <button class="detail-back" onclick="hideDetail()">← 返回</button>
+    <span class="detail-header-title">饮料柜台</span>
+  </div>
+  <div class="detail-body">
+    <p class="detail-eyebrow">Facilities</p>
+    <h1 class="detail-title">饮料柜台位置</h1>
+    <p class="detail-intro">下电梯左转，沿路直走即可看到饮料柜台，用 <b>Drink Ticket</b> 可兑换饮料。</p>
+
+    <div class="photo-sequence">
+      <figure><img src="photos/amenity-turnleft.jpg" onclick="lightbox(this.src)"><figcaption>① 下电梯左转</figcaption></figure>
+      <div class="photo-sequence-arrow">↓</div>
+      <figure><img src="photos/amenity-straight.jpg" onclick="lightbox(this.src)"><figcaption>② 继续沿着直走</figcaption></figure>
+      <div class="photo-sequence-arrow">↓</div>
+      <figure><img src="photos/amenity-drink-counter.jpg" onclick="lightbox(this.src)"><figcaption>③ 饮料柜台，用 Drink Ticket 兑换</figcaption></figure>
+    </div>
+  </div>
+</div>
+
+
+<!-- Floor Map Modal (quick lightbox, reused from detail pages) -->
+<div id="floormap-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,20,0.88);z-index:2000;align-items:center;justify-content:center;padding:1rem;" onclick="this.style.display='none'">
+  <div onclick="event.stopPropagation()" style="max-width:700px;width:100%;">
+    <img src="floor map b2f.png" style="width:100%;border-radius:10px;display:block;">
+    <button onclick="document.getElementById('floormap-modal').style.display='none'" style="margin-top:1rem;display:block;width:100%;padding:0.6rem;background:rgba(255,255,255,0.15);color:white;border:1px solid rgba(255,255,255,0.3);border-radius:6px;cursor:pointer;font-size:0.9rem;">关闭</button>
+  </div>
+</div>
+
+<!-- USDT Guide Modal -->
+<div id="usdt-guide-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,20,0.75);z-index:2000;align-items:center;justify-content:center;padding:1rem;" onclick="this.style.display='none'">
+  <div onclick="event.stopPropagation()" style="background:white;border-radius:12px;padding:2rem;max-width:560px;width:100%;">
+    <button onclick="document.getElementById('usdt-guide-modal').style.display='none'" style="float:right;background:none;border:none;font-size:1.4rem;cursor:pointer;color:#8090a8;">×</button>
+    <h3 style="font-family:'Oswald',sans-serif;color:var(--jopt-blue-dark);margin:0 0 1rem;">USDT 抵扣报名费说明</h3>
+    <img src="usdt-guide.png" style="width:100%;max-width:480px;border-radius:8px;display:block;">
+  </div>
+</div>
+
+<!-- WeChat QR Modal -->
+<div id="wechat-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:2000;align-items:center;justify-content:center;" onclick="this.style.display='none'">
+  <div style="background:white;border-radius:12px;padding:2rem;text-align:center;max-width:320px;width:90%;" onclick="event.stopPropagation()">
+    <p style="font-family:'Oswald',sans-serif;font-size:1.1rem;font-weight:600;color:#1a3a6e;margin-bottom:1rem;">扫码关注官方微信</p>
+    <img src="wechat-qr.png" style="width:100%;border-radius:8px;">
+    <button onclick="document.getElementById('wechat-modal').style.display='none'" style="margin-top:1rem;background:none;border:1px solid #dde4f0;border-radius:4px;padding:6px 20px;cursor:pointer;color:#8090a8;">关闭</button>
+  </div>
+</div>
+
+<!-- Photo Lightbox (used by all detail-page photos) -->
+<div id="photo-lightbox" style="display:none;position:fixed;inset:0;background:rgba(0,0,10,0.9);z-index:3000;align-items:center;justify-content:center;padding:1.5rem;" onclick="this.style.display='none'">
+  <img id="photo-lightbox-img" src="" style="max-width:100%;max-height:100%;border-radius:8px;display:block;">
+</div>
+
+<script>
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.classList.add('visible');
+        observer.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.1 });
+  document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+  function showDetail(id) {
+    document.getElementById('main-view').classList.add('hidden');
+    document.querySelectorAll('.detail-page').forEach(p => p.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    window.scrollTo(0, 0);
+  }
+  function hideDetail() {
+    document.querySelectorAll('.detail-page').forEach(p => p.classList.remove('active'));
+    document.getElementById('main-view').classList.remove('hidden');
+    window.scrollTo(0, 0);
+  }
+  function lightbox(src) {
+    document.getElementById('photo-lightbox-img').src = src;
+    document.getElementById('photo-lightbox').style.display = 'flex';
+  }
+</script>
+
+</body>
+</html>

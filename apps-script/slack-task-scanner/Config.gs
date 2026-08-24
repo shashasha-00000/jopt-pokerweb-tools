@@ -1,0 +1,105 @@
+/**
+ * Slack task scanner configuration.
+ * Dates shown in the spreadsheet are always formatted in Asia/Tokyo.
+ */
+const CONFIG = Object.freeze({
+  SPREADSHEET_ID: '1GU_7gpdV8PeU07JLq4MsG2lmtPJaDegJejwhQBrTsCs',
+  SHEET_NAME: 'シート1',
+  TIME_ZONE: 'Asia/Tokyo',
+
+  MY_SLACK_USER_ID: 'U0ANUSDNVMK',
+  CS_USERGROUP_ID: 'S092SRF3JG0',
+  CS_SEARCH_TERM: '@cs',
+  SLACK_TOKEN_PROPERTY: 'SLACK_USER_TOKEN',
+  PARTICIPATION_BOOTSTRAP_PROPERTY: 'SLACK_PARTICIPATION_BOOTSTRAP_V1',
+  PARTICIPATION_BOOTSTRAP_DAYS: 30,
+  EXCLUDED_CHANNEL_IDS: Object.freeze([
+    'C093Z293J5N' // #office_勤怠連絡
+  ]),
+
+  LOOKBACK_HOURS: 4,
+  TRIGGER_EVERY_HOURS: 2,
+  SEARCH_PAGE_SIZE: 100,
+  MAX_SEARCH_PAGES: 100,
+  THREAD_PAGE_SIZE: 100,
+  MAX_RATE_LIMIT_WAIT_SECONDS: 30,
+  MAX_API_RETRIES: 1,
+
+  DATE_FORMAT: 'yyyy/MM/dd',
+  DATE_TIME_FORMAT: 'yyyy/MM/dd HH:mm',
+  TITLE_MAX_LENGTH: 60,
+  MEMO_MAX_LENGTH: 500,
+  FORGOTTEN_AFTER_DAYS: 7,
+  DEADLINE_SOON_DAYS: 3,
+
+  SHEET_HEADERS: Object.freeze([
+    '状态',
+    '任务',
+    '分类',
+    '优先级',
+    '预计时间',
+    '下一步',
+    '完成条件',
+    '等待对象',
+    '最后更新',
+    '备注',
+    '已确认',
+    'Slack 类型',
+    'Slack 链接',
+    'Slack Message TS',
+    'Slack 主题 TS',
+    'Slack 频道 ID',
+    'Slack 发起人 ID',
+    'Slack 最后检查',
+    '任务 ID',
+    '提醒时间',
+    '置顶',
+    '最后界面操作',
+    '处理阶段',
+    '截止日期',
+    'Calendar Event ID',
+    '同步日历',
+    '关联任务 ID',
+    'Slack 最新消息 TS',
+    'Slack 新进展',
+    'Slack 最新进展摘要'
+  ]),
+
+  COL: Object.freeze({
+    STATUS: 1,
+    TASK: 2,
+    CATEGORY: 3,
+    PRIORITY: 4,
+    ESTIMATE: 5,
+    NEXT_ACTION: 6,
+    COMPLETION: 7,
+    WAITING_FOR: 8,
+    LAST_UPDATED: 9,
+    MEMO: 10,
+    CONFIRMED: 11,
+    SLACK_TYPE: 12,
+    SLACK_URL: 13,
+    MESSAGE_TS: 14,
+    THREAD_TS: 15,
+    CHANNEL_ID: 16,
+    REQUESTER_ID: 17,
+    LAST_CHECKED: 18,
+    TASK_ID: 19,
+    REMIND_AT: 20,
+    PINNED: 21,
+    LAST_UI_ACTION: 22,
+    PROCESSING_STAGE: 23,
+    DEADLINE: 24,
+    CALENDAR_EVENT_ID: 25,
+    SYNC_CALENDAR: 26,
+    LINKED_TASK_ID: 27,
+    SLACK_LATEST_TS: 28,
+    SLACK_UPDATE_PENDING: 29,
+    SLACK_LATEST_UPDATE: 30
+  })
+});
+
+const SLACK_MARKERS = Object.freeze({
+  DIRECT: '<@' + CONFIG.MY_SLACK_USER_ID + '>',
+  CS: '<!subteam^' + CONFIG.CS_USERGROUP_ID
+});

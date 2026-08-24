@@ -68,7 +68,7 @@ const RSE = (() => {
     '修正理由', '確認日時', '確認者', 'eventName', '申請キー'
   ];
 
-  const PW_INPUT_HEADERS = ['Game ID'];
+  const PW_INPUT_HEADERS = ['Game ID', '対象大会', '対象期間'];
 
   const CHECK_HEADERS = [
     '判定', '確認状態', '確認内容', 'checkKey', 'sourceHash', 'confirmedHash',
@@ -299,7 +299,7 @@ const RSE = (() => {
           oldStillConfirmed || migratedStillConfirmed || recoveredStillConfirmed
             ? (old['確認者'] || activeUserEmail_())
             : '',
-          applicationPeriodLabel_(app),
+          app.eventName || '',
           app.applicationKey
         ]);
       });
@@ -418,24 +418,95 @@ const RSE = (() => {
 
   function buildPwInput() {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const settings = readSettings_(ss);
+    const formSheet = requiredSheet_(ss, settings.FORM_SHEET_NAME || CONFIG.DEFAULT_FORM_SHEET);
     const checkSheet = requiredSheet_(ss, CONFIG.GAME_ID_CHECK_SHEET);
     const outputSheet = requiredSheet_(ss, CONFIG.PW_INPUT_SHEET);
     const rows = readObjects_(checkSheet);
+    const eventNameByApplicationKey = readFormEventNameByApplicationKey_(formSheet);
+    const input = buildPwInputData_(rows, eventNameByApplicationKey);
+    if (!input.gameIds.length) throw new Error('採用済みGame IDがありません');
+
+    writePwInputRows_(outputSheet, input.headers, input.rows);
+    showPwInputDialog_(input.tsv, input.rows.length);
+  }
+
+  function readFormEventNameByApplicationKey_(sheet) {
+    const table = readTable_(sheet);
+    const indexes = aliasIndexes_(table.headers, FORM_ALIASES, [
+      'gameId', 'eventName', 'startDate', 'endDate'
+    ]);
+    const result = {};
+
+    table.rows.forEach(row => {
+      const rawStartDate = valueAt_(row, indexes.startDate);
+      const rawEndDate = valueAt_(row, indexes.endDate);
+      const hasStartDate = text_(rawStartDate) !== '';
+      const hasEndDate = text_(rawEndDate) !== '';
+      const app = {
+        gameId: normalizeGameId_(valueAt_(row, indexes.gameId)),
+        startDate: normalizeIsoDate_(rawStartDate),
+        endDate: normalizeIsoDate_(rawEndDate)
+      };
+      if (!app.gameId || hasStartDate !== hasEndDate) return;
+      if ((hasStartDate && !app.startDate) || (hasEndDate && !app.endDate)) return;
+      if (app.startDate && app.endDate && app.startDate > app.endDate) return;
+      result[makeApplicationKey_(app)] = text_(valueAt_(row, indexes.eventName));
+    });
+    return result;
+  }
+
+  function buildPwInputData_(rows, eventNameByApplicationKey) {
     const blockedGameIds = unresolvedGameIdSet_(rows, isGameIdCheckRowResolved_);
+    const outputRows = [];
+    const seenRows = new Set();
+    const sourceEventNames = eventNameByApplicationKey || {};
+    const missingApplicationKeys = [];
 
-    const adoptedGameIds = rows
-      .filter(row => isGameIdCheckRowResolved_(row))
-      .filter(row => text_(row['処理方針']) === '採用')
-      .filter(row => !blockedGameIds.has(normalizeGameId_(row['Game ID'])))
-      .map(row => normalizeGameId_(row['Game ID']));
-    const gameIds = uniqueStrings_(adoptedGameIds);
-    if (!gameIds.length) throw new Error('採用済みGame IDがありません');
+    (rows || []).forEach(row => {
+      if (!isGameIdCheckRowResolved_(row)) return;
+      if (text_(row['処理方針']) !== '採用') return;
+      const gameId = normalizeGameId_(row['Game ID']);
+      if (!gameId || blockedGameIds.has(gameId)) return;
+      const applicationKey = text_(row['申請キー']);
+      if (!Object.prototype.hasOwnProperty.call(sourceEventNames, applicationKey)) {
+        missingApplicationKeys.push(applicationKey || gameId);
+        return;
+      }
+      const eventName = text_(sourceEventNames[applicationKey]);
+      const period = pwInputPeriodFromApplicationKey_(applicationKey);
+      const outputKey = [gameId, eventName, period].join('\t');
+      if (seenRows.has(outputKey)) return;
+      seenRows.add(outputKey);
+      outputRows.push([gameId, eventName, period]);
+    });
 
-    const headers = ['Game ID'];
-    const output = gameIds.map(gameId => [gameId]);
-    writePwInputRows_(outputSheet, headers, output);
-    const tsv = output.map(row => row.join('\t')).join('\n');
-    showPwInputDialog_(tsv, output.length);
+    if (missingApplicationKeys.length) {
+      throw new Error(
+        'Formの対象大会と申請キーを照合できません: ' +
+        uniqueStrings_(missingApplicationKeys).join(', ')
+      );
+    }
+
+    return {
+      gameIds: uniqueStrings_(outputRows.map(row => row[0])),
+      headers: PW_INPUT_HEADERS.slice(),
+      rows: outputRows,
+      tsv: outputRows.map(row => row.join('\t')).join('\n')
+    };
+  }
+
+  function pwInputPeriodFromApplicationKey_(applicationKey) {
+    const period = parseApplicationKey_(applicationKey);
+    if (!period.gameId || period.allDates || !period.startDate || !period.endDate) return '';
+    return [pwInputDate_(period.startDate), pwInputDate_(period.endDate)].join(' - ');
+  }
+
+  function pwInputDate_(isoDate) {
+    const normalized = normalizeIsoDate_(isoDate);
+    if (!normalized) return '';
+    const parts = normalized.split('-');
+    return [parts[2], parts[1], parts[0]].join('/');
   }
 
   function refreshReceiptCheck() {
@@ -3165,8 +3236,8 @@ ${usdtBreakdownHtml}
   function showPwInputDialog_(tsv, count) {
     const html = HtmlService.createHtmlOutput(
       '<div style="font-family:Arial,sans-serif;padding:12px">' +
-      '<div style="margin-bottom:6px"><b>Input: Game ID (' + count + '行)</b></div>' +
-      '<textarea id="rseTsv" readonly style="width:100%;height:330px;box-sizing:border-box;font-family:monospace">' +
+      '<div style="margin-bottom:6px"><b>Input: Game ID + 対象大会 + 対象期間 (' + count + '行)</b></div>' +
+      '<textarea id="rseTsv" style="width:100%;height:330px;box-sizing:border-box;font-family:monospace">' +
       escapeHtml_(tsv) + '</textarea>' +
       '<button style="margin-top:10px;width:100%;height:38px" onclick="var x=document.getElementById(\'rseTsv\');x.select();document.execCommand(\'copy\');this.textContent=\'コピー済み\';">TSVをコピー</button>' +
       '</div>'
@@ -3587,7 +3658,8 @@ ${usdtBreakdownHtml}
       unresolvedGameIdSet_, receiptProcessingScope_, heldReceiptCheckRow_,
       makeReceiptCheckRow_, buildReceiptCheckRows_, groupCheckRowsForDraft_,
       completedApplicationKeysFromCheckRows_, receiptIntersectionStats_,
-      readApplications_, normalizeIsoDate_, parseApplicationKey_, pwMatchesApplicationPeriod_,
+      readApplications_, readFormEventNameByApplicationKey_, buildPwInputData_, pwInputPeriodFromApplicationKey_,
+      normalizeIsoDate_, parseApplicationKey_, pwMatchesApplicationPeriod_,
       readLedgerUpdateState_, mutateLedgerFieldsForPdfKeys_, markReplacedLedgerState_,
       readSheetUpdateState_, setUpdateStateValue_, writeSheetUpdateState_,
       normalizeMailGroupDisplay_, mailGroupInfo_, mailGroupReadyForAutoSend_,

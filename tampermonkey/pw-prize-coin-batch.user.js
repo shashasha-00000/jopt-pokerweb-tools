@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW Prize Coin Batch
 // @namespace    https://japanopt.pokerweb.com.br/
-// @version      0.3.0
+// @version      0.3.6
 // @description  TSVを唯一の支払基準として、複数大会の未払いPrizeを照合しPW Coinを一件ずつ付与します。
 // @match        https://japanopt.pokerweb.com.br/*
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-coin-batch.user.js
@@ -14,11 +14,13 @@
   'use strict';
 
   const APP = {
+    version: '0.3.6',
     panelId: 'pw-prize-coin-batch-panel',
     inputKey: 'PW_PRIZE_COIN_BATCH_INPUT_V1',
     scopeKey: 'PW_PRIZE_COIN_BATCH_SCOPE_V1',
     urlCacheKey: 'PW_SHARED_TOURNAMENT_URL_CACHE_V1',
     recordInfoUrl: '/cb/torneio/abas/registros/informacoes',
+    cashierDataUrl: '/cb/torneio/abas/caixa/dados_caixa',
     sendCoinUrl: '/cb/torneio/abas/caixa/envio_moedas',
     listPages: [
       { label: 'OPEN', path: '/cb/torneio/abertos' },
@@ -492,7 +494,13 @@
       ...options
     });
     const text = await response.text();
-    if (!response.ok) throw new Error(`${options.method || 'GET'} ${url}: HTTP ${response.status}`);
+    if (!response.ok) {
+      const error = new Error(`${options.method || 'GET'} ${url}: HTTP ${response.status}`);
+      error.status = response.status;
+      error.statusText = response.statusText;
+      error.textPreview = text.slice(0, 1200);
+      throw error;
+    }
     return { response, text };
   }
 
@@ -786,17 +794,104 @@
     }
   }
 
-  function paymentFormFromDoc(doc, internalPlayerId) {
-    return [...doc.forms].find(form => {
+  function replaceHtmlAndRunScripts(container, html) {
+    container.innerHTML = html;
+    for (const oldScript of [...container.querySelectorAll('script')]) {
+      const script = document.createElement('script');
+      for (const attr of [...oldScript.attributes]) script.setAttribute(attr.name, attr.value);
+      script.textContent = oldScript.textContent || '';
+      oldScript.parentNode.replaceChild(script, oldScript);
+    }
+  }
+
+  async function fetchCashierHtml(task) {
+    const { text } = await requestText(APP.cashierDataUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: new URLSearchParams({
+        id_jogador: String(task.internalPlayerId),
+        id_torneio: String(task.tournamentId),
+        premiacao_origem: '1'
+      })
+    });
+    return text;
+  }
+
+  function paymentFormFromDoc(doc, internalPlayerId = '', tournamentId = '', options = {}) {
+    const forms = doc.forms ? [...doc.forms] : [...doc.querySelectorAll('form')];
+    return forms.find(form => {
       const action = new URL(form.action || '', location.origin);
       const playerId = norm(form.querySelector('[name="id_jogador"]')?.value);
+      const formTournamentId = norm(form.querySelector('[name="id_torneio"]')?.value);
+      const playerOk = !internalPlayerId ||
+        playerId === String(internalPlayerId) ||
+        (options.allowBlankPlayerId && !playerId);
+      const tournamentOk = !tournamentId ||
+        formTournamentId === String(tournamentId) ||
+        (options.allowBlankTournamentId && !formTournamentId);
       return action.origin === location.origin &&
         action.pathname === APP.sendCoinUrl &&
-        playerId === String(internalPlayerId);
+        playerOk &&
+        tournamentOk;
     }) || null;
   }
 
-  async function openCashierContext(task, scope) {
+  function validateCashierHtmlForTask(html, task) {
+    const doc = parseHtml(html);
+    const playerIds = [...doc.querySelectorAll('[name="id_jogador"]')].map(el => norm(el.value)).filter(Boolean);
+    const tournamentIds = [...doc.querySelectorAll('[name="id_torneio"]')].map(el => norm(el.value)).filter(Boolean);
+    if (playerIds.length && !playerIds.includes(String(task.internalPlayerId))) {
+      throw new Error(`dados_caixa player mismatch: expected=${task.internalPlayerId} / actual=${playerIds.join(',')}`);
+    }
+    if (tournamentIds.length && !tournamentIds.includes(String(task.tournamentId))) {
+      throw new Error(`dados_caixa tournament mismatch: expected=${task.tournamentId} / actual=${tournamentIds.join(',')}`);
+    }
+    return doc;
+  }
+
+  async function openCashierContextViaData(task, scope) {
+    const cashierHtml = await fetchCashierHtml(task);
+    validateCashierHtmlForTask(cashierHtml, task);
+    const iframe = document.createElement('iframe');
+    iframe.src = new URL(task.tournamentUrl, location.origin).href;
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.style.cssText = 'position:fixed;left:-20000px;top:0;width:1280px;height:900px;opacity:0;pointer-events:none;';
+    document.body.appendChild(iframe);
+    try {
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`Cashier token page load timeout: ${task.tournamentName}`)), APP.waitMs);
+        iframe.addEventListener('load', () => {
+          clearTimeout(timer);
+          resolve();
+        }, { once: true });
+      });
+      const win = iframe.contentWindow;
+      const doc = iframe.contentDocument;
+      if (!win || !doc) throw new Error(`Cashier token iframe inaccessible: ${task.tournamentName}`);
+      verifyPanelTournament(doc, task.tournamentName, scope);
+      const form = paymentFormFromDoc(doc, '', task.tournamentId, {
+        allowBlankPlayerId: true,
+        allowBlankTournamentId: true
+      });
+      if (!form) throw new Error(`Cashier payment form(token page): ${task.formattedGameId}`);
+      if (String(form.method || '').toLowerCase() !== 'post') {
+        throw new Error(`Cashier payment form method is not POST: ${form.method}`);
+      }
+      const valueInput = form.querySelector('[name="valor"]');
+      const codbloqInput = form.querySelector('[name="codbloq"]');
+      if (!valueInput) throw new Error('Cashier payment form valor not found');
+      if (!norm(codbloqInput?.value)) throw new Error('Cashier payment form codbloq not found');
+      return { cleanup: () => iframe.remove(), iframe, win, doc, form, valueInput, codbloqInput, source: 'iframe-token+dados_caixa' };
+    } catch (error) {
+      iframe.remove();
+      throw error;
+    }
+  }
+
+  async function openCashierContextViaIframe(task, scope) {
     const iframe = document.createElement('iframe');
     iframe.src = new URL(task.tournamentUrl, location.origin).href;
     iframe.setAttribute('aria-hidden', 'true');
@@ -821,21 +916,36 @@
       );
       abrirCadastro.call(win, Number(task.internalPlayerId), Number(task.tournamentId), 1);
       const form = await waitFor(
-        () => paymentFormFromDoc(doc, task.internalPlayerId),
+        () => paymentFormFromDoc(doc, '', task.tournamentId, {
+          allowBlankPlayerId: true,
+          allowBlankTournamentId: true
+        }),
         APP.waitMs,
         `Cashier payment form: ${task.formattedGameId}`
       );
       if (String(form.method || '').toLowerCase() !== 'post') {
         throw new Error(`Cashier payment form method is not POST: ${form.method}`);
       }
-      const valueInput = form.querySelector('[name="valor"]');
+    const valueInput = form.querySelector('[name="valor"]');
       const codbloqInput = form.querySelector('[name="codbloq"]');
       if (!valueInput) throw new Error('Cashier payment form valor not found');
       if (!norm(codbloqInput?.value)) throw new Error('Cashier payment form codbloq not found');
-      return { iframe, win, doc, form, valueInput, codbloqInput };
+      return { cleanup: () => iframe.remove(), iframe, win, doc, form, valueInput, codbloqInput, source: 'iframe' };
     } catch (error) {
       iframe.remove();
       throw error;
+    }
+  }
+
+  async function openCashierContext(task, scope) {
+    try {
+      return await openCashierContextViaData(task, scope);
+    } catch (dataError) {
+      try {
+        return await openCashierContextViaIframe(task, scope);
+      } catch (iframeError) {
+        throw new Error(`Cashier open failed: dados_caixa=${dataError.message || dataError} / iframe=${iframeError.message || iframeError}`);
+      }
     }
   }
 
@@ -845,13 +955,41 @@
       body.append(name, value);
     }
     body.set('id_jogador', String(task.internalPlayerId));
+    body.set('id_torneio', String(task.tournamentId));
     body.set('valor', String(task.expectedAmount));
     body.set('codbloq', norm(context.codbloqInput.value));
-    return requestText(context.form.action, {
-      method: 'POST',
-      headers: { 'X-Requested-With': 'XMLHttpRequest' },
-      body
-    });
+    task.postRequest = [
+      `source=${context.source || ''}`,
+      `action=${context.form.action || ''}`,
+      `id_jogador=${String(task.internalPlayerId)}`,
+      `id_torneio=${String(task.tournamentId)}`,
+      `valor=${String(task.expectedAmount)}`,
+      `codbloq=${norm(context.codbloqInput.value)}`
+    ].join(' / ');
+    task.postStatus = '';
+    task.postResponsePreview = '';
+    try {
+      const result = await requestText(context.form.action, {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body
+      });
+      task.postStatus = result.response.status;
+      task.postResponsePreview = String(result.text || '').slice(0, 1200);
+      return result;
+    } catch (error) {
+      task.postStatus = error.status || '';
+      task.postResponsePreview = String(error.textPreview || '').slice(0, 1200);
+      throw error;
+    }
+  }
+
+  function postDebugText(task) {
+    const parts = [];
+    if (task.postStatus) parts.push(`POST HTTP ${task.postStatus}`);
+    if (task.postRequest) parts.push(task.postRequest);
+    if (task.postResponsePreview) parts.push(`response=${task.postResponsePreview}`);
+    return parts.join(' / ');
   }
 
   async function waitForPaymentVerification(task, before, timeoutMs = 12000) {
@@ -894,7 +1032,7 @@
       ambiguous.ambiguousPost = true;
       throw ambiguous;
     } finally {
-      cashier.iframe.remove();
+      cashier.cleanup();
     }
 
     await sleep(APP.betweenPaymentsMs);
@@ -918,7 +1056,8 @@
       Math.abs(after.paid - before.paid) === task.expectedAmount;
     if (!pendingOk || !paidOk) {
       const paidDiff = Number.isFinite(before.paid) && Number.isFinite(after.paid) ? after.paid - before.paid : 'unavailable';
-      const error = new Error(`POST outcome ambiguous: pending=${after.pending} / paid increase=${paidDiff}`);
+      const debug = postDebugText(task);
+      const error = new Error(`POST outcome ambiguous: pending=${after.pending} / paid increase=${paidDiff}${debug ? ` / ${debug}` : ''}`);
       error.ambiguousPost = true;
       throw error;
     }
@@ -936,10 +1075,10 @@
     const ready = state.tasks.filter(task => task.status === 'READY');
     if (!ready.length) return alert('READY task がありません。');
     const total = ready.reduce((sum, task) => sum + task.expectedAmount, 0);
-    const confirmation = prompt(
-      `実際にPW Coinを送信します。\n\n対象: ${ready.length}人\n合計: ${yen(total)}\n\n続行するには PAY ${ready.length} ${total} と入力してください。`
+    const ok = confirm(
+      `PW Coinを実際に送信します。\n\n対象: ${ready.length}人\n合計: ${yen(total)}\n\nOKを押すと送信を開始します。\n内容に問題がないか、もう一度確認してください。`
     );
-    if (confirmation !== `PAY ${ready.length} ${total}`) return alert('キャンセルしました。');
+    if (!ok) return alert('キャンセルしました。');
 
     state.running = true;
     state.stopRequested = false;
@@ -988,7 +1127,8 @@
   function resultRows() {
     const headers = [
       '種別', '元行', '# Tournament', 'GameID', 'TSV構成', 'TSV合計',
-      'Tournament ID', 'URL source', 'PW記録行数', 'PW未払い', 'PW支払済み', 'ステータス', 'エラー', '付与日'
+      'Tournament ID', 'URL source', 'PW記録行数', 'PW未払い', 'PW支払済み',
+      'ステータス', 'エラー', 'POST HTTP', 'POST送信', 'POST応答', '付与日'
     ];
     const rows = [headers];
     for (const task of state.tasks) {
@@ -998,17 +1138,19 @@
         Number.isFinite(task.pwRecordCount) ? task.pwRecordCount : '',
         Number.isFinite(task.pwPending) ? task.pwPending : '',
         Number.isFinite(task.pwPaid) ? task.pwPaid : '',
-        task.status, task.error || task.result || '', task.completedDate || ''
+        task.status, task.error || task.result || '',
+        task.postStatus || '', task.postRequest || '', task.postResponsePreview || '',
+        task.completedDate || ''
       ]);
     }
     for (const item of state.skipped) {
       rows.push([
         'SKIP', item.line, item.tournamentName, formatGameId(item.gameId),
-        item.place || '', item.amount, '', '', '', '', '', item.status, item.reason, ''
+        item.place || '', item.amount, '', '', '', '', '', item.status, item.reason, '', '', '', ''
       ]);
     }
     for (const error of state.parseErrors) {
-      rows.push(['PARSE ERROR', '', '', '', '', '', '', '', '', '', '', 'ERROR', error, '']);
+      rows.push(['PARSE ERROR', '', '', '', '', '', '', '', '', '', '', 'ERROR', error, '', '', '', '']);
     }
     return rows;
   }
@@ -1132,7 +1274,7 @@
     panel.id = APP.panelId;
     panel.innerHTML = `
       <div class="head">
-        <span>PW Prize Coin Batch v0.3.0</span>
+        <span>PW Prize Coin Batch v${APP.version}</span>
         <button id="pwpcb-min" type="button">−</button>
       </div>
       <div class="body">

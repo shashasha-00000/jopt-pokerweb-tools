@@ -29,7 +29,7 @@
     {
         "file":  "pw-national-ticket-batch.user.js",
         "name":  "PW ナショナルチケット Batch",
-        "version":  "1.3.3",
+        "version":  "1.3.4",
         "description":  "任意のPokerWeb管理画面からGameID・チケット名TSVを厳密検証し、ナショナルチケットを安全に一件ずつ付与する正式版",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js",
         "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js",
@@ -38,7 +38,7 @@
     {
         "file":  "pw-panel-drag-helper.user.js",
         "name":  "PW 共通パネル移動・最小化",
-        "version":  "0.2.0",
+        "version":  "0.2.1",
         "description":  "PokerWeb用Tampermonkeyツールの通常パネルをドラッグ移動し、選択中のパネルを最前面に表示します。",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-panel-drag-helper.user.js",
         "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-panel-drag-helper.user.js",
@@ -52,6 +52,15 @@
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-batch-manual.user.js",
         "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-batch-manual.user.js",
         "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-batch-manual.user.js"
+    },
+    {
+        "file":  "pw-prize-coin-batch.user.js",
+        "name":  "PW Prize Coin Batch",
+        "version":  "0.3.6",
+        "description":  "TSVを唯一の支払基準として、複数大会の未払いPrizeを照合しPW Coinを一件ずつ付与します。",
+        "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-coin-batch.user.js",
+        "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-coin-batch.user.js",
+        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-coin-batch.user.js"
     },
     {
         "file":  "pw-prize-gameid-check.user.js",
@@ -74,8 +83,8 @@
     {
         "file":  "pw-receipt-manual-check.user.js",
         "name":  "PW 領収書 Manual Check",
-        "version":  "1.6.17",
-        "description":  "Manual receipt check. Game ID-only date-range search or multi-column keyword TSV, strict URL Cache verification, and payment TSV output.",
+        "version":  "1.6.18",
+        "description":  "Manual receipt check. Per-application Game ID, keyword, and date-range TSV with strict URL Cache verification and payment TSV output.",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js",
         "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js",
         "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js"

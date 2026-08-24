@@ -1,10 +1,10 @@
 ﻿// ==UserScript==
 // @name         PW 領収書 Manual Check
 // @namespace    pw-receipt-manual-check
-// @version      1.6.17
+// @version      1.6.18
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js
-// @description  Manual receipt check. Game ID-only date-range search or multi-column keyword TSV, strict URL Cache verification, and payment TSV output.
+// @description  Manual receipt check. Per-application Game ID, keyword, and date-range TSV with strict URL Cache verification and payment TSV output.
 // @author       xhpc007 + ChatGPT
 // @match        https://japanopt.pokerweb.com.br/*
 // @grant        GM_setClipboard
@@ -32,7 +32,7 @@
   };
 
   const CANDIDATE_HEADERS = [
-    "本次处理", "Game ID", "internalId", "参加日", "対象キーワード", "大会名",
+    "本次处理", "Game ID", "internalId", "参加日", "対象キーワード", "対象期間", "大会名",
     "TournamentId", "URL", "判定", "理由"
   ];
 
@@ -67,6 +67,35 @@
   function normalizeGameId(raw) {
     const digits = String(raw ?? "").replace(/\D/g, "");
     return digits.length === 8 ? digits : "";
+  }
+
+  function normalizeDateRange(value) {
+    const source = norm(value);
+    if (!source) return "";
+    const match = source.match(
+      /^(\d{1,2})\/(\d{1,2})\/(\d{4})\s*(?:-|\uff0d|\u2013|\u2014|\u301c|\uff5e)\s*(\d{1,2})\/(\d{1,2})\/(\d{4})$/
+    );
+    if (!match) return "";
+
+    const start = normalizeDmyDate_(match[1], match[2], match[3]);
+    const end = normalizeDmyDate_(match[4], match[5], match[6]);
+    if (!start || !end || start.iso > end.iso) return "";
+    return `${start.text} - ${end.text}`;
+  }
+
+  function normalizeDmyDate_(dayValue, monthValue, yearValue) {
+    const day = Number(dayValue);
+    const month = Number(monthValue);
+    const year = Number(yearValue);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (
+      date.getUTCFullYear() !== year ||
+      date.getUTCMonth() + 1 !== month ||
+      date.getUTCDate() !== day
+    ) return null;
+    const dd = String(day).padStart(2, "0");
+    const mm = String(month).padStart(2, "0");
+    return { iso: `${year}-${mm}-${dd}`, text: `${dd}/${mm}/${year}` };
   }
 
   function rawToSearchGameId(raw) {
@@ -436,20 +465,33 @@
   function parseManualTasks(text) {
     const lines = String(text || "")
       .split(/\r?\n/)
-      .map(line => line.replace(/\uFEFF/g, "").trim())
-      .filter(Boolean);
+      .map(line => line.replace(/\uFEFF/g, ""))
+      .filter(line => norm(line));
 
-    const grouped = new Map();
+    const tasks = [];
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const tsvColumns = line.split("\t").map(norm);
       let gameId = "";
-      let keywords = [];
+      let keyword = "";
+      let dateRange = "";
 
       if (tsvColumns.length > 1) {
         gameId = normalizeGameId(tsvColumns[0]);
-        keywords = tsvColumns.slice(1).filter(Boolean);
+        if (!gameId) continue;
+        const extraColumns = tsvColumns.slice(3).filter(Boolean);
+        if (extraColumns.length) {
+          throw new Error(`${i + 1}行: TSVは Game ID / 対象大会 / 対象期間 の3列までです`);
+        }
+        keyword = tsvColumns[1] || "";
+        const rawDateRange = tsvColumns[2] || "";
+        if (rawDateRange) {
+          dateRange = normalizeDateRange(rawDateRange);
+          if (!dateRange) {
+            throw new Error(`${i + 1}行: 対象期間が不正です [${rawDateRange}]`);
+          }
+        }
       } else {
         const gameIdOnly = line.match(/^\s*(\d{4}\.?\d{4}|\d{8})\s*$/);
         if (gameIdOnly) {
@@ -458,35 +500,18 @@
           const legacy = line.match(/^\s*(\d{4}\.?\d{4}|\d{8})\s*(?:,|，|、|\||｜|:|：|\s+)\s*(.+?)\s*$/);
           if (legacy) {
             gameId = normalizeGameId(legacy[1]);
-            keywords = [norm(legacy[2])].filter(Boolean);
+            keyword = norm(legacy[2]);
           }
         }
       }
 
       if (!gameId) continue;
-      if (!grouped.has(gameId)) {
-        grouped.set(gameId, { rowNo: i + 1, gameId, all: false, keywords: new Set() });
-      }
-
-      const group = grouped.get(gameId);
-      if (!keywords.length || keywords.some(keyword => keyword === "*")) {
-        group.all = true;
-        group.keywords.clear();
-        continue;
-      }
-      if (group.all) continue;
-      keywords.forEach(keyword => group.keywords.add(keyword));
-    }
-
-    const tasks = [];
-    for (const group of grouped.values()) {
-      if (group.all || !group.keywords.size) {
-        tasks.push({ rowNo: group.rowNo, gameId: group.gameId, keyword: "*" });
-        continue;
-      }
-      for (const keyword of group.keywords) {
-        tasks.push({ rowNo: group.rowNo, gameId: group.gameId, keyword });
-      }
+      tasks.push({
+        rowNo: i + 1,
+        gameId,
+        keyword: keyword || "*",
+        dateRange
+      });
     }
     return tasks;
   }
@@ -501,23 +526,43 @@
     return parts.length <= 1 ? n.includes(k) : parts.every(p => n.includes(p));
   }
 
-  function groupTasksByGameId(tasks) {
+  function groupTasksByGameId(tasks, globalDateRange) {
+    const rawGlobalDateRange = norm(globalDateRange);
+    const normalizedGlobalDateRange = rawGlobalDateRange ? normalizeDateRange(rawGlobalDateRange) : "";
+    if (rawGlobalDateRange && !normalizedGlobalDateRange) {
+      throw new Error(`総期間が不正です [${rawGlobalDateRange}]`);
+    }
+
     const grouped = new Map();
+    const missingDateRangeGameIds = [];
 
     for (const task of tasks || []) {
       const gameId = normalizeGameId(task?.gameId);
       if (!gameId) continue;
+      const taskDateRange = norm(task?.dateRange);
+      const normalizedTaskDateRange = taskDateRange ? normalizeDateRange(taskDateRange) : "";
+      if (taskDateRange && !normalizedTaskDateRange) {
+        throw new Error(`${task.rowNo || "?"}行: 対象期間が不正です [${taskDateRange}]`);
+      }
+      const effectiveDateRange = normalizedTaskDateRange || normalizedGlobalDateRange;
+      if (!effectiveDateRange) {
+        missingDateRangeGameIds.push(gameId);
+        continue;
+      }
 
-      if (!grouped.has(gameId)) {
-        grouped.set(gameId, {
+      const groupKey = [gameId, effectiveDateRange].join("|");
+
+      if (!grouped.has(groupKey)) {
+        grouped.set(groupKey, {
           rowNo: task.rowNo,
           gameId,
+          dateRange: effectiveDateRange,
           all: false,
           keywords: new Set()
         });
       }
 
-      const group = grouped.get(gameId);
+      const group = grouped.get(groupKey);
       const keyword = norm(task.keyword);
       if (!keyword || keyword === "*") {
         group.all = true;
@@ -527,9 +572,16 @@
       }
     }
 
+    if (missingDateRangeGameIds.length) {
+      throw new Error(
+        `個別期間と総期間の両方が空白です: ${Array.from(new Set(missingDateRangeGameIds)).join(", ")}`
+      );
+    }
+
     return Array.from(grouped.values()).map(group => ({
       rowNo: group.rowNo,
       gameId: group.gameId,
+      dateRange: group.dateRange,
       keywords: group.all || !group.keywords.size ? ["*"] : Array.from(group.keywords)
     }));
   }
@@ -676,10 +728,10 @@
     return out;
   }
 
-  async function discoverCandidatesFromTasks(tasks, dateRange) {
+  async function discoverCandidatesFromTasks(tasks, globalDateRange) {
     const candidates = [];
     const seenCandidateKeys = new Set();
-    const playerTasks = groupTasksByGameId(tasks);
+    const playerTasks = groupTasksByGameId(tasks, globalDateRange);
 
     for (let i = 0; i < playerTasks.length; i++) {
       if (stopRequested) break;
@@ -688,10 +740,10 @@
       const keywordLabel = task.keywords.includes("*") ? "*" : task.keywords.join(" / ");
 
       try {
-        setStatus(`候補検索 ${i + 1}/${playerTasks.length}: ${task.gameId} / ${keywordLabel}`);
+        setStatus(`候補検索 ${i + 1}/${playerTasks.length}: ${task.gameId} / ${task.dateRange} / ${keywordLabel}`);
 
         const search = await searchInternalId(task.gameId);
-        const html = await requestPlayerTournamentHtml(search.internalId, dateRange);
+        const html = await requestPlayerTournamentHtml(search.internalId, task.dateRange);
         const rows = extractPlayerTournamentRowsFromHtml(html).filter(row =>
           task.keywords.some(keyword => keywordMatches(row.name, keyword))
         );
@@ -699,7 +751,8 @@
         if (!rows.length) {
           candidates.push({
             本次处理: "不使用", "Game ID": task.gameId, internalId: search.internalId, 参加日: "",
-            対象キーワード: keywordLabel, 大会名: "", TournamentId: "", URL: "",
+            対象キーワード: keywordLabel, 対象期間: task.dateRange,
+            大会名: "", TournamentId: "", URL: "",
             判定: "NO_MATCH", 理由: "指定キーワードに一致する参加大会なし"
           });
           continue;
@@ -760,6 +813,7 @@
             internalId: search.internalId,
             参加日: row.date,
             対象キーワード: keywordLabel,
+            対象期間: task.dateRange,
             大会名: row.name,
             TournamentId: cache ? cache.tournamentId : "",
             URL: cache ? cache.url : "",
@@ -771,7 +825,8 @@
       } catch (e) {
           candidates.push({
             本次处理: "不使用", "Game ID": task.gameId, internalId: "", 参加日: "",
-            対象キーワード: keywordLabel, 大会名: "", TournamentId: "", URL: "",
+            対象キーワード: keywordLabel, 対象期間: task.dateRange,
+            大会名: "", TournamentId: "", URL: "",
             判定: "ERROR", 理由: e.message || String(e)
           });
       }
@@ -2242,20 +2297,35 @@
     }
 
     const inputText = document.querySelector("#pw-manual-input")?.value || "";
-    const dateRange = norm(document.querySelector("#pw-manual-date-range")?.value || CONFIG.defaultDateRange);
-    const tasks = parseManualTasks(inputText);
-    const playerTasks = groupTasksByGameId(tasks);
+    const rawGlobalDateRange = norm(document.querySelector("#pw-manual-date-range")?.value || "");
+    let globalDateRange = "";
+    let tasks = [];
+    let playerTasks = [];
 
-    if (!tasks.length) {
-      alert("入力が空、または形式が不正です。\n例：51763548\nまたは：51763548[TAB]JOPT[TAB]SPADIE");
+    try {
+      globalDateRange = rawGlobalDateRange ? normalizeDateRange(rawGlobalDateRange) : "";
+      if (rawGlobalDateRange && !globalDateRange) {
+        throw new Error(`総期間が不正です [${rawGlobalDateRange}]`);
+      }
+      tasks = parseManualTasks(inputText);
+      if (!tasks.length) {
+        alert("入力が空、または形式が不正です。\n例：51763548[TAB]JOPT\nまたは：51763548[TAB]JOPT[TAB]01/07/2026 - 31/07/2026");
+        return;
+      }
+      playerTasks = groupTasksByGameId(tasks, globalDateRange);
+    } catch (e) {
+      alert(`入力エラー\n\n${e.message || String(e)}`);
       return;
     }
 
+    const individualDateRangeCount = tasks.filter(task => task.dateRange).length;
+
     if (!confirm(
       `候補大会をAPI検索します。\n\n` +
-      `Game ID：${playerTasks.length}件（各IDを1回だけ検索）\n` +
-      `キーワード条件：${tasks.length}件\n` +
-      `検索期間：${dateRange}\n\n続行しますか？`
+      `検索単位（Game ID + 対象期間）：${playerTasks.length}件\n` +
+      `入力行：${tasks.length}件\n` +
+      `個別期間：${individualDateRangeCount}件\n` +
+      `総期間：${globalDateRange || '未設定'}\n\n続行しますか？`
     )) return;
 
     running = true;
@@ -2263,9 +2333,9 @@
 
     try {
       localStorage.setItem(CONFIG.inputKey, inputText);
-      localStorage.setItem(CONFIG.dateRangeKey, dateRange);
+      localStorage.setItem(CONFIG.dateRangeKey, globalDateRange);
 
-      const candidates = await discoverCandidatesFromTasks(tasks, dateRange);
+      const candidates = await discoverCandidatesFromTasks(tasks, globalDateRange);
       setCandidateRows(candidates);
 
       const existingCount = candidates.filter(r => ["OK_CACHE", "OK_PLAYER_PAGE_CACHE_MATCH"].includes(r["判定"])).length;
@@ -2457,7 +2527,8 @@
 
     const savedInput = localStorage.getItem(CONFIG.inputKey) || "";
     const savedCandidate = localStorage.getItem(CONFIG.candidateKey) || CANDIDATE_HEADERS.join("\t");
-    const savedDateRange = localStorage.getItem(CONFIG.dateRangeKey) || CONFIG.defaultDateRange;
+    const storedDateRange = localStorage.getItem(CONFIG.dateRangeKey);
+    const savedDateRange = storedDateRange === null ? CONFIG.defaultDateRange : storedDateRange;
     const savedOutput = localStorage.getItem(CONFIG.outputKey) || "";
     const savedCopyMode = localStorage.getItem(CONFIG.copyModeKey) || "paste-only";
 
@@ -2503,13 +2574,13 @@
           尚未搜索
         </div>
 
-        <div style="font-size:12px;font-weight:bold;">検索期間 / dateRange</div>
+        <div style="font-size:12px;font-weight:bold;">総期間（個別期間が空白の行に使用）/ dateRange</div>
         <input id="pw-manual-date-range"
           style="width:100%;background:#111;color:#fff;border:1px solid #555;padding:7px;font-family:Consolas,monospace;font-size:12px;" />
 
-        <div style="font-size:12px;font-weight:bold;margin-top:6px;">Input TSV: Game ID + 任意の複数キーワード（空白なら期間内すべて）</div>
+        <div style="font-size:12px;font-weight:bold;margin-top:6px;">Input TSV: Game ID + 対象大会 + 対象期間（1列/2列/3列対応）</div>
         <textarea id="pw-manual-input"
-          placeholder="51763548&#10;84391920&#9;JOPT&#9;SPADIE"
+          placeholder="51763548&#9;JOPT&#10;84391920&#9;SPADIE&#9;01/07/2026 - 31/07/2026"
           style="width:100%;height:100px;background:#111;color:#fff;border:1px solid #555;padding:8px;font-family:Consolas,monospace;font-size:12px;"></textarea>
 
         <div style="display:flex;gap:6px;margin-top:6px;">
@@ -2600,6 +2671,7 @@
       replaceSharedCacheForName,
       cacheToTsv,
       renderManualReview,
+      normalizeDateRange,
       parseManualTasks,
       keywordMatches,
       groupTasksByGameId,
