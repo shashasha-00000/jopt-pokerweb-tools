@@ -47,6 +47,80 @@ function scanSlackTasks() {
 }
 
 /**
+ * Pulls Slack Events API notifications from the signed event bridge.
+ * This discovers replies posted to old threads without exposing the Dashboard.
+ */
+function processSlackEventQueue() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) {
+    logRun_('WARN', '別の Slack 処理が実行中のため、イベント処理を終了します。');
+    return;
+  }
+
+  var stats = createEventRunStats_();
+  var acknowledgedEventIds = [];
+  try {
+    var events = fetchSlackEventQueue_();
+    stats.received = events.length;
+    if (!events.length) return;
+
+    var sheet = getTaskSheet_();
+    ensureSheetStructure_(sheet);
+    validateSlackIdentity_();
+    var existing = loadExistingTasks_(sheet);
+    var groups = {};
+    var threadCache = {};
+
+    events.forEach(function(event) {
+      try {
+        var hit = makeSlackEventHit_(event, existing, threadCache, stats);
+        if (!hit) {
+          stats.ignored += 1;
+          acknowledgedEventIds.push(event.eventId);
+          return;
+        }
+        stats.relevant += 1;
+        var key = buildSlackKey_(hit.channelId, hit.threadTs || hit.messageTs);
+        if (!groups[key]) groups[key] = { hit: hit, eventIds: [] };
+        if (shouldReplaceCandidate_(groups[key].hit, hit)) groups[key].hit = hit;
+        groups[key].eventIds.push(event.eventId);
+      } catch (error) {
+        stats.errors += 1;
+        logRun_('ERROR', 'Slack event の候補化に失敗しました。再試行のためキューに残します。', {
+          eventId: event.eventId,
+          channelId: event.channelId,
+          error: errorToString_(error)
+        });
+      }
+    });
+
+    Object.keys(groups).forEach(function(key) {
+      var group = groups[key];
+      try {
+        processSlackCandidate_(sheet, existing, group.hit, stats);
+        stats.processed += 1;
+        acknowledgedEventIds = acknowledgedEventIds.concat(group.eventIds);
+      } catch (error) {
+        stats.errors += 1;
+        logRun_('ERROR', 'Slack event thread の処理に失敗しました。再試行のためキューに残します。', {
+          channelId: group.hit.channelId,
+          threadTs: group.hit.threadTs,
+          eventIds: group.eventIds,
+          error: errorToString_(error)
+        });
+      }
+    });
+  } finally {
+    if (acknowledgedEventIds.length) {
+      acknowledgeSlackEvents_(acknowledgedEventIds);
+      stats.acknowledged = acknowledgedEventIds.length;
+    }
+    logRun_('INFO', 'Slack event queue processing completed', stats);
+    lock.releaseLock();
+  }
+}
+
+/**
  * One-time setup helper. It validates the token and spreadsheet, adds only K:R
  * headers/check boxes, then creates the two-hour trigger.
  */
@@ -55,6 +129,7 @@ function setupProject() {
   ensureSheetStructure_(sheet);
   validateSlackIdentity_();
   setupTrigger();
+  setupEventTrigger();
   logRun_('INFO', '初期設定が完了しました。');
 }
 
@@ -131,18 +206,35 @@ function setupTrigger() {
   logRun_('INFO', 'scanSlackTasks の2時間トリガーを作成しました。');
 }
 
+function setupEventTrigger() {
+  getSlackEventBridgeConfig_();
+  var handler = 'processSlackEventQueue';
+  var exists = ScriptApp.getProjectTriggers().some(function(trigger) {
+    return trigger.getHandlerFunction() === handler;
+  });
+  if (exists) {
+    logRun_('INFO', 'processSlackEventQueue のトリガーは既に存在します。追加しません。');
+    return;
+  }
+  ScriptApp.newTrigger(handler)
+    .timeBased()
+    .everyMinutes(CONFIG.EVENT_TRIGGER_EVERY_MINUTES)
+    .create();
+  logRun_('INFO', 'processSlackEventQueue の1分トリガーを作成しました。');
+}
+
 function removeTriggers() {
-  var handler = 'scanSlackTasks';
+  var handlers = ['scanSlackTasks', 'processSlackEventQueue'];
   var removed = 0;
 
   ScriptApp.getProjectTriggers().forEach(function(trigger) {
-    if (trigger.getHandlerFunction() === handler) {
+    if (handlers.indexOf(trigger.getHandlerFunction()) !== -1) {
       ScriptApp.deleteTrigger(trigger);
       removed += 1;
     }
   });
 
-  logRun_('INFO', 'scanSlackTasks のトリガーを削除しました。', { removed: removed });
+  logRun_('INFO', 'Slack scanner のトリガーを削除しました。', { removed: removed });
 }
 
 function processSlackCandidate_(sheet, existing, hit, stats) {
@@ -160,7 +252,7 @@ function processSlackCandidate_(sheet, existing, hit, stats) {
     return;
   }
 
-  var thread = fetchThread_(hit.channelId, hit.threadTs);
+  var thread = hit.prefetchedThread || fetchThread_(hit.channelId, hit.threadTs);
   hit = prepareParticipationHit_(hit, thread);
   var channel = getSlackChannel_(hit.channelId, hit.channelName);
   var requester = getSlackUser_(hit.requesterId, hit.requesterName);
@@ -194,7 +286,8 @@ function collectTrackedSlackHits_(sheet, stats) {
       String(row[CONFIG.COL.CONFIRMED - 1]).toUpperCase() === 'TRUE';
     var status = String(row[CONFIG.COL.STATUS - 1] || '').trim();
     var channelId = String(row[CONFIG.COL.CHANNEL_ID - 1] || '').trim();
-    if (['待整理', '关联'].indexOf(stage) === -1 || confirmed ||
+    if (['待整理', '关联', '任务'].indexOf(stage) === -1 ||
+        (stage === '待整理' && confirmed) ||
         status === '已完成' || status === '完了' || !channelId ||
         isExcludedSlackChannel_(channelId)) return;
     var permalink = String(row[CONFIG.COL.SLACK_URL - 1] || '').trim();
@@ -247,6 +340,12 @@ function shouldReplaceCandidate_(current, incoming) {
 function createRunStats_() {
   return {
     startedOn: formatTokyoDate_(new Date()),
+    fullScanMessages: 0,
+    fullScanThreads: 0,
+    scannedChannels: 0,
+    channelMessagesScanned: 0,
+    channelMentionHits: 0,
+    channelScanErrors: 0,
     directMentions: 0,
     csMentions: 0,
     participatedThreads: 0,
@@ -255,6 +354,20 @@ function createRunStats_() {
     updated: 0,
     ignored: 0,
     errors: 0
+  };
+}
+
+function createEventRunStats_() {
+  return {
+    received: 0,
+    relevant: 0,
+    processed: 0,
+    ignored: 0,
+    acknowledged: 0,
+    created: 0,
+    updated: 0,
+    errors: 0,
+    ignoredReasons: {}
   };
 }
 

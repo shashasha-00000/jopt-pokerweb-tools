@@ -198,6 +198,262 @@ if (vm.runInContext('CONFIG.SHEET_HEADERS[26]', context) !== '关联任务 ID' |
 if (!context.isExcludedSlackChannel_('C093Z293J5N') || context.isExcludedSlackChannel_('C0924RS04CU')) {
   throw new Error('Slack exclusion list is incorrect');
 }
+if (!context.isFullScanSlackChannel_('C0924RS04CU') ||
+    vm.runInContext('CONFIG.CS_FULL_SCAN_LOOKBACK_HOURS', context) !== 6) {
+  throw new Error('CS full-scan configuration is incorrect');
+}
+
+const regressionParentTs = '1787544000.000001';
+const regressionHit = context.makeHistoryHit_('C0924RS04CU', {
+  ts: regressionParentTs,
+  user: 'URYO',
+  text: 'PW　チケットトナメ　DBI表記について',
+  reply_count: 1,
+  latest_reply: '1787545807.258779'
+});
+const regressionThread = [
+  { ts: regressionParentTs, user: 'URYO', text: 'PW　チケットトナメ　DBI表記について' },
+  {
+    ts: '1787545807.258779', thread_ts: regressionParentTs, user: 'URYO',
+    text: '<!subteam^S092SRF3JG0>'
+  }
+];
+const regressionCandidates = context.buildUniqueCandidates_([regressionHit]);
+const regressionKey = `C0924RS04CU|${regressionParentTs}`;
+if (!regressionCandidates[regressionKey] ||
+    regressionCandidates[regressionKey].messageTs !== regressionParentTs ||
+    regressionThread[1].text.indexOf('<!subteam^S092SRF3JG0>') === -1) {
+  throw new Error('CS full-scan regression thread was not deduplicated by parent thread_ts');
+}
+const normalizedRegression = context.normalizeSlackMessage_(
+  regressionHit,
+  regressionThread,
+  { id: 'C0924RS04CU', name: 'cs_カスタマーチーム' },
+  { id: 'URYO', name: 'Ryo YAMAGUCHI' },
+  'https://example.slack.com/thread'
+);
+if (normalizedRegression.uniqueKey !== regressionKey ||
+    normalizedRegression.thread.length !== 2) {
+  throw new Error('CS parent and replies were not normalized into one thread-level item');
+}
+
+const otherChannelCsHit = context.makeRawMentionHit_('COTHER', 'other', {
+  ts: '1787545000.000001', user: 'UOTHER', text: '<!subteam^S092SRF3JG0> 確認お願いします'
+}, null);
+const otherChannelDirectHit = context.makeRawMentionHit_('COTHER', 'other', {
+  ts: '1787545001.000001', user: 'UOTHER', text: '<@U0ANUSDNVMK> 確認お願いします'
+}, null);
+const otherChannelPlainHit = context.makeRawMentionHit_('COTHER', 'other', {
+  ts: '1787545002.000001', user: 'UOTHER', text: '通常メッセージ'
+}, null);
+if (!otherChannelCsHit || otherChannelCsHit.slackType !== '@cs' ||
+    !otherChannelDirectHit || otherChannelDirectHit.slackType !== '个人提及' ||
+    otherChannelPlainHit !== null) {
+  throw new Error('raw mention filtering for ordinary channels failed');
+}
+
+context.fetchThread_ = () => regressionThread;
+const replyMentionHits = context.convertRecentChannelMessagesToMentionHits_(
+  'COTHER',
+  'other',
+  [{
+    ts: regressionParentTs,
+    user: 'UOTHER',
+    text: '通常の親メッセージ',
+    reply_count: 1,
+    latest_reply: '1787545807.258779'
+  }],
+  Number(regressionParentTs) - 1
+);
+if (replyMentionHits.length !== 1 || replyMentionHits[0].slackType !== '@cs' ||
+    replyMentionHits[0].threadTs !== regressionParentTs || !replyMentionHits[0].prefetchedThread) {
+  throw new Error('raw @cs mention in a recent thread reply was not collected');
+}
+
+const taskSlackRow = new Array(30).fill('');
+taskSlackRow[0] = '进行中';
+taskSlackRow[1] = '用户手动修改后的标题';
+taskSlackRow[10] = true;
+taskSlackRow[12] = 'https://example.slack.com/archives/C1/p1787544000000001';
+taskSlackRow[13] = regressionParentTs;
+taskSlackRow[14] = regressionParentTs;
+taskSlackRow[15] = 'C0924RS04CU';
+taskSlackRow[22] = '任务';
+taskSlackRow[27] = regressionParentTs;
+const loadedTaskRow = context.taskFromValues_(taskSlackRow, 2);
+if (loadedTaskRow.ignored || loadedTaskRow.stage !== '任务') {
+  throw new Error('converted Slack task row must remain trackable even when confirmed');
+}
+const trackedStats = {};
+const trackedSheet = {
+  getLastRow: () => 2,
+  getRange: () => ({ getValues: () => [taskSlackRow] })
+};
+const trackedHits = context.collectTrackedSlackHits_(trackedSheet, trackedStats);
+if (trackedHits.length !== 1 || trackedHits[0].threadTs !== regressionParentTs) {
+  throw new Error('stage=任务 Slack row was not included in continued tracking');
+}
+
+const taskUpdateColumns = [];
+const taskUpdateRange = {
+  setValue: () => taskUpdateRange,
+  setNumberFormat: () => taskUpdateRange,
+  getValue: () => '任务',
+  getDisplayValue: () => regressionParentTs
+};
+const taskUpdateSheet = {
+  getRange: (rowNumber, column) => {
+    taskUpdateColumns.push(column);
+    return taskUpdateRange;
+  }
+};
+context.upsertTask_(taskUpdateSheet, { rowNumber: 2, stage: '任务' }, {
+  thread: [
+    { ts: regressionParentTs, user: 'URYO', text: 'テーマ' },
+    { ts: '1787545807.258779', user: 'URYO', text: '更新' }
+  ]
+}, {});
+if (taskUpdateColumns.includes(2) || taskUpdateColumns.includes(3) ||
+    taskUpdateColumns.includes(4) || taskUpdateColumns.includes(6)) {
+  throw new Error('continued tracking overwrote a user-owned task field');
+}
+
+let historyCalls = [];
+let listCalls = [];
+context.slackApi_ = (method, params) => {
+  listCalls.push({ method, params });
+  if (!params.cursor) {
+    return {
+      channels: [{ id: 'C1', name: 'one' }],
+      response_metadata: { next_cursor: 'channels-next' }
+    };
+  }
+  return {
+    channels: [{ id: 'C2', name: 'two' }],
+    response_metadata: { next_cursor: '' }
+  };
+};
+const listedChannels = context.listAccessibleSlackChannels_();
+if (listedChannels.length !== 2 || listCalls.length !== 2 ||
+    listCalls[1].params.cursor !== 'channels-next' ||
+    listCalls[0].params.types !== 'public_channel,private_channel') {
+  throw new Error('conversations.list cursor pagination failed');
+}
+
+context.slackApi_ = (method, params) => {
+  historyCalls.push({ method, params });
+  if (!params.cursor) {
+    return {
+      messages: [{ ts: regressionParentTs, user: 'URYO', text: 'PW　チケットトナメ　DBI表記について' }],
+      response_metadata: { next_cursor: 'next-page' }
+    };
+  }
+  return {
+    messages: [{
+      ts: '1787545000.000001', user: 'UOTHER', text: '別の親メッセージ'
+    }],
+    response_metadata: { next_cursor: '' }
+  };
+};
+const pagedHistory = context.fetchChannelHistoryHits_('C0924RS04CU', Number(regressionParentTs) - 1);
+if (historyCalls.length !== 2 || historyCalls[1].params.cursor !== 'next-page' ||
+    pagedHistory.length !== 2) {
+  throw new Error('conversations.history cursor pagination failed');
+}
+
+const eventThreadTs = '1500000000.000001';
+const eventReplyTs = '1787545807.258779';
+const eventThread = [
+  { ts: eventThreadTs, user: 'UOTHER', text: '数年前の親メッセージ' },
+  { ts: '1500000001.000001', thread_ts: eventThreadTs, user: 'U0ANUSDNVMK', text: '以前の自分の返信' },
+  { ts: eventReplyTs, thread_ts: eventThreadTs, user: 'UOTHER', text: '今日の新しい返信' }
+];
+context.fetchThread_ = () => eventThread;
+const eventExisting = { byKey: {}, byUrl: {} };
+const eventCsHit = context.makeSlackEventHit_({
+  eventId: 'Ev-cs', channelId: 'COTHER', messageTs: eventReplyTs,
+  threadTs: eventThreadTs, userId: 'UOTHER', text: '<!subteam^S092SRF3JG0> 確認お願いします'
+}, eventExisting, {});
+if (!eventCsHit || eventCsHit.slackType !== '@cs' || eventCsHit.threadTs !== eventThreadTs) {
+  throw new Error('Slack event did not discover @cs in a newly revived old thread');
+}
+
+const participatedEventHit = context.makeSlackEventHit_({
+  eventId: 'Ev-participated', channelId: 'COTHER', messageTs: eventReplyTs,
+  threadTs: eventThreadTs, userId: 'UOTHER', text: '今日の新しい返信'
+}, eventExisting, {});
+if (!participatedEventHit || participatedEventHit.slackType !== '我参与的主题' ||
+    !participatedEventHit.prefetchedThread || participatedEventHit.threadTs !== eventThreadTs) {
+  throw new Error('Slack event did not revive a previously participated old thread');
+}
+
+const historicalCsThread = [
+  {
+    ts: eventThreadTs,
+    user: 'UOTHER',
+    text: '<!subteam^S092SRF3JG0> 数年前の確認依頼'
+  },
+  {
+    ts: eventReplyTs,
+    thread_ts: eventThreadTs,
+    user: 'UOTHER2',
+    text: '今日の新しい返信（mentionなし）'
+  }
+];
+context.fetchThread_ = () => historicalCsThread;
+const historicalCsStats = context.createEventRunStats_();
+const historicalCsEventHit = context.makeSlackEventHit_({
+  eventId: 'Ev-historical-cs', channelId: 'COTHER', messageTs: eventReplyTs,
+  threadTs: eventThreadTs, userId: 'UOTHER2', text: '今日の新しい返信（mentionなし）'
+}, eventExisting, {}, historicalCsStats);
+if (!historicalCsEventHit || historicalCsEventHit.slackType !== '@cs' ||
+    historicalCsEventHit.threadTs !== eventThreadTs ||
+    historicalCsEventHit.prefetchedThread !== historicalCsThread) {
+  throw new Error('plain reply did not revive an old thread containing historical @cs');
+}
+
+const historicalDirectThread = [
+  {
+    ts: eventThreadTs,
+    user: 'UOTHER',
+    text: '<@U0ANUSDNVMK> 数年前の確認依頼'
+  },
+  {
+    ts: eventReplyTs,
+    thread_ts: eventThreadTs,
+    user: 'UOTHER2',
+    text: '今日の新しい返信（mentionなし）'
+  }
+];
+context.fetchThread_ = () => historicalDirectThread;
+const historicalDirectEventHit = context.makeSlackEventHit_({
+  eventId: 'Ev-historical-direct', channelId: 'COTHER', messageTs: eventReplyTs,
+  threadTs: eventThreadTs, userId: 'UOTHER2', text: '今日の新しい返信（mentionなし）'
+}, eventExisting, {});
+if (!historicalDirectEventHit || historicalDirectEventHit.slackType !== '个人提及') {
+  throw new Error('plain reply did not revive an old thread containing historical direct mention');
+}
+
+context.fetchThread_ = () => [
+  { ts: eventThreadTs, user: 'UOTHER', text: '関係のない親メッセージ' },
+  { ts: eventReplyTs, thread_ts: eventThreadTs, user: 'UOTHER2', text: '関係のない返信' }
+];
+const unrelatedStats = context.createEventRunStats_();
+const unrelatedEventHit = context.makeSlackEventHit_({
+  eventId: 'Ev-unrelated', channelId: 'COTHER', messageTs: eventReplyTs,
+  threadTs: eventThreadTs, userId: 'UOTHER2', text: '関係のない返信'
+}, eventExisting, {}, unrelatedStats);
+if (unrelatedEventHit !== null || unrelatedStats.ignoredReasons.unrelated_thread !== 1) {
+  throw new Error('unrelated Slack event should not enter Task Radar');
+}
+
+const fullScanEventHit = context.makeSlackEventHit_({
+  eventId: 'Ev-full-scan', channelId: 'C0924RS04CU', messageTs: eventReplyTs,
+  threadTs: eventThreadTs, userId: 'UOTHER', text: 'CS チャンネルの返信'
+}, eventExisting, {});
+if (!fullScanEventHit || fullScanEventHit.slackType !== '客服频道全量') {
+  throw new Error('CS full-scan channel event was not retained');
+}
 
 const manifest = JSON.parse(fs.readFileSync(path.join(project, 'appsscript.json'), 'utf8'));
 if (manifest.timeZone !== 'Asia/Tokyo') throw new Error('manifest timezone mismatch');
@@ -209,6 +465,10 @@ if (typeof context.refreshSlackInboxTitles !== 'function') {
 }
 if (typeof context.collectTrackedSlackHits_ !== 'function') {
   throw new Error('tracked Slack thread refresh helper is missing');
+}
+if (typeof context.processSlackEventQueue !== 'function' ||
+    vm.runInContext('CONFIG.EVENT_TRIGGER_EVERY_MINUTES', context) !== 1) {
+  throw new Error('Slack event queue processor is missing');
 }
 
 console.log('task radar validation passed');

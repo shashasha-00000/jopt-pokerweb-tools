@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW Prize Coin Batch
 // @namespace    https://japanopt.pokerweb.com.br/
-// @version      0.3.9
+// @version      0.4.0
 // @description  TSVを唯一の支払基準として、複数大会の未払いPrizeを照合しPW Coinを一件ずつ付与します。
 // @match        https://japanopt.pokerweb.com.br/*
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-coin-batch.user.js
@@ -14,7 +14,7 @@
   'use strict';
 
   const APP = {
-    version: '0.3.9',
+    version: '0.4.0',
     panelId: 'pw-prize-coin-batch-panel',
     inputKey: 'PW_PRIZE_COIN_BATCH_INPUT_V1',
     scopeKey: 'PW_PRIZE_COIN_BATCH_SCOPE_V1',
@@ -38,7 +38,8 @@
     skipped: [],
     parseErrors: [],
     urlEntries: [],
-    preflightComplete: false
+    preflightComplete: false,
+    manualCancel: null
   };
 
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -328,48 +329,71 @@
     return scoped.filter(entry => strictTournamentName(entry.cName) === wantedCName);
   }
 
-  function promptManualUrlMatch(entries, cName, scope) {
-    let pastedName = cName;
-    while (true) {
-      const answer = window.prompt([
-        'C列の大会名ではTournament URLを特定できませんでした。',
-        '',
-        `C列: ${cName}`,
-        `Event Scope: ${norm(scope) || '(未指定)'}`,
-        '',
-        'PokerWebのOPEN大会一覧から、対象大会名をコピーして貼り付けてください。',
-        '【Event名】を含む完全名でも、Event名を除いた大会名でも指定できます。',
-        'キャンセルすると、この大会はERRORのまま停止します。'
-      ].join('\n'), pastedName);
-      if (answer === null) {
-        return { entry: null, error: 'Tournament URL manual selection cancelled' };
-      }
-      pastedName = strictTournamentName(answer);
-      if (!pastedName) {
-        window.alert('大会名が空です。OPEN大会一覧の大会名をコピーして貼り付けてください。');
-        continue;
-      }
-      const matches = findManualUrlMatches(entries, pastedName, scope);
-      if (matches.length === 1) {
-        return {
-          entry: { ...matches[0], source: `MANUAL ${matches[0].source}` },
-          error: ''
-        };
-      }
-      if (matches.length > 1) {
-        window.alert([
-          '貼り付けた大会名に複数のTournament URLが一致しました。',
-          `Tournament ID: ${matches.map(item => item.tournamentId).join(', ')}`,
-          '【Event名】を含む完全な大会名を貼り付けてください。'
-        ].join('\n'));
-        continue;
-      }
-      window.alert([
-        '貼り付けた大会名は、今回スキャンしたOPEN大会一覧に見つかりませんでした。',
-        `入力: ${pastedName}`,
-        'OPEN大会一覧から表示名をそのままコピーして、もう一度貼り付けてください。'
-      ].join('\n'));
+  function requestManualUrlMatch(entries, cName, scope) {
+    const box = document.querySelector('#pwpcb-manual');
+    const context = document.querySelector('#pwpcb-manual-context');
+    const input = document.querySelector('#pwpcb-manual-input');
+    const error = document.querySelector('#pwpcb-manual-error');
+    const confirmButton = document.querySelector('#pwpcb-manual-confirm');
+    const cancelButton = document.querySelector('#pwpcb-manual-cancel');
+    const panel = document.getElementById(APP.panelId);
+    const minButton = document.querySelector('#pwpcb-min');
+    if (!box || !context || !input || !error || !confirmButton || !cancelButton) {
+      return Promise.resolve({ entry: null, error: 'Manual Tournament selection UI not found' });
     }
+
+    panel?.classList.remove('min');
+    if (minButton) minButton.textContent = '−';
+    context.textContent = `C列: ${cName} / Event Scope: ${norm(scope) || '(未指定)'}`;
+    input.value = cName;
+    error.textContent = '';
+    box.hidden = false;
+    input.focus();
+    input.select();
+
+    return new Promise(resolve => {
+      let settled = false;
+      const finish = result => {
+        if (settled) return;
+        settled = true;
+        box.hidden = true;
+        confirmButton.onclick = null;
+        cancelButton.onclick = null;
+        state.manualCancel = null;
+        resolve(result);
+      };
+
+      confirmButton.onclick = () => {
+        const pastedName = strictTournamentName(input.value);
+        error.textContent = '';
+        if (!pastedName) {
+          error.textContent = '大会名が空です。OPEN大会一覧の表示名を貼り付けてください。';
+          input.focus();
+          return;
+        }
+        const matches = findManualUrlMatches(entries, pastedName, scope);
+        if (matches.length === 1) {
+          finish({
+            entry: { ...matches[0], source: `MANUAL ${matches[0].source}` },
+            error: ''
+          });
+          return;
+        }
+        if (matches.length > 1) {
+          error.textContent = `複数一致しました（Tournament ID: ${matches.map(item => item.tournamentId).join(', ')}）。【Event名】を含む完全名を貼り付けてください。`;
+          return;
+        }
+        error.textContent = `OPENスキャン結果に見つかりません: ${pastedName}`;
+      };
+      cancelButton.onclick = () => finish({
+        entry: null,
+        error: 'Tournament URL manual selection cancelled'
+      });
+      state.manualCancel = () => finish({
+        entry: null,
+        error: 'Tournament URL manual selection cancelled by STOP'
+      });
+    });
   }
 
   function isVisible(win, element) {
@@ -777,9 +801,14 @@
       if (matches.length === 0) {
         if (!manualResolutionByName.has(task.tournamentName)) {
           setStatus(`Manual Tournament selection: ${task.tournamentName}`);
+          for (const pending of tasks.filter(item => item.tournamentName === task.tournamentName)) {
+            pending.status = 'MANUAL REQUIRED';
+            pending.error = '';
+          }
+          render();
           manualResolutionByName.set(
             task.tournamentName,
-            promptManualUrlMatch(entries, task.tournamentName, scope)
+            await requestManualUrlMatch(entries, task.tournamentName, scope)
           );
         }
         const manual = manualResolutionByName.get(task.tournamentName);
@@ -1221,6 +1250,7 @@
 
   function stopRun() {
     state.stopRequested = true;
+    if (state.manualCancel) state.manualCancel();
     setStatus('STOP requested. The current in-flight request cannot be cancelled; no next task will start.', true);
     updateButtons();
   }
@@ -1361,6 +1391,15 @@
       #${APP.panelId} #pwpcb-check{background:#0369a1}
       #${APP.panelId} #pwpcb-run{background:#b91c1c}
       #${APP.panelId} #pwpcb-stop{background:#d97706}
+      #${APP.panelId} #pwpcb-manual[hidden]{display:none}
+      #${APP.panelId} #pwpcb-manual{margin:8px 0;padding:10px;border:2px solid #f59e0b;border-radius:6px;background:#1f2937}
+      #${APP.panelId} #pwpcb-manual .manual-title{color:#fbbf24;font-weight:700}
+      #${APP.panelId} #pwpcb-manual-context{margin:5px 0;color:#e2e8f0}
+      #${APP.panelId} #pwpcb-manual-error{min-height:18px;margin-top:5px;color:#fda4af;font-weight:700}
+      #${APP.panelId} .manual-actions{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:7px;margin-top:7px}
+      #${APP.panelId} #pwpcb-manual-open{background:#0369a1}
+      #${APP.panelId} #pwpcb-manual-confirm{background:#15803d}
+      #${APP.panelId} #pwpcb-manual-cancel{background:#64748b}
       #${APP.panelId} .table-wrap{max-height:350px;overflow:auto;border:1px solid #334155;border-radius:5px}
       #${APP.panelId} table{width:100%;border-collapse:collapse;background:#111827;font-size:11px}
       #${APP.panelId} th{position:sticky;top:0;background:#1e293b;color:#e2e8f0;text-align:left;z-index:1}
@@ -1395,6 +1434,19 @@
           <button id="pwpcb-stop" type="button" disabled>STOP</button>
           <button id="pwpcb-copy" type="button">結果TSV COPY</button>
         </div>
+        <div id="pwpcb-manual" hidden>
+          <div class="manual-title">手動でTournamentを指定してください（CHECK一時停止中）</div>
+          <div id="pwpcb-manual-context"></div>
+          <label for="pwpcb-manual-input">PokerWebの大会名をコピーして貼り付け</label>
+          <input id="pwpcb-manual-input" autocomplete="off" spellcheck="false">
+          <div id="pwpcb-manual-error"></div>
+          <div class="manual-actions">
+            <button id="pwpcb-manual-open" type="button">OPEN大会一覧を別タブで開く</button>
+            <button id="pwpcb-manual-confirm" type="button">この大会で確認</button>
+            <button id="pwpcb-manual-cancel" type="button">キャンセル</button>
+          </div>
+          <div class="note">元のタブを移動・更新せず、別タブで大会名をコピーしてください。確認後、GameID・金額・ページ情報を再チェックします。</div>
+        </div>
         <div id="pwpcb-summary">TASK 0 / READY 0 / DONE 0 / ERROR 0 / SKIP 0</div>
         <div class="table-wrap">
           <table>
@@ -1413,6 +1465,14 @@
     document.querySelector('#pwpcb-run').addEventListener('click', runReady);
     document.querySelector('#pwpcb-stop').addEventListener('click', stopRun);
     document.querySelector('#pwpcb-copy').addEventListener('click', copyResults);
+    document.querySelector('#pwpcb-manual-open').addEventListener('click', () => {
+      window.open('/cb/torneio/abertos', '_blank', 'noopener');
+    });
+    document.querySelector('#pwpcb-manual-input').addEventListener('keydown', event => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      document.querySelector('#pwpcb-manual-confirm')?.click();
+    });
     document.querySelector('#pwpcb-min').addEventListener('click', event => {
       panel.classList.toggle('min');
       event.currentTarget.textContent = panel.classList.contains('min') ? '+' : '−';

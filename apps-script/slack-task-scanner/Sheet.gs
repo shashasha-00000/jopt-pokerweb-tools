@@ -147,6 +147,7 @@ function taskFromValues_(row, rowNumber) {
   var confirmed = row[CONFIG.COL.CONFIRMED - 1] === true ||
     String(row[CONFIG.COL.CONFIRMED - 1]).toUpperCase() === 'TRUE';
   var status = String(row[CONFIG.COL.STATUS - 1] || '').trim();
+  var stage = String(row[CONFIG.COL.PROCESSING_STAGE - 1] || '').trim();
 
   return {
     rowNumber: rowNumber,
@@ -154,7 +155,9 @@ function taskFromValues_(row, rowNumber) {
       ? buildSlackKey_(channelId, threadTs || messageTs)
       : '',
     url: String(row[CONFIG.COL.SLACK_URL - 1] || '').trim(),
-    ignored: confirmed || status === '已完成' || status === '完了'
+    stage: stage,
+    ignored: stage === '忽略' || (!stage && confirmed) ||
+      status === '已完成' || status === '完了'
   };
 }
 
@@ -210,6 +213,11 @@ function upsertTask_(sheet, existingTask, item, task) {
   }
 
   var rowNumber = existingTask.rowNumber;
+  if (existingTask.stage === '任务') {
+    sheet.getRange(rowNumber, CONFIG.COL.LAST_CHECKED).setValue(today);
+    updateSlackTrackingState_(sheet, rowNumber, item);
+    return 'updated';
+  }
   var updates = [
     [CONFIG.COL.STATUS, task.sheetStatus],
     [CONFIG.COL.TASK, task.title],
@@ -233,9 +241,11 @@ function updateSlackTrackingState_(sheet, rowNumber, item) {
   var stage = String(sheet.getRange(rowNumber, CONFIG.COL.PROCESSING_STAGE).getValue() || '').trim();
   var previousTs = String(sheet.getRange(rowNumber, CONFIG.COL.SLACK_LATEST_TS).getDisplayValue() || '').trim();
   var latestMessage = item.thread.length ? item.thread[item.thread.length - 1] : null;
-  if (stage === '关联' && previousTs && Number(latestTs) > Number(previousTs) &&
-      latestMessage && latestMessage.user !== CONFIG.MY_SLACK_USER_ID) {
-    sheet.getRange(rowNumber, CONFIG.COL.SLACK_UPDATE_PENDING).setValue(true);
+  var hasNewMessage = previousTs && Number(latestTs) > Number(previousTs);
+  if (['关联', '任务'].indexOf(stage) !== -1 && hasNewMessage) {
+    if (latestMessage && latestMessage.user !== CONFIG.MY_SLACK_USER_ID) {
+      sheet.getRange(rowNumber, CONFIG.COL.SLACK_UPDATE_PENDING).setValue(true);
+    }
     sheet.getRange(rowNumber, CONFIG.COL.SLACK_LATEST_UPDATE)
       .setValue(latestSlackThreadSummary_(item.thread));
   }

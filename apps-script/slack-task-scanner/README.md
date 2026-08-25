@@ -1,6 +1,6 @@
 # Slack タスク自動整理 + 中文「任务雷达」（Google Apps Script）
 
-Slack で自分または Customer Team（`@cs`）が mention されたメッセージと、自分が発言したthreadを2時間ごとに検索し、Google Spreadsheetへ重複なく追加・更新します。同じデータを中国語のWeb App「任务雷达」で確認・操作できます。OpenAI APIは使用しません。
+Slack Events API と定期scanを併用し、`#cs_カスタマーチーム`、自分または Customer Team（`@cs`）へのmention、自分が参加したthreadをGoogle Spreadsheetへ重複なく追加・更新します。Events APIにより、parentが何年前でも今日新しいreplyが付けば検出できます。同じデータを中国語のWeb App「任务雷达」で確認・操作できます。OpenAI APIは使用しません。
 
 ## 重要な仕様
 
@@ -11,7 +11,7 @@ Slack で自分または Customer Team（`@cs`）が mention されたメッセ�
 - S:V はWeb App用の `任务 ID` / `提醒时间` / `置顶` / `最后界面操作` です。
 - WはSlack候補の処理段階、X:Zは `截止日期` / `Calendar Event ID` / `同步日历` です。
 - AA:ADは `关联任务 ID` / `Slack 最新消息 TS` / `Slack 新进展` / `Slack 最新进展摘要` です。
-- K列は checkbox です。`TRUE` の行は、その後一切更新しません。
+- K列は checkbox です。`TRUE` の `待整理` 行と、W列が `忽略` の行はその後更新しません。`任务`へ変換済みのSlack行は、K列が `TRUE` でもSlack追跡用のR/AB:ADだけを更新します。
 - A列が `已完成` の行も、その後一切更新しません。
 - 一意キーは `Slack Channel ID + Slack Thread TS`、threadがない場合は `Slack Channel ID + Slack Message TS` です。
 - 既存行では A / F / H / I / J / R とSlack追跡用のAB:ADだけを更新します。ユーザーが編集した B / C / D などは上書きしません。
@@ -22,13 +22,16 @@ Slack で自分または Customer Team（`@cs`）が mention されたメッセ�
 
 このツールは **user token（`xoxp-...`）が必須** です。Script Properties のキーは `SLACK_USER_TOKEN` です。
 
-Slack の `search.messages` は `search:read` を持つ user token のみを受け付けます。bot token（`xoxb-...`）では全 Workspace の mention 検索を実行できないため、本ツールは `SLACK_BOT_TOKEN` を使用しません。
+Slack の `search.messages` は `search:read` を持つ user token のみを受け付けます。本ツールは自分宛と参加threadの補助検索に使用しますが、`@cs` の発見には使用しません。bot token（`xoxb-...`）は使用しません。
+
+Events APIも **Subscribe to events on behalf of users** を使用します。Bot User Eventsは使用せず、Appを各channelへ追加しません。また、Slackへの書き込みscopeは要求しません。
 
 また、検索結果は token のユーザーが Slack 上で閲覧できるメッセージに限られます。Slack の `search.messages` は現在 legacy method ですが、GASから定期的に既存Workspaceを検索する本MVPでは実際に利用可能な方法です。
 
 公式資料:
 
 - [search.messages](https://docs.slack.dev/reference/methods/search.messages/)
+- [conversations.history](https://docs.slack.dev/reference/methods/conversations.history/)
 - [conversations.replies](https://docs.slack.dev/reference/methods/conversations.replies/)
 - [chat.getPermalink](https://docs.slack.dev/reference/methods/chat.getPermalink/)
 - [Slack Web API rate limits](https://docs.slack.dev/apis/web-api/rate-limits/)
@@ -94,6 +97,13 @@ standalone GAS projectへ配置しても動作します。コードは `Spreadsh
 3. プロパティに `SLACK_USER_TOKEN` と入力します。
 4. 値に手順3で取得した `xoxp-...` tokenを貼り付けて保存します。
 
+Events API bridgeのdeploy後、次も追加します。
+
+- `SLACK_EVENT_BRIDGE_URL`: Cloudflare Workerのbase URL
+- `SLACK_EVENT_BRIDGE_SECRET`: Workerの `GAS_PULL_SECRET` と同じ値
+
+Slack signing secretはGASへ保存しません。Cloudflare Workerのsecretとしてだけ保存します。
+
 ## 7. 初回セットアップとGoogle権限
 
 1. 関数一覧から `setupProject` を選び、`実行` を押します。
@@ -109,8 +119,20 @@ standalone GAS projectへ配置しても動作します。コードは `Spreadsh
 4. U列へ置顶用checkbox validationを設定し、既存taskへS列の一意IDを割り当て
 5. `SLACK_USER_TOKEN` が Slack User ID `U0ANUSDNVMK` のtokenか `auth.test` で確認
 6. `scanSlackTasks` の2時間triggerを、重複しないよう1件だけ作成
+7. `processSlackEventQueue` の1分triggerを、重複しないよう1件だけ作成
 
-`setupTrigger()` だけを手動実行することもできます。既に同名handlerのtriggerがあれば新規作成しません。`removeTriggers()` は `scanSlackTasks` のtriggerだけを削除します。
+`setupTrigger()` / `setupEventTrigger()` を個別に手動実行することもできます。既に同名handlerのtriggerがあれば新規作成しません。`removeTriggers()` は両方のtriggerを削除します。
+
+## 7-A. Slack User Events を有効にする
+
+署名検証bridgeは `cloudflare/slack-task-events` にあります。Workerをdeployし、KV namespaceと `SLACK_SIGNING_SECRET` / `GAS_PULL_SECRET` を設定してからSlack Appを変更します。
+
+1. Slack Appの `Event Subscriptions` で `Enable Events` をON
+2. Request URLにWorkerの `/slack/events` URLを入力し、Verifiedを確認
+3. `Subscribe to events on behalf of users` に `message.channels` と `message.groups` を追加
+4. Save Changes
+
+現在のUser Token Scopesに `channels:history` / `groups:history` が既にあるため、追加scopeやBot Token Scopeは不要です。Slackからの書き込みは行いません。
 
 ## 8. 手動テストする
 
@@ -155,7 +177,7 @@ B / F / G はルールベースで原文から生成するため、句読点やS
 
 画面は中国語のみです。データ列A:Jの日本語見出しや既存task本文はそのまま保持し、表示ラベルだけを中国語へ変換します。
 
-Sheetは監査・重複防止用のバックエンドとして扱い、日常操作はHTMLだけで完結します。HTMLでは未完了taskだけを表示し、`＋ 新建任务` から手動taskを追加できます。Slack候補は直接taskにせず、まず `Slack 待整理` に表示します。threadの根messageに `【...】` の見出しがある場合はそれを候補タイトルとして使います。`转为任务` のほか、`关联现有任务` で既存の手動taskへthreadを紐づけられます。紐づけたthreadはtask完了まで継続確認し、新しい返信があればtask cardに通知します。`不是任务` はthreadを永久ignoreします。
+Sheetは監査・重複防止用のバックエンドとして扱い、日常操作はHTMLだけで完結します。HTMLでは未完了taskだけを表示し、`＋ 新建任务` から手動taskを追加できます。Slack候補は直接taskにせず、まず `Slack 待整理` に表示します。`#cs_カスタマーチーム`内はmentionの有無にかかわらず収集対象です。threadの根messageに `【...】` の見出しがある場合はそれを候補タイトルとして使います。`转为任务` のほか、`关联现有任务` で既存の手動taskへthreadを紐づけられます。関連行とSlackからtaskへ変換した行は、task完了までthreadを継続確認します。`不是任务` はthreadを永久ignoreします。
 
 task編集画面では日付だけの `截止日期（DL）` を設定できます。DLが3日以内または超過したtaskは `现在做` へ上がります。`同步到 Google Calendar` をONにするとdefault Calendarへ全天eventを作成し、Calendar側のdefault通知を使用します。完了または同期OFFで、このtoolが保存したevent IDのeventだけを削除します。`提醒时间` は従来どおり一時的なsnoozeで、DLとは別管理です。
 
@@ -172,13 +194,19 @@ Web Appの操作はtask IDを再確認してから対象行だけを更新しま
 
 ### 検索
 
+- Events API: 自分のUser Eventsとしてpublic channel / 自分が参加しているprivate channelの新message・replyを即時受信。replyでは `thread_ts` からthread全体をcursor paginationし、parentまたは過去replyのどこかに `@cs` / 自分宛mentionがあれば、最新reply自体にmentionがなくても処理。自分が参加済み、既にTask Radarで追跡中、またはCS full-scan channelの場合も処理
+- Cloudflare WorkerはSlack署名を検証してKVへ最大7日保存。GASは1分triggerで最大100件ずつ取得し、成功・対象外eventだけACKする。処理errorはACKせず次回retry
 - 自分宛: `auth.test` で取得した自分のSlack handle（`@handle`）を検索し、取得後に原文が `<@U0ANUSDNVMK>` を含むことを再確認
-- Customer Team: `@cs` を検索し、取得後に原文が `<!subteam^S092SRF3JG0...>` を含むことを再確認
+- `#cs_カスタマーチーム`（`C0924RS04CU`）: `conversations.history` で直近6時間をcursor paginationし、mentionなしのmessageも待整理へ取り込む。同じthreadはparentの `thread_ts` で帰一
+- その他のchannel: `conversations.list` でuser tokenから参照できるpublic/private channelを列挙し、各channelの直近6時間を `conversations.history` で取得。原文が `<@U0ANUSDNVMK>` または `<!subteam^S092SRF3JG0...>` を含むmessageだけを取り込む
+- 直近6時間のparentに新replyがある場合は `conversations.replies` も読み、reply内のraw mentionを検出。Events API経由ではparentが何年前でもthread全体の過去mentionを確認
 - 自分が参加したthread: `from:<@U0ANUSDNVMK> is:thread`。初回だけ30日分を取得し、以後は直近4時間を増分取得
-- `待整理` と `关联` の未完了threadはSheetのChannel ID + Thread TSから毎回再取得し、mentionがない新replyも検出
+- `待整理`、`关联`、`任务` の未完了Slack threadはSheetのChannel ID + Thread TSから毎回再取得し、mentionがない新replyも検出。`任务` 行はR/AB:ADのSlack追跡項目だけを更新し、タイトル・分類・優先度・次のアクションは上書きしない
 - `#office_勤怠連絡`（`C093Z293J5N`）は検索結果・追跡対象の両方から除外
 - Slack検索の日付境界は広めに取得し、最終的にはUnix `ts` で直近4時間だけに厳密filter
-- `search.messages` は最大100件ずつpage pagination
+- `conversations.list` は最大200channelずつcursor pagination
+- `search.messages` は自分宛/参加threadの補助取得を最大100件ずつpage pagination
+- `conversations.history` は最大100件ずつcursor pagination
 - `conversations.replies` は cursor pagination
 
 ### 状態
@@ -210,7 +238,7 @@ K `已确认 = TRUE` または A `已完成` なら、Rを含め何も更新し�
 2. 対象の `scanSlackTasks` 実行を選びます。
 3. `ログ` を開きます。
 
-開始・終了、direct mention件数、`@cs` 件数、新規、更新、無視、error件数をJSON形式で確認できます。単一メッセージの処理errorは記録後に次のメッセージへ進みます。検索自体、token、Spreadsheet設定などの全体errorは安全のため本実行を停止します。
+開始・終了、列挙/読取channel数、読取message数、direct mention件数、`@cs` 件数、新規、更新、無視、error件数をJSON形式で確認できます。単一channel/thread/messageの処理errorは記録後に次へ進みます。token、channel列挙、Spreadsheet設定などの全体errorは安全のため本実行を停止します。
 
 ## 12. Rate limit とエラー処理
 
@@ -254,13 +282,12 @@ Spreadsheetの `ファイル` → `設定` → `タイムゾーン` を東京へ
 
 次を順番に確認してください。
 
-1. メッセージが直近4時間以内か
+1. メッセージまたはそのparentが直近6時間以内か
 2. Slack原文が本当に対象ユーザーまたは `@cs` user groupへのmentionか
 3. tokenユーザーが対象channelを閲覧できるか
-4. Slack UIの検索filterが結果を除外していないか
-5. `CONFIG.CS_SEARCH_TERM` が現在のuser group handle（`@cs`）と一致するか
+4. `conversations.list` が対象channelを列挙し、channel別scan errorが記録されていないか
 
-Slackのlegacy検索は近接する複数hitをまとめる場合があります。本ツールの一意単位はthreadなので、同じthread内の重複は問題になりません。異なるthreadのmentionを取りこぼす運用問題が確認された場合は、次期版でSlack Events APIによる受信保存へ切り替えるのが推奨です。
+Events APIがOFFまたはbridge停止中は、parentが6時間より古く、過去に本ツールが一度も追跡していないthreadへ新規replyだけが付いた場合、定期scanだけでは未検出になる可能性があります。Events APIが正常なら `thread_ts` を含む新reply eventからold threadを取得します。
 
 `to:me` はSlack公式仕様上「自分宛のDM」だけを対象にするため、channel mention検索には使用していません。Slack検索がWorkspace固有の表示名設定により `@handle` を検索できない場合、`search.messages` だけで確実な全Workspace mention収集はできません。その場合も検索成功を装わず、Events API方式への切り替えを検討してください。
 
@@ -274,4 +301,5 @@ Slackのlegacy検索は近接する複数hitをまとめる場合があります
 - `Dashboard.gs`: 中文Web Appのデータ取得、安全な単一task更新
 - `Calendar.gs`: DLの全天Calendar event作成・更新・削除
 - `Index.html`: 中国語UI「任务雷达」
+- `../../cloudflare/slack-task-events`: Slack署名検証とevent queue bridge
 - `appsscript.json`: `Asia/Tokyo` とGoogle OAuth scopes

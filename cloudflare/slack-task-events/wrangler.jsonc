@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sha-slack-task-events",
+  "main": "src/index.mjs",
+  "compatibility_date": "2026-08-24",
+  "preview_urls": false,
+  "vars": {
+    "SLACK_TEAM_ID": "T089X4N982U",
+    "SLACK_APP_ID": "A0BSKB5SZB2"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "EVENT_QUEUE",
+      "id": "c864a636b26742e8810a7ad9c02873ec"
+    }
+  ]
+}

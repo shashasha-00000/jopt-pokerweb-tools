@@ -19,11 +19,8 @@ function searchSlackCandidates_(stats) {
     '个人提及'
   );
 
-  var cs = convertSearchMatches_(
-    searchSlackQuery_(CONFIG.CS_SEARCH_TERM + ' after:' + searchDate, oldestSeconds),
-    SLACK_MARKERS.CS,
-    '@cs'
-  );
+  var fullScan = collectFullScanChannelHits_(stats);
+  var channelMentions = collectAccessibleChannelMentionHits_(stats);
 
   var properties = PropertiesService.getScriptProperties();
   var bootstrapped = properties.getProperty(CONFIG.PARTICIPATION_BOOTSTRAP_PROPERTY) === 'TRUE';
@@ -46,16 +43,16 @@ function searchSlackCandidates_(stats) {
   }
 
   stats.directMentions = direct.length;
-  stats.csMentions = cs.length;
   stats.participatedThreads = participated.length;
-  logRun_('INFO', 'Slack mention 検索完了', {
+  logRun_('INFO', 'Slack candidate collection completed', {
     directMentions: direct.length,
-    csMentions: cs.length,
+    channelMentionHits: channelMentions.length,
+    csMentions: stats.csMentions,
     participatedThreads: participated.length,
     participationBootstrap: !bootstrapped
   });
 
-  return direct.concat(cs, participated);
+  return fullScan.concat(channelMentions, direct, participated);
 }
 
 function searchSlackMentions_(stats) {
@@ -100,6 +97,352 @@ function convertParticipationMatches_(matches) {
 
 function isExcludedSlackChannel_(channelId) {
   return CONFIG.EXCLUDED_CHANNEL_IDS.indexOf(String(channelId || '').trim()) !== -1;
+}
+
+function isFullScanSlackChannel_(channelId) {
+  return CONFIG.CS_FULL_SCAN_CHANNEL_IDS.indexOf(String(channelId || '').trim()) !== -1;
+}
+
+function collectFullScanChannelHits_(stats) {
+  var oldestSeconds = Date.now() / 1000 - CONFIG.CS_FULL_SCAN_LOOKBACK_HOURS * 60 * 60;
+  var hits = [];
+
+  CONFIG.CS_FULL_SCAN_CHANNEL_IDS.forEach(function(channelId) {
+    hits = hits.concat(fetchChannelHistoryHits_(channelId, oldestSeconds));
+  });
+
+  var threadKeys = {};
+  hits.forEach(function(hit) {
+    threadKeys[buildSlackKey_(hit.channelId, hit.threadTs || hit.messageTs)] = true;
+  });
+  stats.fullScanMessages = hits.length;
+  stats.fullScanThreads = Object.keys(threadKeys).length;
+  logRun_('INFO', 'Slack CS channel full scan completed', {
+    channelIds: CONFIG.CS_FULL_SCAN_CHANNEL_IDS,
+    lookbackHours: CONFIG.CS_FULL_SCAN_LOOKBACK_HOURS,
+    messages: hits.length,
+    threads: stats.fullScanThreads
+  });
+  return hits;
+}
+
+function collectAccessibleChannelMentionHits_(stats) {
+  var oldestSeconds = Date.now() / 1000 -
+    CONFIG.CHANNEL_MENTION_SCAN_LOOKBACK_HOURS * 60 * 60;
+  var channels = listAccessibleSlackChannels_();
+  var hits = [];
+
+  channels.forEach(function(channel) {
+    var channelId = String(channel.id || '');
+    if (!channelId || isExcludedSlackChannel_(channelId) ||
+        isFullScanSlackChannel_(channelId)) return;
+    try {
+      var messages = fetchChannelHistoryMessages_(channelId, oldestSeconds);
+      stats.scannedChannels += 1;
+      stats.channelMessagesScanned += messages.length;
+      hits = hits.concat(convertRecentChannelMessagesToMentionHits_(
+        channelId,
+        channel.name || '',
+        messages,
+        oldestSeconds
+      ));
+    } catch (error) {
+      stats.channelScanErrors += 1;
+      logRun_('WARN', 'Slack channel scan failed; continuing with other channels', {
+        channelId: channelId,
+        channelName: channel.name || '',
+        error: errorToString_(error)
+      });
+    }
+  });
+
+  stats.channelMentionHits = hits.length;
+  stats.csMentions = hits.filter(function(hit) {
+    return hit.slackType === '@cs';
+  }).length;
+  logRun_('INFO', 'Slack accessible channel mention scan completed', {
+    listedChannels: channels.length,
+    scannedChannels: stats.scannedChannels,
+    messages: stats.channelMessagesScanned,
+    mentionHits: hits.length,
+    csMentions: stats.csMentions,
+    errors: stats.channelScanErrors
+  });
+  return hits;
+}
+
+function listAccessibleSlackChannels_() {
+  var channels = [];
+  var cursor = '';
+  var page = 0;
+
+  do {
+    page += 1;
+    var params = {
+      types: 'public_channel,private_channel',
+      exclude_archived: true,
+      limit: CONFIG.CONVERSATION_LIST_PAGE_SIZE
+    };
+    if (cursor) params.cursor = cursor;
+    var response = slackApi_('conversations.list', params);
+    (response.channels || []).forEach(function(channel) {
+      channels.push(channel);
+    });
+    cursor = response.response_metadata && response.response_metadata.next_cursor
+      ? response.response_metadata.next_cursor
+      : '';
+  } while (cursor && page < CONFIG.MAX_CONVERSATION_LIST_PAGES);
+
+  if (cursor) {
+    logRun_('WARN', 'Slack conversation list reached the maximum page count', {
+      maxPages: CONFIG.MAX_CONVERSATION_LIST_PAGES
+    });
+  }
+  return channels;
+}
+
+function convertRecentChannelMessagesToMentionHits_(channelId, channelName, messages, oldestSeconds) {
+  var hits = [];
+
+  messages.forEach(function(message) {
+    var rootHit = makeRawMentionHit_(channelId, channelName, message, null);
+    if (rootHit) hits.push(rootHit);
+
+    if (!message.reply_count || Number(message.latest_reply || 0) < oldestSeconds) return;
+    var thread;
+    try {
+      thread = fetchThread_(channelId, String(message.ts));
+    } catch (error) {
+      logRun_('WARN', 'Slack thread scan failed; continuing with other messages', {
+        channelId: channelId,
+        threadTs: String(message.ts),
+        error: errorToString_(error)
+      });
+      return;
+    }
+    thread.forEach(function(reply) {
+      if (String(reply.ts) === String(message.ts) || Number(reply.ts) < oldestSeconds) return;
+      var replyHit = makeRawMentionHit_(channelId, channelName, reply, thread);
+      if (replyHit) hits.push(replyHit);
+    });
+  });
+  return hits;
+}
+
+function makeRawMentionHit_(channelId, channelName, message, prefetchedThread) {
+  if (!message || message.user === CONFIG.MY_SLACK_USER_ID) return null;
+  var text = getSlackMessageText_(message);
+  var slackType = text.indexOf(SLACK_MARKERS.DIRECT) !== -1
+    ? '个人提及'
+    : (text.indexOf(SLACK_MARKERS.CS) !== -1 ? '@cs' : '');
+  if (!slackType) return null;
+  var hit = makeHistoryHit_(channelId, message, slackType);
+  hit.channelName = channelName || '';
+  if (prefetchedThread) hit.prefetchedThread = prefetchedThread;
+  return hit;
+}
+
+function makeSlackEventHit_(event, existing, threadCache, stats) {
+  if (!event || !event.eventId || !event.channelId || !event.messageTs) {
+    return ignoreSlackEvent_(stats, 'invalid_event');
+  }
+  if (isExcludedSlackChannel_(event.channelId)) {
+    return ignoreSlackEvent_(stats, 'excluded_channel');
+  }
+
+  var message = {
+    ts: String(event.messageTs),
+    thread_ts: String(event.threadTs || event.messageTs),
+    user: String(event.userId || ''),
+    bot_id: String(event.botId || ''),
+    text: String(event.text || '')
+  };
+  var threadTs = String(message.thread_ts || message.ts);
+  var key = buildSlackKey_(event.channelId, threadTs);
+  var existingTask = existing.byKey[key] || null;
+  if (existingTask && existingTask.ignored) {
+    return ignoreSlackEvent_(stats, 'already_ignored');
+  }
+
+  if (isFullScanSlackChannel_(event.channelId)) {
+    return makeHistoryHit_(event.channelId, message, '客服频道全量');
+  }
+
+  if (message.user !== CONFIG.MY_SLACK_USER_ID) {
+    var mentionHit = makeRawMentionHit_(event.channelId, '', message, null);
+    if (mentionHit) return mentionHit;
+  }
+
+  if (existingTask) {
+    return makeHistoryHit_(event.channelId, message, '我参与的主题');
+  }
+
+  if (!message.user) return ignoreSlackEvent_(stats, 'missing_user');
+  if (message.user === CONFIG.MY_SLACK_USER_ID) {
+    return ignoreSlackEvent_(stats, 'own_message');
+  }
+  if (message.bot_id) return ignoreSlackEvent_(stats, 'bot_message');
+  var cachedThread = threadCache[key];
+  if (!cachedThread) {
+    cachedThread = fetchThread_(event.channelId, threadTs);
+    threadCache[key] = cachedThread;
+  }
+
+  var historicalMentionType = getThreadMentionType_(cachedThread);
+  if (historicalMentionType) {
+    var historicalMentionHit = makeHistoryHit_(
+      event.channelId,
+      message,
+      historicalMentionType
+    );
+    historicalMentionHit.prefetchedThread = cachedThread;
+    return historicalMentionHit;
+  }
+
+  var participated = cachedThread.some(function(item) {
+    return item.user === CONFIG.MY_SLACK_USER_ID;
+  });
+  if (!participated) return ignoreSlackEvent_(stats, 'unrelated_thread');
+
+  var hit = makeHistoryHit_(event.channelId, message, '我参与的主题');
+  hit.prefetchedThread = cachedThread;
+  return hit;
+}
+
+function getThreadMentionType_(thread) {
+  var hasCsMention = false;
+  var hasDirectMention = (thread || []).some(function(message) {
+    var text = getSlackMessageText_(message);
+    if (text.indexOf(SLACK_MARKERS.DIRECT) !== -1) return true;
+    if (text.indexOf(SLACK_MARKERS.CS) !== -1) hasCsMention = true;
+    return false;
+  });
+  if (hasDirectMention) return '个人提及';
+  return hasCsMention ? '@cs' : '';
+}
+
+function ignoreSlackEvent_(stats, reason) {
+  if (stats) {
+    if (!stats.ignoredReasons) stats.ignoredReasons = {};
+    stats.ignoredReasons[reason] = Number(stats.ignoredReasons[reason] || 0) + 1;
+  }
+  return null;
+}
+
+function fetchSlackEventQueue_() {
+  var config = getSlackEventBridgeConfig_();
+  var response = slackEventBridgeRequest_(
+    config.url + '/queue?limit=' + encodeURIComponent(CONFIG.EVENT_BATCH_SIZE),
+    'get',
+    config.secret,
+    null
+  );
+  return Array.isArray(response.events) ? response.events : [];
+}
+
+function acknowledgeSlackEvents_(eventIds) {
+  if (!eventIds || !eventIds.length) return;
+  var config = getSlackEventBridgeConfig_();
+  slackEventBridgeRequest_(config.url + '/ack', 'post', config.secret, {
+    eventIds: eventIds
+  });
+}
+
+function getSlackEventBridgeConfig_() {
+  var properties = PropertiesService.getScriptProperties();
+  var url = String(properties.getProperty(CONFIG.SLACK_EVENT_BRIDGE_URL_PROPERTY) || '')
+    .replace(/\/+$/, '');
+  var secret = String(properties.getProperty(CONFIG.SLACK_EVENT_BRIDGE_SECRET_PROPERTY) || '');
+  if (!/^https:\/\//.test(url) || !secret) {
+    throw new Error(
+      'Script Properties に ' + CONFIG.SLACK_EVENT_BRIDGE_URL_PROPERTY +
+      ' と ' + CONFIG.SLACK_EVENT_BRIDGE_SECRET_PROPERTY + ' を設定してください。'
+    );
+  }
+  return { url: url, secret: secret };
+}
+
+function slackEventBridgeRequest_(url, method, secret, payload) {
+  var options = {
+    method: method,
+    headers: { Authorization: 'Bearer ' + secret },
+    muteHttpExceptions: true
+  };
+  if (payload !== null) {
+    options.contentType = 'application/json';
+    options.payload = JSON.stringify(payload);
+  }
+  var response = UrlFetchApp.fetch(url, options);
+  var status = response.getResponseCode();
+  var body = response.getContentText();
+  var data;
+  try {
+    data = JSON.parse(body);
+  } catch (error) {
+    throw new Error('Slack event bridge が JSON 以外を返しました: HTTP ' + status);
+  }
+  if (status < 200 || status >= 300 || !data.ok) {
+    throw new Error(
+      'Slack event bridge error: HTTP ' + status + ' ' + (data.error || body)
+    );
+  }
+  return data;
+}
+
+function fetchChannelHistoryHits_(channelId, oldestSeconds) {
+  return fetchChannelHistoryMessages_(channelId, oldestSeconds).map(function(message) {
+    return makeHistoryHit_(channelId, message, '客服频道全量');
+  });
+}
+
+function fetchChannelHistoryMessages_(channelId, oldestSeconds) {
+  var messages = [];
+  var cursor = '';
+  var page = 0;
+
+  do {
+    page += 1;
+    var params = {
+      channel: channelId,
+      oldest: String(oldestSeconds),
+      inclusive: true,
+      limit: CONFIG.HISTORY_PAGE_SIZE
+    };
+    if (cursor) params.cursor = cursor;
+
+    var response = slackApi_('conversations.history', params);
+    (response.messages || []).forEach(function(message) {
+      if (!message.ts || Number(message.ts) < oldestSeconds) return;
+      messages.push(message);
+    });
+    cursor = response.response_metadata && response.response_metadata.next_cursor
+      ? response.response_metadata.next_cursor
+      : '';
+  } while (cursor && page < CONFIG.MAX_HISTORY_PAGES);
+
+  if (cursor) {
+    logRun_('WARN', 'Slack channel history reached the maximum page count', {
+      channelId: channelId,
+      maxPages: CONFIG.MAX_HISTORY_PAGES
+    });
+  }
+  return messages;
+}
+
+function makeHistoryHit_(channelId, message, slackType) {
+  var messageTs = String(message.ts || '');
+  var threadTs = String(message.thread_ts || messageTs);
+  return {
+    channelId: channelId,
+    channelName: '',
+    messageTs: messageTs,
+    threadTs: threadTs,
+    requesterId: message.user || message.bot_id || '',
+    requesterName: message.username || '',
+    text: getSlackMessageText_(message),
+    permalink: '',
+    slackType: slackType || '客服频道全量'
+  };
 }
 
 function prepareParticipationHit_(hit, thread) {
