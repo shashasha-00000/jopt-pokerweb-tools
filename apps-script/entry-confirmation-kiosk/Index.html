@@ -170,8 +170,8 @@
       if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
       return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, char => { const random = Math.random() * 16 | 0; const value = char === 'x' ? random : (random & 3 | 8); return value.toString(16); });
     }
-    function playSuccessSound() { playToneSequence([{ frequency: 660, start: 0, duration: .16, gain: .12 }, { frequency: 880, start: .18, duration: .28, gain: .14 }]); }
-    function playFailureSound() { playToneSequence([{ frequency: 330, start: 0, duration: .18, gain: .10 }, { frequency: 260, start: .20, duration: .26, gain: .10 }]); }
+    function playSuccessSound() { playToneSequence([{ frequency: 660, start: 0, duration: .18, gain: .32, type: 'triangle' }, { frequency: 880, start: .20, duration: .34, gain: .40, type: 'triangle' }]); }
+    function playFailureSound() { playToneSequence([{ frequency: 330, start: 0, duration: .20, gain: .26, type: 'triangle' }, { frequency: 260, start: .22, duration: .32, gain: .30, type: 'triangle' }]); }
     function playToneSequence(tones) {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       if (!AudioContextClass) return;
@@ -182,7 +182,7 @@
       tones.forEach(tone => {
         const oscillator = context.createOscillator();
         const gain = context.createGain();
-        oscillator.type = 'sine';
+        oscillator.type = tone.type || 'sine';
         oscillator.frequency.value = tone.frequency;
         gain.gain.setValueAtTime(0.0001, context.currentTime + tone.start);
         gain.gain.exponentialRampToValueAtTime(tone.gain, context.currentTime + tone.start + .025);

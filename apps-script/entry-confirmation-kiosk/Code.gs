@@ -1,5 +1,5 @@
 const ENTRY_CONFIRMATION_APP = Object.freeze({
-  version: '0.2.2',
+  version: '0.2.3',
   spreadsheetId: '1-J-S4xPpzlN1AYK4YgYghrqVgMpafsRYsrWJjiPBtuk',
   logSheetName: '確認ログ',
   timeZone: 'Asia/Tokyo',
