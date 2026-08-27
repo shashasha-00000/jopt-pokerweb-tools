@@ -127,9 +127,13 @@
     const statusTitle = document.getElementById('statusTitle');
     const statusMessage = document.getElementById('statusMessage');
     const statusTime = document.getElementById('statusTime');
+    const PENDING_STORAGE_KEY = 'entry-confirmation-pending-v1';
     let soundEnabled = localStorage.getItem('entry-confirmation-sound') !== 'off';
     let busy = false;
+    let pendingSyncActive = false;
     updateSoundButton();
+    window.addEventListener('online', flushPendingConfirmations);
+    window.setTimeout(flushPendingConfirmations, 750);
     soundToggle.addEventListener('click', () => {
       soundEnabled = !soundEnabled;
       localStorage.setItem('entry-confirmation-sound', soundEnabled ? 'on' : 'off');
@@ -140,18 +144,63 @@
       if (busy) return;
       busy = true;
       confirmBtn.disabled = true;
-      confirmBtn.firstChild.textContent = '記録中…';
-      google.script.run.withSuccessHandler(showSuccess).withFailureHandler(showFailure).recordConfirmation({ deviceId: DEVICE_ID, requestId: createRequestId(), appVersion: APP_VERSION });
+      showSuccess();
+      submitConfirmation({ deviceId: DEVICE_ID, requestId: createRequestId(), clientClickedAtIso: new Date().toISOString(), deliveryMode: 'REALTIME' }, true);
     });
-    function showSuccess(result) {
+    function showSuccess() {
       status.classList.remove('error');
       statusIcon.textContent = '✓';
       statusTitle.textContent = '確認ありがとうございます';
       statusMessage.innerHTML = 'スタッフがエントリー手続きを行います。<br>そのままお待ちください。';
-      statusTime.textContent = result.recordedAtJst + '（日本時間）';
+      statusTime.textContent = '';
       showStatus();
       if (soundEnabled) playSuccessSound();
       window.setTimeout(resetScreen, 3200);
+    }
+    function updateRecordedTime(result) {
+      if (status.classList.contains('show') && !status.classList.contains('error')) statusTime.textContent = result.recordedAtJst + '（日本時間）';
+    }
+    function submitConfirmation(payload, updateUi) {
+      google.script.run
+        .withSuccessHandler(result => {
+          removePendingConfirmation(payload.requestId);
+          pendingSyncActive = false;
+          if (updateUi) updateRecordedTime(result);
+          window.setTimeout(flushPendingConfirmations, 0);
+        })
+        .withFailureHandler(() => {
+          queuePendingConfirmation(payload);
+          pendingSyncActive = false;
+        })
+        .recordConfirmation(payload);
+    }
+    function flushPendingConfirmations() {
+      if (pendingSyncActive || !navigator.onLine) return;
+      const pending = readPendingConfirmations();
+      if (!pending.length) return;
+      pendingSyncActive = true;
+      submitConfirmation(Object.assign({}, pending[0], { deliveryMode: 'RETRY' }), false);
+    }
+    function queuePendingConfirmation(payload) {
+      try {
+        const pending = readPendingConfirmations().filter(item => item.requestId !== payload.requestId);
+        pending.push(Object.assign({}, payload, { deliveryMode: 'RETRY' }));
+        localStorage.setItem(PENDING_STORAGE_KEY, JSON.stringify(pending.slice(-200)));
+      } catch (_) {}
+    }
+    function removePendingConfirmation(requestId) {
+      try {
+        const pending = readPendingConfirmations().filter(item => item.requestId !== requestId);
+        localStorage.setItem(PENDING_STORAGE_KEY, JSON.stringify(pending));
+      } catch (_) {}
+    }
+    function readPendingConfirmations() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(PENDING_STORAGE_KEY) || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (_) {
+        return [];
+      }
     }
     function showFailure(error) {
       status.classList.add('error');
