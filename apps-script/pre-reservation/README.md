@@ -4,7 +4,7 @@ This directory groups the Apps Script files used for pre-reservation sheet setup
 
 ## Current
 
-Use the files in [`current`](C:\Users\41512\Documents\GitHub\jopt-pokerweb-tools\apps-script\pre-reservation\current) for the current workflow:
+Use the files in [`current`](D:\GitHub\jopt-pokerweb-tools\apps-script\pre-reservation\current) for the current workflow:
 
 - `PreReservationMenus.gs`
 - `PreReservationTemplateExtractor.gs`
@@ -66,7 +66,7 @@ This should be treated as the default first-use step for mail-related scripts.
 
 ## Legacy Builder
 
-The files in [`legacy-builder`](C:\Users\41512\Documents\GitHub\jopt-pokerweb-tools\apps-script\pre-reservation\legacy-builder) are older control-panel style sheet builders.
+The files in [`legacy-builder`](D:\GitHub\jopt-pokerweb-tools\apps-script\pre-reservation\legacy-builder) are older control-panel style sheet builders.
 
 - Keep them for reference and possible reuse.
 - They are still useful as a rough table-building approach.
@@ -84,7 +84,7 @@ Current understanding:
 
 ## Legacy Reports
 
-The files in [`legacy-reports`](C:\Users\41512\Documents\GitHub\jopt-pokerweb-tools\apps-script\pre-reservation\legacy-reports) are the older report-based reservation mail tools.
+The files in [`legacy-reports`](D:\GitHub\jopt-pokerweb-tools\apps-script\pre-reservation\legacy-reports) are the older report-based reservation mail tools.
 
 - `ReservationMailReports.gs`
 - `ReservationMailReports3on3.gs`

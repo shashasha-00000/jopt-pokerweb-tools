@@ -2,7 +2,7 @@
 
 ## 1. 正式代码仓库
 所有 PokerWeb、Tampermonkey、Google Apps Script、Web App 及相关开发代码，统一使用本地正式仓库：
-`C:\Users\41512\Documents\GitHub\jopt-pokerweb-tools`
+`D:\GitHub\jopt-pokerweb-tools`
 本地 Git 仓库是代码开发正本。
 GitHub 用于版本管理、历史记录和代码共享：
 `https://github.com/shashasha-00000/jopt-pokerweb-tools`
@@ -67,7 +67,14 @@ GitHub 用于版本管理、历史记录和代码共享：
 - 对需求的理解
 - 准备修改的内容
 - 涉及的文件或函数
+- 预计修改、新建或保存文件的完整路径
 - 可能的风险或副作用
+
+当需要向用户请求执行确认时，必须在请求确认前报告所有预计修改、新建或保存文件的完整路径。多文件可以使用简短列表。路径尚未确定时，应明确说明候选路径和未确定原因，不得先执行。
+
+如果用户已经明确要求立即执行，开始实际操作前仍应简短报告上述文件路径。
+
+用户在获知上述路径后，仅回复「执行」「按这个做」「开始修改」或其他普通执行指令时，视为同意按照最近一次报告的路径保存。如果用户另行指定保存位置，应以用户最新指定的位置为准。
 
 如果用户尚未明确要求执行，说明完后停止，等待用户指令。
 如果用户已经明确要求立即执行，则可以在简要说明后直接修改。
@@ -178,7 +185,7 @@ Google Apps Script 项目必须确认：
 - 可复用 HTML 模板
 
 判断标准：以后还会从这个文件继续开发、修改、部署或维护。
-此类文件保存到：`C:\Users\41512\Documents\GitHub\jopt-pokerweb-tools`
+此类文件保存到：`D:\GitHub\jopt-pokerweb-tools`
 默认不复制到 Google Drive。
 
 ### B. 本地工作文件
@@ -216,7 +223,7 @@ Google Apps Script 项目必须确认：
 ## 10. HTML / Web App 特别规则
 HTML、CSS、JavaScript 文件不能仅根据扩展名判断是代码还是成果物。
 
-**属于开发源码时**：如果 HTML / Web App 后续还要继续维护、包含持续开发逻辑、需要部署、需要版本管理、会继续复用、属于长期项目，则按开发源码处理，保存到 `C:\Users\41512\Documents\GitHub\jopt-pokerweb-tools`，源码默认不复制到 Google Drive。
+**属于开发源码时**：如果 HTML / Web App 后续还要继续维护、包含持续开发逻辑、需要部署、需要版本管理、会继续复用、属于长期项目，则按开发源码处理，保存到 `D:\GitHub\jopt-pokerweb-tools`，源码默认不复制到 Google Drive。
 
 **属于最终业务成果物时**：如果 HTML 是一次性最终报告、是提交给领导的静态页面、是最终展示文件、是无需继续作为开发源维护的交付页面，则可以按最终业务成果物处理，工作阶段可以保存在 `D:\JOPT work`，确认最终版本后再复制到 Google Drive。
 
@@ -303,3 +310,19 @@ Google Drive 不是：代码开发目录、本地工作目录、临时文件目�
 8. 只有最终业务成果物才进入 Google Drive。
 9. 用户可能忘记说"定稿"，接近完成时应主动询问是否同步。
 10. 无法判断时，宁可先不上传，也不要自行把工作文件发布到共享盘。
+
+## Customer-Facing Copy Safety
+
+When working with customer-facing text such as emails, announcements, contracts, customer notices, support replies, or any content that may be sent outside the team:
+
+1. Use user-provided original text exactly as the source of truth. Do not silently rewrite, summarize, polish, or supplement it.
+2. Do not silently invent customer-facing copy.
+3. If any customer-facing text is AI-written, explicitly label it before implementation and in the final response:
+   `AI作成草案・原文未確認。使用前に確認してください。`
+4. If a complete original text has not been provided for a message type, do not present it as a confirmed template.
+5. For generated tools that create drafts, send emails, or prepare customer notifications, default to allowing only user-provided original text.
+6. If AI-written draft text must be used, get explicit user confirmation first.
+7. In the final response for customer-facing copy work, list each message/template source as one of:
+   - `ユーザー提供原文`
+   - `AI作成草案`
+   - `原文未提供`

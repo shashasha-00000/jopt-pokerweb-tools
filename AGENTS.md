@@ -4,7 +4,7 @@
 
 所有 PokerWeb、Tampermonkey、Google Apps Script、Web App 及相关开发代码，统一使用本地正式仓库：
 
-`C:\Users\41512\Documents\GitHub\jopt-pokerweb-tools`
+`D:\GitHub\jopt-pokerweb-tools`
 
 本地 Git 仓库是代码开发正本。
 
@@ -93,7 +93,14 @@ GitHub 用于版本管理、历史记录和代码共享：
 * 对需求的理解
 * 准备修改的内容
 * 涉及的文件或函数
+* 预计修改、新建或保存文件的完整路径
 * 可能的风险或副作用
+
+当需要向用户请求执行确认时，必须在请求确认前报告所有预计修改、新建或保存文件的完整路径。多文件可以使用简短列表。路径尚未确定时，应明确说明候选路径和未确定原因，不得先执行。
+
+如果用户已经明确要求立即执行，开始实际操作前仍应简短报告上述文件路径。
+
+用户在获知上述路径后，仅回复「执行」「按这个做」「开始修改」或其他普通执行指令时，视为同意按照最近一次报告的路径保存。如果用户另行指定保存位置，应以用户最新指定的位置为准。
 
 如果用户尚未明确要求执行，说明完后停止，等待用户指令。
 
@@ -249,7 +256,7 @@ Google Apps Script 项目必须确认：
 
 此类文件保存到：
 
-`C:\Users\41512\Documents\GitHub\jopt-pokerweb-tools`
+`D:\GitHub\jopt-pokerweb-tools`
 
 默认不复制到 Google Drive。
 
@@ -317,7 +324,7 @@ HTML、CSS、JavaScript 文件不能仅根据扩展名判断是代码还是成�
 
 保存到：
 
-`C:\Users\41512\Documents\GitHub\jopt-pokerweb-tools`
+`D:\GitHub\jopt-pokerweb-tools`
 
 源码默认不复制到 Google Drive。
 

@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 
-$repoRoot = 'C:\Users\41512\Documents\GitHub\jopt-pokerweb-tools'
+$repoRoot = 'D:\GitHub\jopt-pokerweb-tools'
 $targets = @(
   @{
     Name = 'SPADIE TOKYO 42nd - Open Face Chinese Poker'
