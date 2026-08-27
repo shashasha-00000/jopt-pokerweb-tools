@@ -516,6 +516,62 @@ Google Drive 不是：
 
 ---
 
+## 17. Google Sheets 所有者确认规则
+
+通过 Codex、Google Drive 连接器、Google Sheets 连接器、API、脚本或其他自动化方式新建任何 Google Sheet 前，必须先确认创建后 Google Drive 文件的实际所有者（界面中的 `オーナー` / `Owner`）。
+
+### 可以默认直接创建的情况
+
+只有在已经确认创建后的文件所有者将是以下账号时，才可以默认直接创建：
+
+`xiao.h@japanopenpoker.com`
+
+应检查 Google Drive 文件元数据、权限信息或连接器当前认证账号，以确认最终的 Owner。不能仅根据以下信息推断所有者：
+
+* 当前电脑登录账号
+* 浏览器中打开的 Google 账号
+* Apps Script 部署账号
+* `clasp` 登录账号
+* Sheet 的共享对象或编辑者
+* 文件的创建者显示
+* 预计保存到的共享云端硬盘成员
+
+创建完成后，应尽可能通过 Google Drive 文件元数据再次确认并报告：
+
+* 文件名称
+* 文件链接
+* 所有者（`オーナー` / `Owner`）
+* 实际保存位置或父文件夹
+
+### 不得直接创建的情况
+
+出现以下任一情况时，不得通过 Codex 或连接器直接新建 Google Sheet：
+
+* 创建后的文件所有者不是 `xiao.h@japanopenpoker.com`
+* 当前连接账号或预期所有者无法确认
+* 返回信息不足以判断最终 Owner
+* 连接器显示的是其他个人账号，或文件将归其他账号所有
+
+此时必须明确提醒用户：
+
+> 当前无法确认新建 Google Sheet 的所有者将是 `xiao.h@japanopenpoker.com`。请使用该账号手动新建一个空白 Google Sheet，并把链接发给我；收到链接并确认 Owner 后，再写入内容、格式、公式或绑定应用。
+
+不得先用其他账号创建，再把转移所有权、移动到共享云端硬盘或事后复制作为默认补救方式。Google Drive 中的“创建者”和“所有者”不是同一概念，本规则以界面中的 `オーナー` / `Owner` 为判断标准。
+
+### 用户提供空白 Sheet 后
+
+用户使用 `xiao.h@japanopenpoker.com` 手动新建空白 Sheet 并提供链接后，应先确认该 Sheet 的 Owner 为 `xiao.h@japanopenpoker.com`，然后可以在用户要求的范围内继续：
+
+* 写入表头和数据
+* 设置格式、公式、工作表和验证规则
+* 绑定或更新 Apps Script / Web App
+* 将现有应用的 Spreadsheet ID 切换到该 Sheet
+
+写入前仍应确认目标文件链接和文件名称，避免修改错误的 Sheet。
+
+
+---
+
 ## Customer-Facing Copy Safety
 
 When working with customer-facing text such as emails, announcements, contracts, customer notices, support replies, or any content that may be sent outside the team:
