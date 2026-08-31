@@ -389,9 +389,67 @@
   .step-card-desc { font-size:0.86rem; color:var(--jopt-gray); line-height:1.6; }
   .step-card-arrow { font-size:1.3rem; color:var(--jopt-blue-light); flex-shrink:0; }
 
+  /* ── PROMOTIONAL CONTENT (About / lineup / China guide / FAQ) ── */
+  .about-feature {
+    display:grid; grid-template-columns:1.15fr 1fr; gap:2rem; align-items:stretch;
+    margin-top:2rem;
+  }
+  .about-feature-image { border-radius:16px; overflow:hidden; min-height:330px; }
+  .about-feature-image img { width:100%; height:100%; object-fit:cover; display:block; }
+  .about-feature-copy {
+    padding:2rem; border-radius:16px; background:rgba(255,255,255,0.09);
+    border:1px solid rgba(255,255,255,0.18); display:flex; flex-direction:column; justify-content:center;
+  }
+  .about-feature-copy h3 { margin:0 0 1rem; color:var(--jopt-accent); font-size:1.35rem; line-height:1.45; }
+  .about-feature-copy p { margin:0; color:rgba(255,255,255,0.88); font-size:0.96rem; line-height:1.85; }
+  .about-mini-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:1rem; margin-top:1.25rem; }
+  .about-mini-card { padding:1.1rem; border-radius:12px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); }
+  .about-mini-icon { font-size:1.35rem; margin-bottom:0.45rem; }
+  .about-mini-title { color:#fff; font-weight:700; font-size:0.92rem; margin-bottom:0.3rem; }
+  .about-mini-text { color:rgba(255,255,255,0.7); font-size:0.8rem; line-height:1.6; }
+
+  .lineup-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem; margin-top:2rem; }
+  .lineup-card {
+    position:relative; overflow:hidden; padding:1.35rem; border-radius:14px;
+    background:#fff; border:1px solid #dce5f2; box-shadow:0 8px 24px rgba(25,58,111,0.06);
+  }
+  .lineup-card::before { content:''; position:absolute; left:0; top:0; right:0; height:4px; background:var(--jopt-blue-mid); }
+  .lineup-card.gold::before { background:var(--jopt-accent); }
+  .lineup-card.mix::before { background:#8c62c6; }
+  .lineup-card.team::before { background:#2a9d8f; }
+  .lineup-icon { font-size:1.6rem; margin-bottom:0.7rem; }
+  .lineup-label { color:var(--jopt-blue-light); font-family:'Oswald',sans-serif; font-size:0.68rem; font-weight:700; letter-spacing:0.13em; text-transform:uppercase; }
+  .lineup-title { margin:0.25rem 0 0.55rem; color:var(--jopt-blue-dark); font-size:1.02rem; font-weight:700; }
+  .lineup-text { color:#667; font-size:0.84rem; line-height:1.7; }
+  .lineup-note { margin-top:1.2rem; padding:0.9rem 1rem; background:#f4f8ff; border-radius:10px; color:#667; font-size:0.8rem; line-height:1.65; }
+
+  .china-benefit-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:0.85rem; margin-top:1.2rem; }
+  .china-benefit-card {
+    width:100%; padding:1.2rem 1rem; border-radius:14px; background:#fff;
+    border:1px solid #dce5f2; text-align:center; cursor:pointer;
+    font:inherit; appearance:none; transition:transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  .china-benefit-card:hover { transform:translateY(-3px); border-color:#9fc2ee; box-shadow:0 10px 24px rgba(12,70,132,0.1); }
+  .china-benefit-card:focus-visible { outline:3px solid rgba(30,117,209,0.32); outline-offset:3px; }
+  .china-benefit-icon { width:44px; height:44px; margin:0 auto 0.7rem; border-radius:50%; background:#edf5ff; display:flex; align-items:center; justify-content:center; font-size:1.25rem; }
+  .china-benefit-title { display:block; color:var(--jopt-blue-dark); font-weight:700; font-size:0.9rem; margin-bottom:0.4rem; }
+  .china-benefit-text { display:block; color:#6b788b; font-size:0.78rem; line-height:1.6; }
+  .china-benefit-arrow { display:block; margin-top:0.55rem; color:var(--jopt-blue-light); font-size:0.8rem; font-weight:700; }
+  .quick-guide-heading { margin:2rem 0 0; color:var(--jopt-blue-dark); font-size:1.05rem; font-weight:700; }
+
+  .faq-list { max-width:820px; margin:2rem auto 0; display:grid; gap:0.75rem; }
+  .faq-item { border:1px solid #dce5f2; border-radius:12px; background:#fff; overflow:hidden; }
+  .faq-item summary { cursor:pointer; list-style:none; padding:1rem 3rem 1rem 1.2rem; color:var(--jopt-blue-dark); font-size:0.92rem; font-weight:700; position:relative; }
+  .faq-item summary::-webkit-details-marker { display:none; }
+  .faq-item summary::after { content:'＋'; position:absolute; right:1.2rem; top:50%; transform:translateY(-50%); color:var(--jopt-blue-light); font-size:1.2rem; }
+  .faq-item[open] summary::after { content:'−'; }
+  .faq-answer { padding:0 1.2rem 1.1rem; color:#5d697b; font-size:0.86rem; line-height:1.75; }
+
   .guide-extra { margin-top:2rem; padding-top:1.5rem; border-top:1px dashed #dde4f0; }
+  .guide-extra-title { margin-bottom:0.9rem; color:var(--jopt-blue-dark); font-size:0.9rem; font-weight:700; }
+  .guide-extra-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0.85rem; }
   .guide-extra-link {
-    display:inline-flex; align-items:center; gap:0.6rem; cursor:pointer;
+    display:flex; align-items:center; gap:0.75rem; cursor:pointer;
     background:white; border:1px solid #dde4f0; border-radius:10px;
     padding:0.9rem 1.4rem; transition:box-shadow 0.2s, transform 0.2s;
   }
@@ -446,6 +504,80 @@
   .detail-eyebrow { font-size:0.75rem; font-weight:700; letter-spacing:3px; color:var(--jopt-blue-light); text-transform:uppercase; margin-bottom:0.5rem; }
   .detail-title { font-family:'Oswald',sans-serif; font-size:clamp(1.5rem,4vw,2.1rem); font-weight:700; color:var(--jopt-blue-dark); margin-bottom:0.75rem; line-height:1.25; }
   .detail-intro { color:var(--jopt-gray); font-size:0.98rem; line-height:1.8; margin-bottom:2rem; }
+
+  /* ── DETAIL INSTRUCTION CARDS (numbered, image-led step flows) ── */
+  .instruction-flow { margin:2rem 0; }
+  .instruction-card {
+    display:grid; grid-template-columns:52px minmax(0,1fr); gap:1rem;
+    background:#fff; border:1px solid #dce5f2; border-radius:16px;
+    padding:1.3rem; box-shadow:0 8px 24px rgba(25,58,111,0.07);
+  }
+  .instruction-num {
+    width:44px; height:44px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    background:var(--jopt-blue-dark); color:#fff;
+    font-family:'Oswald',sans-serif; font-weight:700; font-size:1rem;
+  }
+  .instruction-title { font-size:1.05rem; font-weight:700; color:var(--jopt-blue-dark); margin:0.1rem 0 0.45rem; }
+  .instruction-text { font-size:0.92rem; color:#556; line-height:1.75; }
+  .instruction-text b { color:var(--jopt-blue-dark); }
+  .instruction-arrow { text-align:center; color:var(--jopt-accent); font-size:1.8rem; line-height:1; padding:0.35rem 0; }
+  .instruction-media { grid-column:2; margin:0.85rem 0 0; }
+  .instruction-media img {
+    display:block; width:100%; max-width:560px; max-height:300px; object-fit:cover;
+    border:1px solid #dce5f2; border-radius:12px; cursor:zoom-in;
+  }
+  .instruction-media.diagram img { max-height:none; object-fit:contain; background:#f7f9fc; }
+  .instruction-caption { display:block; margin-top:0.45rem; color:var(--jopt-gray); font-size:0.8rem; line-height:1.6; }
+  .instruction-tip {
+    margin:1.5rem 0; padding:1rem 1.2rem; border-radius:12px;
+    background:#f4f8ff; border-left:4px solid var(--jopt-blue-mid);
+    color:#445; font-size:0.9rem; line-height:1.75;
+  }
+  .instruction-tip strong { color:var(--jopt-blue-dark); }
+  .side-guide-card {
+    margin:2.5rem 0 0; padding:1.5rem; border-radius:18px;
+    border:1px solid #eadbb8; background:linear-gradient(145deg,#fffdf7 0%,#fff8e8 100%);
+    box-shadow:0 10px 28px rgba(112,78,8,0.08);
+  }
+  .side-guide-tag {
+    display:inline-block; margin-bottom:0.75rem; padding:0.3rem 0.8rem;
+    border-radius:999px; background:var(--jopt-accent); color:var(--jopt-blue-dark);
+    font-size:0.72rem; font-weight:700; letter-spacing:0.12em;
+  }
+  .side-guide-title { margin:0 0 0.55rem; color:var(--jopt-blue-dark); font-size:1.3rem; }
+  .side-guide-text { margin:0; color:#556; font-size:0.92rem; line-height:1.75; }
+  .side-guide-alert {
+    margin:1rem 0 1.25rem; padding:0.85rem 1rem; border-radius:10px;
+    background:#fff; border:1px solid #eadbb8; color:#654b16; font-size:0.88rem; line-height:1.65;
+  }
+  .side-guide-route { display:grid; grid-template-columns:1fr 34px 1fr; gap:0.6rem; align-items:center; }
+  .side-guide-route figure { margin:0; min-width:0; }
+  .side-guide-route img {
+    display:block; width:100%; aspect-ratio:4 / 3; object-fit:cover;
+    border-radius:12px; border:1px solid #e2d5b8; cursor:zoom-in;
+  }
+  .side-guide-route figcaption { margin-top:0.5rem; color:#6c6250; font-size:0.8rem; text-align:center; }
+  .side-guide-arrow { color:var(--jopt-accent); font-size:1.7rem; font-weight:700; text-align:center; }
+  .branch-heading { margin:2rem 0 1rem; font-size:1.05rem; font-weight:700; color:var(--jopt-blue-dark); }
+  .branch-grid { display:grid; grid-template-columns:1fr 1fr; gap:1.2rem; align-items:start; }
+  .branch-panel { border:1px solid #dce5f2; border-radius:16px; overflow:hidden; background:#f9fbff; }
+  .branch-panel.alt { background:#fffaf0; border-color:#eadbb8; }
+  .branch-label { padding:0.85rem 1rem; background:var(--jopt-blue-mid); color:#fff; font-weight:700; font-size:0.92rem; }
+  .branch-panel.alt .branch-label { background:#8a5e00; }
+  .branch-body { padding:1rem; }
+  .branch-step { display:grid; grid-template-columns:34px minmax(0,1fr); gap:0.75rem; align-items:start; }
+  .branch-step-num {
+    width:30px; height:30px; border-radius:50%; background:#fff; border:1px solid #bfd0e8;
+    display:flex; align-items:center; justify-content:center; color:var(--jopt-blue-dark);
+    font-family:'Oswald',sans-serif; font-weight:700; font-size:0.78rem;
+  }
+  .branch-panel.alt .branch-step-num { border-color:#ddc893; color:#795300; }
+  .branch-step-title { color:var(--jopt-text); font-size:0.92rem; font-weight:700; margin:0.2rem 0 0.3rem; }
+  .branch-step-text { color:#667; font-size:0.84rem; line-height:1.65; }
+  .branch-arrow { margin-left:14px; color:var(--jopt-accent); font-size:1.35rem; line-height:1; padding:0.35rem 0; }
+  .branch-media { margin-top:0.75rem; }
+  .branch-media img { width:100%; border-radius:9px; border:1px solid #dce5f2; display:block; cursor:zoom-in; }
 
   .flow-step {
     display: flex;
@@ -545,9 +677,24 @@
     .step-card-arrow { display: none; }
     .step-num { width: 38px; height: 38px; font-size: 1.05rem; }
     .step-item-line { left: 18px; top: 42px; }
+    .about-feature { grid-template-columns:1fr; }
+    .about-feature-image { min-height:230px; }
+    .about-feature-copy { padding:1.4rem; }
+    .about-mini-grid { grid-template-columns:1fr; }
+    .lineup-grid { grid-template-columns:1fr; }
+    .china-benefit-grid { grid-template-columns:1fr 1fr; }
+    .guide-extra-list { grid-template-columns:1fr; }
     .hotel-grid { grid-template-columns: 1fr !important; }
     .jopt-about-grid { grid-template-columns: 1fr !important; }
     .detail-body { padding: 2rem 1.2rem 4rem; }
+    .instruction-card { grid-template-columns:42px minmax(0,1fr); padding:1.05rem; gap:0.8rem; }
+    .instruction-num { width:38px; height:38px; font-size:0.9rem; }
+    .instruction-media { grid-column:1 / -1; }
+    .instruction-media img { max-width:none; max-height:none; object-fit:contain; }
+    .side-guide-card { padding:1.15rem; }
+    .side-guide-route { grid-template-columns:1fr; }
+    .side-guide-arrow { transform:rotate(90deg); }
+    .branch-grid { grid-template-columns:1fr; }
   }
 </style>
 </head>
@@ -651,7 +798,7 @@
           <div class="step-card-body">
             <div class="step-card-label">STEP 03</div>
             <div class="step-card-title">寻找座位</div>
-            <div class="step-card-desc">寻找位置参加比赛。</div>
+            <div class="step-card-desc">根据座位票找到对应座位并入座。</div>
           </div>
           <div class="step-card-arrow">→</div>
         </div>
@@ -665,7 +812,7 @@
           <div class="step-card-body">
             <div class="step-card-label">STEP 04</div>
             <div class="step-card-title">领取奖金</div>
-            <div class="step-card-desc">进入钱圈领取奖金。</div>
+            <div class="step-card-desc">获得奖金后，前往指定柜台办理领取手续。</div>
           </div>
           <div class="step-card-arrow">→</div>
         </div>
@@ -673,9 +820,16 @@
     </div>
 
     <div class="guide-extra reveal">
-      <div class="guide-extra-link" onclick="showDetail('detail-amenity')">
-        <span class="guide-extra-icon">🥤</span>
-        <span class="guide-extra-text">其他：饮料柜台位置</span>
+      <div class="guide-extra-title">更多现场指南</div>
+      <div class="guide-extra-list">
+        <div class="guide-extra-link" onclick="showDetail('detail-amenity')">
+          <span class="guide-extra-icon">🥤</span>
+          <span class="guide-extra-text">饮料柜台</span>
+        </div>
+        <div class="guide-extra-link" onclick="showDetailAt('detail-step2','sitgo-guide')">
+          <span class="guide-extra-icon">⚡</span>
+          <span class="guide-extra-text">Sit &amp; Go 快速赛</span>
+        </div>
       </div>
     </div>
   </div>
@@ -728,7 +882,7 @@
     <p class="section-label reveal">Accommodation</p>
     <h2 class="section-title reveal">推荐住宿</h2>
     <div class="divider reveal"></div>
-    <p class="section-desc reveal">以下为赛场周边推荐酒店，可根据预算和需求自由选择。</p>
+    <p class="section-desc reveal">我们整理了几家会场附近的酒店，可根据预算和需求选择。</p>
 
     <div class="hotel-group-title reveal">📍 距赛场最近的酒店</div>
     <div class="hotel-grid reveal">
@@ -792,38 +946,120 @@
 <section id="about" style="background:linear-gradient(180deg,var(--jopt-blue) 0%,var(--jopt-blue-dark) 100%);color:#fff;padding:5rem 0;">
   <div class="section-inner">
     <p class="section-label reveal" style="color:var(--jopt-accent);">About JOPT</p>
-    <h2 class="section-title reveal" style="color:#fff;">JOPT，日本最大级别的扑克锦标赛之一</h2>
+    <h2 class="section-title reveal" style="color:#fff;">现场扑克不只有一种玩法</h2>
     <div class="divider reveal" style="background:var(--jopt-accent);"></div>
+    <p class="section-desc reveal" style="color:rgba(255,255,255,0.78);">从系列核心赛事到轻量小赛、团体玩法和 MIX Games，可以先看赛程，再选择适合自己的比赛。</p>
 
-    <!-- hero banner photo -->
-    <div class="reveal" style="margin:2rem 0 2.5rem;border-radius:14px;overflow:hidden;">
-      <img src="https://japanopenpoker.com/wp-content/uploads/2026/05/55244463192_84eddb7a4a_o-scaled.jpg" alt="JOPT会場俯瞰写真" style="display:block;width:100%;height:auto;">
+    <div class="about-feature reveal">
+      <div class="about-feature-image">
+        <img src="https://japanopenpoker.com/wp-content/uploads/2026/05/55244463192_84eddb7a4a_o-scaled.jpg" alt="JOPT比赛现场">
+      </div>
+      <div class="about-feature-copy">
+        <h3>第一次参加，也能一步步找到适合自己的比赛</h3>
+        <p>JOPT 在日本多个城市举办现场扑克赛事。每一站会根据当期赛程安排不同价位和形式的比赛，包括 Main Event、Side Event、高额赛事、团体赛及多种非 NLH 玩法。中国版指南将报名、座位确认和奖金领取流程集中整理，方便出发前查看。</p>
+      </div>
     </div>
 
-    <div class="jopt-about-grid reveal" style="display:grid;grid-template-columns:1.3fr 1fr;gap:2.5rem;align-items:stretch;">
-      <!-- copy card -->
-      <div style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.18);border-radius:14px;padding:2rem 2.25rem;backdrop-filter:blur(6px);display:flex;flex-direction:column;">
-        <h3 style="font-family:'Oswald',sans-serif;font-weight:700;font-size:1.5rem;letter-spacing:0.03em;color:var(--jopt-accent);margin:0 0 1.25rem;">JOPT，日本最大级别的扑克锦标赛之一</h3>
-        <div style="color:rgba(255,255,255,0.88);font-size:0.98rem;line-height:1.85;flex:1;">
-          <p style="margin:0;">JOPT 是日本最具权威的扑克巡回赛，赛程覆盖全国多个城市，吸引来自亚洲各地的顶尖玩家参赛。本次东京站设有多档买入的主赛事及边赛，包含日本国内最高奖金池、以及丰富多样的赛事形式。</p>
-        </div>
+    <div class="about-mini-grid reveal">
+      <div class="about-mini-card">
+        <div class="about-mini-icon">♠️</div>
+        <div class="about-mini-title">多种赛事形式</div>
+        <div class="about-mini-text">NLH、PLO、MIX、团体玩法等，具体以当期赛程为准。</div>
       </div>
+      <div class="about-mini-card">
+        <div class="about-mini-icon">🎯</div>
+        <div class="about-mini-title">不同参加方式</div>
+        <div class="about-mini-text">既有系列焦点赛事，也有节奏更快、安排更灵活的小型比赛。</div>
+      </div>
+      <div class="about-mini-card">
+        <div class="about-mini-icon">🌏</div>
+        <div class="about-mini-title">海外玩家指南</div>
+        <div class="about-mini-text">提前确认报名、支付、座位和奖金领取方式，到场后更容易行动。</div>
+      </div>
+    </div>
+  </div>
+</section>
 
-      <!-- side photo grid -->
-      <div style="display:flex;flex-direction:column;gap:1.5rem;height:100%;">
-        <figure style="margin:0;flex:1;display:flex;flex-direction:column;">
-          <div style="border-radius:12px;overflow:hidden;flex:1;">
-            <img src="https://japanopenpoker.com/wp-content/uploads/2026/05/55250379571_7fbeb247f1_o-scaled.jpg" alt="Main Event Champion TaeQ" style="display:block;width:100%;height:100%;object-fit:cover;">
-          </div>
-          <figcaption style="margin-top:0.6rem;font-family:'Oswald',sans-serif;font-weight:600;font-size:0.8rem;letter-spacing:0.08em;color:var(--jopt-accent);text-align:center;">NLH MAIN EVENT</figcaption>
-        </figure>
-        <figure style="margin:0;flex:1;display:flex;flex-direction:column;">
-          <div style="border-radius:12px;overflow:hidden;flex:1;">
-            <img src="https://japanopenpoker.com/wp-content/uploads/2026/05/55248008371_4873f711f1_o-scaled.jpg" alt="Main Event 奖杯" style="display:block;width:100%;height:100%;object-fit:cover;">
-          </div>
-          <figcaption style="margin-top:0.6rem;font-family:'Oswald',sans-serif;font-weight:600;font-size:0.8rem;letter-spacing:0.08em;color:var(--jopt-accent);text-align:center;">MAIN EVENT TROPHY</figcaption>
-        </figure>
-      </div>
+<!-- TOURNAMENT LINEUP -->
+<section id="lineup" style="background:#f4f6fb;padding:5rem 0;">
+  <div class="section-inner">
+    <p class="section-label reveal">Tournament Lineup</p>
+    <h2 class="section-title reveal">每一种选择，都是不同的战场</h2>
+    <div class="divider reveal"></div>
+    <p class="section-desc reveal">从系列焦点到快节奏小赛，从团队配合到多种牌局。选择你的节奏，牌桌见。</p>
+
+    <div class="lineup-grid reveal">
+      <article class="lineup-card gold">
+        <div class="lineup-icon">🏆</div>
+        <div class="lineup-label">Main Event</div>
+        <h3 class="lineup-title">NLH Main Event</h3>
+        <p class="lineup-text">整站赛事最受瞩目的牌桌。从第一手牌开始，向最后的冠军席位前进。</p>
+      </article>
+      <article class="lineup-card">
+        <div class="lineup-icon">💎</div>
+        <div class="lineup-label">Millions</div>
+        <h3 class="lineup-title">NLH Millions</h3>
+        <p class="lineup-text">JOPT 标志性的焦点赛事之一。稳住筹码，在多日赛程中把每一步走得更远。</p>
+      </article>
+      <article class="lineup-card gold">
+        <div class="lineup-icon">👑</div>
+        <div class="lineup-label">High Roller</div>
+        <h3 class="lineup-title">Crown / Platinum</h3>
+        <p class="lineup-text">更高的门槛，更少的退路。每一次下注，都把胜负推向更高强度。</p>
+      </article>
+      <article class="lineup-card team">
+        <div class="lineup-icon">🤝</div>
+        <div class="lineup-label">Team Battle</div>
+        <h3 class="lineup-title">Tag Team / 3on3</h3>
+        <p class="lineup-text">一个决定，关系整支队伍。和搭档并肩上桌，把默契变成筹码。</p>
+      </article>
+      <article class="lineup-card mix">
+        <div class="lineup-icon">🎴</div>
+        <div class="lineup-label">Mixed Games</div>
+        <h3 class="lineup-title">MIX / PLO</h3>
+        <p class="lineup-text">不只两张底牌。牌型、节奏和判断不断切换，考验真正全面的牌技。</p>
+      </article>
+      <article class="lineup-card">
+        <div class="lineup-icon">⚡</div>
+        <div class="lineup-label">Fast &amp; Accessible</div>
+        <h3 class="lineup-title">Warm-up / Turbo / Hyper</h3>
+        <p class="lineup-text">时间更短，行动更快。想轻装上桌，也能找到属于自己的比赛节奏。</p>
+      </article>
+    </div>
+
+    <div class="lineup-note reveal">以上为参考 JOPT Tokyo #02 等往届赛程整理的代表性赛事类型，不代表 Tokyo #03 最终阵容。赛事名称、日期、报名费及规则请以 Tokyo #03 正式赛程为准。</div>
+    <div class="detail-btn-row reveal">
+      <a href="#schedule" class="btn-primary" style="text-decoration:none;">查看 Tokyo #03 赛程</a>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq" style="background:#f4f6fb;padding:5rem 0;">
+  <div class="section-inner">
+    <p class="section-label reveal">FAQ</p>
+    <h2 class="section-title reveal">常见问题</h2>
+    <div class="divider reveal"></div>
+    <p class="section-desc reveal">以下内容根据本页现有参加流程整理。现场安排发生变化时，请以工作人员说明为准。</p>
+
+    <h3 class="quick-guide-heading reveal">常用指南入口</h3>
+    <div class="china-benefit-grid reveal">
+      <button type="button" class="china-benefit-card" onclick="showDetail('detail-step1','faq')"><span class="china-benefit-icon">💬</span><span class="china-benefit-title">中文协助</span><span class="china-benefit-text">查看 Game ID 注册与中文协助</span><span class="china-benefit-arrow">查看详情 →</span></button>
+      <button type="button" class="china-benefit-card" onclick="showDetail('detail-route','faq')"><span class="china-benefit-icon">🧭</span><span class="china-benefit-title">图文路线</span><span class="china-benefit-text">查看车站、会场及柜台路线</span><span class="china-benefit-arrow">查看详情 →</span></button>
+      <button type="button" class="china-benefit-card" onclick="showDetail('detail-step2','faq')"><span class="china-benefit-icon">💳</span><span class="china-benefit-title">支付说明</span><span class="china-benefit-text">查看报名与现场支付方式</span><span class="china-benefit-arrow">查看详情 →</span></button>
+      <button type="button" class="china-benefit-card" onclick="showDetail('detail-step3','faq')"><span class="china-benefit-icon">🪑</span><span class="china-benefit-title">座位确认</span><span class="china-benefit-text">查看座位票与入座流程</span><span class="china-benefit-arrow">查看详情 →</span></button>
+      <button type="button" class="china-benefit-card" onclick="showDetail('detail-step4','faq')"><span class="china-benefit-icon">🏅</span><span class="china-benefit-title">奖金领取</span><span class="china-benefit-text">查看 Coin、eKYC 与 USDT 说明</span><span class="china-benefit-arrow">查看详情 →</span></button>
+    </div>
+
+    <div class="faq-list reveal">
+      <details class="faq-item"><summary>第一次参加 JOPT，需要先做什么？</summary><div class="faq-answer">如果还没有 Game ID，请先前往一楼大厅右侧的国际服务窗口。现场有会中文的工作人员，可以协助完成注册。</div></details>
+      <details class="faq-item"><summary>报名窗口怎么找？</summary><div class="faq-answer">先确认要参加的赛事名称，再查看报名窗口指南和现场指示牌，前往对应窗口排队。</div></details>
+      <details class="faq-item"><summary>现场可以使用哪些支付方式？</summary><div class="faq-answer">可查看 STEP 02 中的支付方式一览。现金仅支持日元，不支持人民币现金，具体以现场说明为准。</div></details>
+      <details class="faq-item"><summary>拿到座位票后去哪里？</summary><div class="faq-answer">先确认票面是否有桌号和座位号。有座位号时根据 Floor Map 入座；没有座位号时，前往票面盖章字母对应的柜台。</div></details>
+      <details class="faq-item"><summary>领取奖金需要准备什么？</summary><div class="faq-answer">需要获奖者本人于当天前往选手契约柜台，并携带护照办理领取手续。</div></details>
+      <details class="faq-item"><summary>为什么我的 Pokerweb Coin 无法使用？</summary><div class="faq-answer">Pokerweb Coin需要通过本人验证才可以在APP中进行转账操作，本人验证根据情况可能会花费较长时间，不能保证次日可以立即使用。</div></details>
+      <details class="faq-item"><summary>USDT 什么时候转入个人钱包？</summary><div class="faq-answer">选择以USDT方式领取奖金的玩家，将统一在赛事结束后约3周内到账，具体详情查看随后的客服联络邮件。</div></details>
+      <details class="faq-item"><summary>Sit &amp; Go 在哪里报名？</summary><div class="faq-answer">Sit &amp; Go 报名窗口和一般比赛不同，并不在1楼，想参加的玩家请直接前往B2层Sit &amp; Go柜台，详情可以点击“更多现场指南”中的 Sit &amp; Go 标签查看照片路线。</div></details>
     </div>
   </div>
 </section>
@@ -880,13 +1116,45 @@
   <div class="detail-body">
     <p class="detail-eyebrow">STEP 01</p>
     <h1 class="detail-title">注册 Game ID</h1>
-    <p class="detail-intro">第一次来 JOPT？请先前往<b>特别对应窗口</b>，这里有专人指导您完成注册。</p>
-    <p style="font-size:0.9rem;color:var(--jopt-gray);margin:-0.5rem 0 1rem;">位置：一楼大厅右侧</p>
+    <p class="detail-intro">还没有 Game ID？按照下面的步骤前往服务窗口，现场工作人员会协助您完成注册。</p>
 
-    <div class="photo-single"><img src="photos/step1-special-counter.jpg" onclick="lightbox(this.src)"></div>
-
-    <p style="font-size:0.9rem;line-height:1.8;margin:1.5rem 0 0.5rem;">会场 1F 平面图：</p>
-    <div class="photo-single"><img src="1F map.png" onclick="lightbox(this.src)"></div>
+    <div class="instruction-flow">
+      <div class="instruction-card">
+        <div class="instruction-num">01</div>
+        <div>
+          <div class="instruction-title">第一次参加 JOPT？</div>
+          <div class="instruction-text">首次到场且还没有 Game ID 的玩家，需要先完成注册。已经注册过的玩家可以直接前往 STEP 02 报名参赛。</div>
+        </div>
+      </div>
+      <div class="instruction-arrow">↓</div>
+      <div class="instruction-card">
+        <div class="instruction-num">02</div>
+        <div>
+          <div class="instruction-title">前往一楼大厅右侧</div>
+          <div class="instruction-text">进入会场后，前往一楼大厅右侧的服务柜台区域。</div>
+        </div>
+      </div>
+      <div class="instruction-arrow">↓</div>
+      <div class="instruction-card">
+        <div class="instruction-num">03</div>
+        <div>
+          <div class="instruction-title">找到国际服务窗口</div>
+          <div class="instruction-text">请认准写有 <b>International Counter</b> 的现场指示牌。该窗口可提供中文协助。</div>
+        </div>
+        <figure class="instruction-media">
+          <img src="photos/step1-special-counter.jpg" onclick="lightbox(this.src)" alt="国际服务窗口">
+          <figcaption class="instruction-caption">国际服务窗口（International Counter）</figcaption>
+        </figure>
+      </div>
+      <div class="instruction-arrow">↓</div>
+      <div class="instruction-card">
+        <div class="instruction-num">04</div>
+        <div>
+          <div class="instruction-title">在工作人员协助下完成注册</div>
+          <div class="instruction-text">向工作人员说明需要注册 Game ID。现场有会中文的工作人员，可以协助您完成注册。</div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -898,22 +1166,79 @@
   </div>
   <div class="detail-body">
     <p class="detail-eyebrow">STEP 02</p>
-    <h1 class="detail-title">寻找对应报名窗口，出示二维码完成报名</h1>
-    <p class="detail-intro">确认想参加的赛事名称，前往对应窗口排队报名，打开 Game ID App 出示报名二维码给工作人员扫描。窗口位置请参考现场L型立牌。</p>
+    <h1 class="detail-title">报名参赛</h1>
+    <p class="detail-intro">先确认赛事名称，再前往对应的报名窗口。请提前打开 Game ID App，准备好报名二维码。</p>
 
-    <div class="photo-single"><img src="photos/step2-queue.jpg" onclick="lightbox(this.src)"></div>
-    <p style="font-size:0.85rem;color:var(--jopt-gray);margin-top:-1rem;">报名窗口排队区</p>
-
-    <p style="font-size:0.9rem;line-height:1.8;margin-bottom:0.5rem;">支付方式：JOPT现已全面支持微信、支付宝、银联等多种方式，详情见下图。<br><small style="color:#8090a8;">※ 现金仅支持日元，不支持人民币现金。</small></p>
-    <div class="photo-single"><img src="payment.png" onclick="lightbox(this.src)"></div>
-
-    <div class="notice-box" style="margin-top:1.5rem;">
-      <strong>Sit &amp; Go 快速赛：</strong>现场同时提供 Sit &amp; Go 快速赛（¥3,000/局），<b>报名窗口在楼下</b>（非本页所述楼上报名窗口），坐满即开局，适合等位间隙加赛一局。
+    <div class="instruction-flow">
+      <div class="instruction-card">
+        <div class="instruction-num">01</div>
+        <div>
+          <div class="instruction-title">确认要参加的赛事名称</div>
+          <div class="instruction-text">请先确认当天赛程和赛事名称，避免排错报名窗口。</div>
+        </div>
+      </div>
+      <div class="instruction-arrow">↓</div>
+      <div class="instruction-card">
+        <div class="instruction-num">02</div>
+        <div>
+          <div class="instruction-title">查看报名窗口指南</div>
+          <div class="instruction-text">不同赛事可能使用不同窗口。请根据赛事名称确认对应窗口，窗口安排以现场指示牌为准。</div>
+        </div>
+        <figure class="instruction-media diagram">
+          <img src="1F map.png" onclick="lightbox(this.src)" alt="报名窗口指南">
+          <figcaption class="instruction-caption">报名窗口指南（点击图片可放大）</figcaption>
+        </figure>
+      </div>
+      <div class="instruction-arrow">↓</div>
+      <div class="instruction-card">
+        <div class="instruction-num">03</div>
+        <div>
+          <div class="instruction-title">前往对应窗口排队</div>
+          <div class="instruction-text">找到对应窗口后，请在指定区域排队等候。</div>
+        </div>
+        <figure class="instruction-media">
+          <img src="photos/step2-queue.jpg" onclick="lightbox(this.src)" alt="报名窗口排队区">
+          <figcaption class="instruction-caption">报名窗口排队区</figcaption>
+        </figure>
+      </div>
+      <div class="instruction-arrow">↓</div>
+      <div class="instruction-card">
+        <div class="instruction-num">04</div>
+        <div>
+          <div class="instruction-title">出示 Game ID 二维码</div>
+          <div class="instruction-text">打开 Game ID App，将报名二维码出示给工作人员扫描。</div>
+        </div>
+      </div>
+      <div class="instruction-arrow">↓</div>
+      <div class="instruction-card">
+        <div class="instruction-num">05</div>
+        <div>
+          <div class="instruction-title">完成报名及支付</div>
+          <div class="instruction-text">可使用微信、支付宝、银联等现场支持的支付方式。现金仅支持日元，不支持人民币现金。</div>
+        </div>
+        <figure class="instruction-media diagram">
+          <img src="payment.png" onclick="lightbox(this.src)" alt="支付方式一览">
+          <figcaption class="instruction-caption">支付方式一览（具体以现场说明为准）</figcaption>
+        </figure>
+      </div>
     </div>
-    <div class="photo-sequence">
-      <figure><img src="photos/step3-escalator-turn.jpg" onclick="lightbox(this.src)"><figcaption>下电梯右转</figcaption></figure>
-      <div class="photo-sequence-arrow">↓</div>
-      <figure><img src="photos/step2-sitgo.jpg" onclick="lightbox(this.src)"><figcaption>Sit &amp; Go 窗口（A 柜台）</figcaption></figure>
+
+    <div id="sitgo-guide" class="side-guide-card">
+      <div class="side-guide-tag">现场加赛</div>
+      <h2 class="side-guide-title">Sit &amp; Go 快速赛</h2>
+      <p class="side-guide-text">现场同时提供 Sit &amp; Go 快速赛（¥3,000/局），坐满即开局，适合等位间隙加赛一局。</p>
+      <div class="side-guide-alert"><b>报名地点不同：</b>Sit &amp; Go 报名窗口在楼下，不是上方介绍的普通赛事报名窗口。</div>
+      <div class="side-guide-route">
+        <figure>
+          <img src="photos/step3-escalator-turn.jpg" onclick="lightbox(this.src)" alt="下电梯后右转">
+          <figcaption>① 下电梯后右转</figcaption>
+        </figure>
+        <div class="side-guide-arrow">→</div>
+        <figure>
+          <img src="photos/step2-sitgo.jpg" onclick="lightbox(this.src)" alt="Sit &amp; Go 报名窗口">
+          <figcaption>② Sit &amp; Go 报名窗口（A 柜台）</figcaption>
+        </figure>
+      </div>
     </div>
   </div>
 </div>
@@ -926,26 +1251,92 @@
   </div>
   <div class="detail-body">
     <p class="detail-eyebrow">STEP 03</p>
-    <h1 class="detail-title">拿到座位票之后怎么做</h1>
-    <p class="detail-intro">报名成功后会拿到一张座位票，根据票面情况分两种流程：</p>
+    <h1 class="detail-title">确认座位并入座</h1>
+    <p class="detail-intro">报名成功后会拿到座位票。请先查看票面，再按照对应流程寻找座位。</p>
 
-    <div class="case-block">
-      <span class="case-tag">情况 A · 票上有座位号</span>
-      <div class="case-text">直接通过 <b>Floor Map（赛场地图）</b>找到对应桌子，入座后把票交给荷官（Dealer）即可。</div>
+    <div class="instruction-flow">
+      <div class="instruction-card">
+        <div class="instruction-num">01</div>
+        <div>
+          <div class="instruction-title">领取并查看座位票</div>
+          <div class="instruction-text">确认票面上是否已经印有桌号和座位号。</div>
+        </div>
+      </div>
+      <div class="instruction-arrow">↓</div>
+      <div class="instruction-card">
+        <div class="instruction-num">02</div>
+        <div>
+          <div class="instruction-title">下电梯后右转</div>
+          <div class="instruction-text">右手边拐角处可以看到 <b>Floor Map（赛场地图）</b>，对面是筹码柜台。</div>
+        </div>
+        <figure class="instruction-media">
+          <img src="photos/step3-escalator-turn.jpg" onclick="lightbox(this.src)" alt="下电梯后右转">
+          <figcaption class="instruction-caption">下电梯后右转</figcaption>
+        </figure>
+      </div>
     </div>
 
-    <div class="case-block alt">
-      <span class="case-tag">情况 B · 票上没有座位号（Alternative）</span>
-      <div class="case-text">前往票面上工作人员盖章字母（A/B/C/D/E）对应的柜台，把票交给 Floor 工作人员，抽取座位卡，等待安排座位。</div>
-    </div>
+    <div class="branch-heading">根据座位票选择对应流程</div>
+    <div class="branch-grid">
+      <div class="branch-panel">
+        <div class="branch-label">情况 A · 票面已有座位号</div>
+        <div class="branch-body">
+          <div class="branch-step">
+            <div class="branch-step-num">A1</div>
+            <div>
+              <div class="branch-step-title">查看赛场地图</div>
+              <div class="branch-step-text">根据 Floor Map 确认桌号所在区域。</div>
+              <div class="branch-media"><img src="photos/step3-floormap-board.jpg" onclick="lightbox(this.src)" alt="Floor Map"></div>
+            </div>
+          </div>
+          <div class="branch-arrow">↓</div>
+          <div class="branch-step">
+            <div class="branch-step-num">A2</div>
+            <div>
+              <div class="branch-step-title">找到对应座位并入座</div>
+              <div class="branch-step-text">根据座位票上的桌号和座位号找到位置。</div>
+            </div>
+          </div>
+          <div class="branch-arrow">↓</div>
+          <div class="branch-step">
+            <div class="branch-step-num">A3</div>
+            <div>
+              <div class="branch-step-title">将座位票交给荷官</div>
+              <div class="branch-step-text">入座后，将座位票交给桌边的荷官（Dealer）。</div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-    <p style="font-size:0.9rem;line-height:1.8;margin:1.25rem 0 0.5rem;">下电梯右转，右手边拐角处就是 <b>Floor Map</b>，对面就是<b>筹码柜台</b>。</p>
-    <div class="photo-sequence">
-      <figure><img src="photos/step3-escalator-turn.jpg" onclick="lightbox(this.src)"><figcaption>下电梯右转</figcaption></figure>
-      <div class="photo-sequence-arrow">↓</div>
-      <figure><img src="photos/step3-floormap-board.jpg" onclick="lightbox(this.src)"><figcaption>拐角处 Floor Map</figcaption></figure>
-      <div class="photo-sequence-arrow">↓</div>
-      <figure><img src="photos/step3-alt-counter.jpg" onclick="lightbox(this.src)"><figcaption>筹码柜台</figcaption></figure>
+      <div class="branch-panel alt">
+        <div class="branch-label">情况 B · 票面没有座位号</div>
+        <div class="branch-body">
+          <div class="branch-step">
+            <div class="branch-step-num">B1</div>
+            <div>
+              <div class="branch-step-title">查看票面盖章字母</div>
+              <div class="branch-step-text">确认工作人员盖在票面上的字母（A/B/C/D/E）。</div>
+            </div>
+          </div>
+          <div class="branch-arrow">↓</div>
+          <div class="branch-step">
+            <div class="branch-step-num">B2</div>
+            <div>
+              <div class="branch-step-title">前往对应字母柜台</div>
+              <div class="branch-step-text">找到与票面字母相同的柜台，将票交给现场工作人员。</div>
+              <div class="branch-media"><img src="photos/step3-alt-counter.jpg" onclick="lightbox(this.src)" alt="对应字母柜台"></div>
+            </div>
+          </div>
+          <div class="branch-arrow">↓</div>
+          <div class="branch-step">
+            <div class="branch-step-num">B3</div>
+            <div>
+              <div class="branch-step-title">领取座位卡并等待安排</div>
+              <div class="branch-step-text">按照现场工作人员的指引领取座位卡并等待入座。</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="detail-btn-row">
@@ -963,30 +1354,88 @@
   <div class="detail-body">
     <p class="detail-eyebrow">STEP 04</p>
     <h1 class="detail-title">奖金领取流程</h1>
+    <p class="detail-intro">获得奖金后，请于当天前往选手契约柜台办理领取手续。请提前确认需要准备的证件和领取方式。</p>
 
-    <div class="flow-step">
-      <div class="flow-num">1</div>
-      <div class="flow-body">
-        <div class="flow-title">前往玩家契约柜台领奖</div>
-        <div class="flow-text">进入奖金圈的玩家，请当天前往玩家契约柜台领奖，<b>需本人到场，携带护照</b>。位置在穿过 Chip 柜台后，电梯下来右手最里面最深处。</div>
+    <div class="instruction-flow">
+      <div class="instruction-card">
+        <div class="instruction-num">01</div>
+        <div>
+          <div class="instruction-title">确认获奖信息</div>
+          <div class="instruction-text">获得奖金后，请按照现场工作人员的指引办理领取手续。</div>
+        </div>
+      </div>
+      <div class="instruction-arrow">↓</div>
+      <div class="instruction-card">
+        <div class="instruction-num">02</div>
+        <div>
+          <div class="instruction-title">当天前往选手契约柜台</div>
+          <div class="instruction-text">穿过 Chip 柜台后，下电梯并前往右手边最里面的选手契约柜台。</div>
+        </div>
+        <figure class="instruction-media">
+          <img src="photos/step4-contract-counter.jpg" onclick="lightbox(this.src)" alt="选手契约柜台">
+          <figcaption class="instruction-caption">选手契约柜台</figcaption>
+        </figure>
+        <figure class="instruction-media diagram">
+          <img src="floor map b2f.png" onclick="lightbox(this.src)" alt="赛场地图">
+          <figcaption class="instruction-caption">赛场地图（柜台位置参考）</figcaption>
+        </figure>
+      </div>
+      <div class="instruction-arrow">↓</div>
+      <div class="instruction-card">
+        <div class="instruction-num">03</div>
+        <div>
+          <div class="instruction-title">准备本人护照</div>
+          <div class="instruction-text">奖金领取需要获奖者本人到场，并携带护照。</div>
+        </div>
       </div>
     </div>
 
-    <div class="photo-single"><img src="photos/step4-contract-counter.jpg" onclick="lightbox(this.src)"></div>
-    <p style="font-size:0.85rem;color:var(--jopt-gray);margin-top:-1rem;">玩家契约柜台</p>
+    <div class="instruction-arrow">↓</div>
+    <div class="branch-heading">根据奖金领取方式查看对应说明</div>
+    <div class="branch-grid">
+      <div class="branch-panel">
+        <div class="branch-label">方式 A · Pokerweb Coin</div>
+        <div class="branch-body">
+          <div class="branch-step">
+            <div class="branch-step-num">A1</div>
+            <div>
+              <div class="branch-step-title">用于后续比赛报名</div>
+              <div class="branch-step-text">如想在后续比赛中把 Pokerweb Coin 作为报名费使用，需要在 Game ID App 中完成 eKYC 本人认证。</div>
+            </div>
+          </div>
+          <div class="branch-arrow">↓</div>
+          <div class="branch-step">
+            <div class="branch-step-num">A2</div>
+            <div>
+              <div class="branch-step-title">认证可能需要时间</div>
+              <div class="branch-step-text">审核时间可能较长，无法保证第二天可以立即使用。</div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-    <div class="photo-single"><img src="floor map b2f.png" onclick="lightbox(this.src)"></div>
-    <p style="font-size:0.85rem;color:var(--jopt-gray);margin-top:-1rem;">赛场地图（柜台位置参考）</p>
-
-    <div class="notice-box">
-      <strong>Pokerweb Coin 领取：</strong>若选择 Pokerweb Coin 领取奖金，之后想在比赛中使用，需要在 Game ID App 上完成 <b>eKYC 本人认证</b>。审核时间视情况而定，可能较长，<b>无法保证次日即可使用</b>。
+      <div class="branch-panel alt">
+        <div class="branch-label">方式 B · USDT</div>
+        <div class="branch-body">
+          <div class="branch-step">
+            <div class="branch-step-num">B1</div>
+            <div>
+              <div class="branch-step-title">用于第二天比赛报名</div>
+              <div class="branch-step-text">本次赛事获得的 USDT 奖金，无需等待转入个人钱包，可用于第二天比赛的报名费。</div>
+            </div>
+          </div>
+          <div class="branch-arrow">↓</div>
+          <div class="branch-step">
+            <div class="branch-step-num">B2</div>
+            <div>
+              <div class="branch-step-title">转入个人钱包</div>
+              <div class="branch-step-text">如需转入个人钱包，预计在赛事结束后约 3 周内到账。</div>
+              <div class="branch-media"><img src="usdt-guide.png" onclick="lightbox(this.src)" alt="USDT 抵扣报名费说明"></div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="notice-box warning">
-      <strong>USDT 领取（海外玩家可选）：</strong>本次赛事获得的 USDT 奖金，<b>可立即用于第二天比赛的报名费</b>，无需等待到账；若提现至个人钱包，约赛事结束后 3 周内汇款发放。
-    </div>
-
-    <div class="photo-single"><img src="usdt-guide.png" onclick="lightbox(this.src)"></div>
-    <p style="font-size:0.85rem;color:var(--jopt-gray);margin-top:-1rem;">USDT 抵扣报名费说明</p>
   </div>
 </div>
 
@@ -1004,7 +1453,7 @@
     <div class="photo-sequence">
       <figure><img src="photos/amenity-turnleft.jpg" onclick="lightbox(this.src)"><figcaption>① 下电梯左转</figcaption></figure>
       <div class="photo-sequence-arrow">↓</div>
-      <figure><img src="photos/amenity-straight.jpg" onclick="lightbox(this.src)"><figcaption>② 继续沿着直走</figcaption></figure>
+      <figure><img src="photos/amenity-straight.jpg" onclick="lightbox(this.src)"><figcaption>② 继续往前直走</figcaption></figure>
       <div class="photo-sequence-arrow">↓</div>
       <figure><img src="photos/amenity-drink-counter.jpg" onclick="lightbox(this.src)"><figcaption>③ 饮料柜台，用 Drink Ticket 兑换</figcaption></figure>
     </div>
@@ -1054,16 +1503,31 @@
   }, { threshold: 0.1 });
   document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
 
-  function showDetail(id) {
+  let detailReturnId = null;
+  function showDetail(id, returnId = null) {
+    detailReturnId = returnId;
     document.getElementById('main-view').classList.add('hidden');
     document.querySelectorAll('.detail-page').forEach(p => p.classList.remove('active'));
     document.getElementById(id).classList.add('active');
     window.scrollTo(0, 0);
   }
+  function showDetailAt(id, targetId) {
+    showDetail(id);
+    requestAnimationFrame(() => {
+      const target = document.getElementById(targetId);
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
   function hideDetail() {
     document.querySelectorAll('.detail-page').forEach(p => p.classList.remove('active'));
     document.getElementById('main-view').classList.remove('hidden');
-    window.scrollTo(0, 0);
+    const returnTarget = detailReturnId ? document.getElementById(detailReturnId) : null;
+    detailReturnId = null;
+    if (returnTarget) {
+      requestAnimationFrame(() => returnTarget.scrollIntoView({ block: 'start' }));
+    } else {
+      window.scrollTo(0, 0);
+    }
   }
   function lightbox(src) {
     document.getElementById('photo-lightbox-img').src = src;
