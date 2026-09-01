@@ -1,0 +1,4263 @@
+﻿/*******************************************************
+ * PwReceiptFullAutoV7.gs
+ *
+ * Formal reusable receipt workflow for new spreadsheets.
+ * Keeps one application row as the source of truth for each event.
+ *******************************************************/
+
+
+/*******************************************************
+ * BEGIN Main.gs
+ *******************************************************/
+/*******************************************************
+ * Main.gs
+ *
+ * 用途：
+ * 領収書ツールのメニュー入口
+ *******************************************************/
+
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu("領収書Full Auto V7")
+    .addItem("初期設定：必要シートを準備", "setupReceiptFullAutoV7")
+    .addItem("表示ルールを設定", "V7_setupDisplayRules")
+    .addItem("フォーム回答を申請管理に反映", "importFormResponsesToApplication")
+    .addSeparator()
+    .addItem("人工発行用シートを準備", "V6_setupManualIssueSheet")
+    .addItem("人工発行・再発行を実行", "V6_runManualIssue")
+    .addItem("選択したPDFを再送信", "V6_resendSelectedPdf")
+    .addItem("選択したPDFを取り消し", "V6_cancelSelectedPdf")
+    .addItem("エラー申請を未処理に戻す", "V6_resetErrorApplicationsForRetry")
+    .addToUi();
+}
+function safeAlert_(message) {
+  try {
+    SpreadsheetApp.getUi().alert(message);
+  } catch (e) {
+    console.log("[NO_UI_ALERT] " + message);
+  }
+}
+
+function nowText() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function renameLegacySheetsToJapanese() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const pairs = [
+    ["申請管理_TEST", "申請管理"],
+    ["PW_EVENT_CONFIG", "イベント設定"],
+    ["PW_TOURNAMENT_URL_CACHE", "大会URL一覧"],
+    ["PW_GAME_ID_INPUT", "Game ID入力"],
+    ["PW_INPUT_CHECK", "Game ID入力チェック"],
+    ["PW_DISCOVERED_TOURNAMENTS", "参加大会確認"],
+    ["PW_PASTE_ROWS", "領収書元データ"],
+    ["PW_NEED_CHECK", "要確認"],
+    ["PW_REPORT", "大会別処理レポート"],
+    ["PW_RECEIVER_LOG", "受信ログ"],
+    ["PW_TOURNAMENT_INPUT", "大会入力"],
+    ["PW_RECEIPT_ISSUED_LOG", "領収書発行ログ"],
+    ["AUTO_PIPELINE_LOG", "自動処理ログ"],
+    ["FORM_IMPORT_CHECK", "フォーム取込チェック"]
+  ];
+
+  const results = [];
+
+  pairs.forEach(([oldName, newName]) => {
+    const oldSheet = ss.getSheetByName(oldName);
+    const newSheet = ss.getSheetByName(newName);
+
+    if (!oldSheet) {
+      results.push(`${oldName}: 旧表なし`);
+      return;
+    }
+
+    if (newSheet) {
+      results.push(`${oldName}: 変更先「${newName}」が既にあります`);
+      return;
+    }
+
+    oldSheet.setName(newName);
+    results.push(`${oldName} → ${newName}`);
+  });
+
+  safeAlert_("表名の日本語化が完了しました。\n\n" + results.join("\n"));
+}
+/*******************************************************
+ * END Main.gs
+ *******************************************************/
+
+
+/*******************************************************
+ * BEGIN AutoPipeline.gs
+ *******************************************************/
+/*******************************************************
+ * AutoPipeline.gs
+ *
+ * 用途：
+ * Google Form 回答提交后，
+ * 自动整理申請管理_TEST，
+ * 并自动生成 PW_GAME_ID_INPUT / PW_TOURNAMENT_INPUT / PW_INPUT_CHECK
+ *******************************************************/
+
+function runAfterFormSubmit(e) {
+  try {
+    importFormResponsesToApplication();
+
+    writeAutoPipelineLog_("OK", "フォーム回答を申請管理に自動反映 完了");
+
+  } catch (err) {
+    writeAutoPipelineLog_("ERROR", err.message || String(err));
+    throw err;
+  }
+}
+
+function V7_onFormSubmit(e) {
+  runAfterFormSubmit(e);
+}
+
+function testAutoPipeline() {
+  try {
+    importFormResponsesToApplication();
+    createPwInputs();
+
+    writeAutoPipelineLog_("TEST", "人工テスト完了");
+
+    safeAlert_(
+      "AutoPipelineテスト完了\n\n" +
+      "申請管理 / Game ID入力 / 大会入力 / Game ID入力チェック を確認してください。"
+    );
+
+  } catch (err) {
+    writeAutoPipelineLog_("ERROR", err.message || String(err));
+    safeAlert_("ERROR: " + err.message);
+    throw err;
+  }
+}
+
+function writeAutoPipelineLog_(status, message) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = autoPipelineGetOrCreateSheet_(ss, "自動処理ログ");
+
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, 3).setValues([[
+      "日時",
+      "status",
+      "message"
+    ]]);
+  }
+
+  sheet.appendRow([
+    new Date(),
+    status,
+    message
+  ]);
+}
+
+function autoPipelineGetOrCreateSheet_(ss, sheetName) {
+  let sheet = ss.getSheetByName(sheetName);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+  }
+
+  return sheet;
+}
+/*******************************************************
+ * END AutoPipeline.gs
+ *******************************************************/
+
+
+/*******************************************************
+ * BEGIN FormResponseImporter.gs
+ *******************************************************/
+/*******************************************************
+ * FormResponseImporter.gs
+ *
+ * 正式版
+ *
+ * 用途：
+ * Google Form回答を読み取り、
+ * 1. 申請管理_TEST を生成
+ * 2. 対象イベント から PW_EVENT_CONFIG を生成
+ * 3. FORM_IMPORT_CHECK を生成
+ *
+ * 前提：
+ * フォーム回答の「対象イベント」は以下形式：
+ * MASTERS 2026｜【MASTERS 2026】｜03/04/2026 - 05/04/2026
+ *******************************************************/
+
+const FORM_IMPORT_CONFIG = {
+  sourceSheetName: "フォームの回答 1",
+  applicationSheetName: "申請管理",
+  eventConfigSheetName: "イベント設定",
+  checkSheetName: "フォーム取込チェック",
+
+  defaultStatus: "未処理",
+
+  fixedEventConfig: {
+    urlCacheSheet: "大会URL一覧"
+  },
+
+  sourceHeaders: {
+    timestamp: "タイムスタンプ",
+    gameId: "Game ID（８桁、ドット含まない）",
+    name: "本名",
+    email: "領収書受け取り用メールアドレス",
+    invoiceName: "領収書の宛名",
+    targetEvent: "対象イベント"
+  },
+
+  applicationHeaders: [
+    "申請日",
+    "Game ID",
+    "本名",
+    "メールアドレス",
+    "宛名",
+    "対象イベント",
+    "eventName",
+    "namePrefix",
+    "dateRange",
+    "申請キー",
+    "ステータス",
+    "確認内容"
+  ],
+
+  eventConfigHeaders: [
+    "key",
+    "value"
+  ],
+
+  checkHeaders: [
+    "回答行",
+    "Game ID",
+    "本名",
+    "メールアドレス",
+    "宛名",
+    "対象イベント",
+    "eventName",
+    "namePrefix",
+    "dateRange",
+    "判定",
+    "理由"
+  ]
+};
+
+function importFormResponsesToApplication() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sourceSheet = ss.getSheetByName(FORM_IMPORT_CONFIG.sourceSheetName);
+
+  if (!sourceSheet) {
+    throw new Error(`フォーム回答シート「${FORM_IMPORT_CONFIG.sourceSheetName}」が見つかりません。`);
+  }
+
+  V7_validateFormResponseSheetIfExists_(ss);
+
+  const values = sourceSheet.getDataRange().getValues();
+
+  if (values.length < 2) {
+    FORM_safeAlert_("フォーム回答がありません。");
+    return;
+  }
+
+  const headers = values[0].map(FORM_normalizeText_);
+  const col = FORM_getColumnMap_(headers);
+  const existingStatusMap = FORM_loadApplicationStatusMap_(ss);
+
+  const applicationRows = [];
+  const checkRows = [];
+
+  for (let r = 1; r < values.length; r++) {
+    const row = values[r];
+    const answerRowNumber = r + 1;
+
+    const timestamp = FORM_normalizeText_(row[col.timestamp]);
+    const gameId = FORM_normalizeGameId_(row[col.gameId]);
+    const name = FORM_normalizeText_(row[col.name]);
+    const email = FORM_normalizeText_(row[col.email]);
+    const invoiceName = FORM_normalizeText_(row[col.invoiceName]);
+    const targetEventRaw = FORM_normalizeText_(row[col.targetEvent]);
+
+    const parsedEvent = FORM_parseTargetEvent_(targetEventRaw);
+
+    const errors = [];
+
+    if (!timestamp) errors.push("タイムスタンプ空白");
+    if (!gameId) errors.push("Game ID不正または空白");
+    if (!name) errors.push("本名空白");
+    if (!email) errors.push("メールアドレス空白");
+    if (!targetEventRaw) errors.push("対象イベント空白");
+    if (!parsedEvent.eventName) errors.push("eventName取得失敗");
+    if (!parsedEvent.namePrefix) errors.push("namePrefix取得失敗");
+    if (!parsedEvent.dateRange) errors.push("dateRange取得失敗");
+
+    const hasValidationError = errors.length > 0;
+
+    const status = hasValidationError
+      ? "ERROR"
+      : "OK";
+
+    checkRows.push([
+      answerRowNumber,
+      gameId,
+      name,
+      email,
+      invoiceName,
+      targetEventRaw,
+      parsedEvent.eventName,
+      parsedEvent.namePrefix,
+      parsedEvent.dateRange,
+      status,
+      errors.join(" / ")
+    ]);
+
+    if (status !== "OK") {
+      continue;
+    }
+
+    applicationRows.push([
+      timestamp,
+      gameId,
+      name,
+      email,
+      invoiceName,
+      targetEventRaw,
+      parsedEvent.eventName,
+      parsedEvent.namePrefix,
+      parsedEvent.dateRange,
+      FORM_makeApplicationTaskKey_(timestamp, gameId, email, invoiceName, targetEventRaw),
+      existingStatusMap[FORM_makeApplicationTaskKey_(timestamp, gameId, email, invoiceName, targetEventRaw)] || FORM_IMPORT_CONFIG.defaultStatus,
+      ""
+    ]);
+  }
+
+  FORM_writeTable_(
+    ss,
+    FORM_IMPORT_CONFIG.applicationSheetName,
+    FORM_IMPORT_CONFIG.applicationHeaders,
+    applicationRows
+  );
+
+  FORM_writeTable_(
+    ss,
+    FORM_IMPORT_CONFIG.checkSheetName,
+    FORM_IMPORT_CONFIG.checkHeaders,
+    checkRows
+  );
+
+  const errorCount = checkRows.filter(row => row[9] === "ERROR").length;
+  const skippedCount = checkRows.filter(row => row[9] === "対象外").length;
+
+  FORM_safeAlert_(
+    `フォーム回答を反映しました。\n\n` +
+    `申請管理出力：${applicationRows.length}行\n` +
+    `CHECK：${checkRows.length}行\n` +
+    `対象外：${skippedCount}件\n` +
+    `ERROR：${errorCount}件`
+  );
+}
+
+function FORM_loadApplicationStatusMap_(ss) {
+  const sheet = ss.getSheetByName(FORM_IMPORT_CONFIG.applicationSheetName);
+  if (!sheet || sheet.getLastRow() < 2 || sheet.getLastColumn() < 1) return {};
+
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0].map(FORM_normalizeText_);
+  const dateCol = headers.indexOf("申請日");
+  const gameIdCol = headers.indexOf("Game ID");
+  const emailCol = headers.indexOf("メールアドレス");
+  const invoiceNameCol = headers.indexOf("宛名");
+  const targetEventCol = headers.indexOf("対象イベント");
+  const applicationKeyCol = headers.indexOf("申請キー");
+  const statusCol = headers.indexOf("ステータス");
+
+  if (dateCol < 0 || gameIdCol < 0 || emailCol < 0 || statusCol < 0) return {};
+
+  const out = {};
+  for (let r = 1; r < values.length; r++) {
+    const key = applicationKeyCol >= 0 && FORM_normalizeText_(values[r][applicationKeyCol])
+      ? FORM_normalizeText_(values[r][applicationKeyCol])
+      : FORM_makeApplicationTaskKey_(
+        values[r][dateCol],
+        FORM_normalizeGameId_(values[r][gameIdCol]),
+        values[r][emailCol],
+        invoiceNameCol >= 0 ? values[r][invoiceNameCol] : "",
+        targetEventCol >= 0 ? values[r][targetEventCol] : ""
+      );
+    const status = FORM_normalizeText_(values[r][statusCol]);
+    if (key && status) out[key] = status;
+  }
+  return out;
+}
+
+function FORM_makeApplicationTaskKey_(timestamp, gameId, email, invoiceName, targetEvent) {
+  return [
+    FORM_normalizeText_(timestamp),
+    FORM_normalizeGameId_(gameId),
+    FORM_normalizeText_(email).toLowerCase(),
+    FORM_normalizeText_(invoiceName),
+    FORM_normalizeText_(targetEvent)
+  ].join("__");
+}
+
+function FORM_getColumnMap_(headers) {
+  const find = (headerName, required) => {
+    const idx = headers.indexOf(headerName);
+
+    if (idx === -1 && required) {
+      throw new Error(`フォーム回答シートに必要な列「${headerName}」が見つかりません。`);
+    }
+
+    return idx;
+  };
+
+  return {
+    timestamp: find(FORM_IMPORT_CONFIG.sourceHeaders.timestamp, true),
+    gameId: find(FORM_IMPORT_CONFIG.sourceHeaders.gameId, true),
+    name: find(FORM_IMPORT_CONFIG.sourceHeaders.name, true),
+    email: find(FORM_IMPORT_CONFIG.sourceHeaders.email, true),
+    invoiceName: find(FORM_IMPORT_CONFIG.sourceHeaders.invoiceName, true),
+    targetEvent: find(FORM_IMPORT_CONFIG.sourceHeaders.targetEvent, true)
+  };
+}
+
+function FORM_parseTargetEvent_(value) {
+  const text = FORM_normalizeText_(value);
+
+  if (!text) {
+    return {
+      eventName: "",
+      namePrefix: "",
+      dateRange: ""
+    };
+  }
+
+  const parts = text
+    .split(/[｜|]/)
+    .map(FORM_normalizeText_)
+    .filter(Boolean);
+
+  return {
+    eventName: parts[0] || "",
+    namePrefix: parts[1] || "",
+    dateRange: parts[2] || ""
+  };
+}
+
+function FORM_isValidEventConfig_(eventConfig) {
+  return Boolean(
+    eventConfig &&
+    eventConfig.eventName &&
+    eventConfig.namePrefix &&
+    eventConfig.dateRange
+  );
+}
+
+function FORM_isSameEventConfig_(a, b) {
+  if (!FORM_isValidEventConfig_(a) || !FORM_isValidEventConfig_(b)) {
+    return false;
+  }
+
+  return (
+    a.eventName === b.eventName &&
+    a.namePrefix === b.namePrefix &&
+    a.dateRange === b.dateRange
+  );
+}
+
+function FORM_writeEventConfig_(ss, eventConfig) {
+  const receiverUrl = FORM_getExistingEventConfigValue_(ss, "receiverUrl");
+
+  const rows = [
+    ["eventName", eventConfig.eventName],
+    ["namePrefix", eventConfig.namePrefix],
+    ["dateRange", eventConfig.dateRange],
+    ["urlCacheSheet", FORM_IMPORT_CONFIG.fixedEventConfig.urlCacheSheet],
+    ["receiverUrl", receiverUrl]
+  ];
+
+  FORM_writeTable_(
+    ss,
+    FORM_IMPORT_CONFIG.eventConfigSheetName,
+    FORM_IMPORT_CONFIG.eventConfigHeaders,
+    rows
+  );
+}
+
+function FORM_getExistingEventConfigValue_(ss, key) {
+  const sheet = ss.getSheetByName(FORM_IMPORT_CONFIG.eventConfigSheetName);
+
+  if (!sheet) return "";
+
+  const values = sheet.getDataRange().getValues();
+
+  for (let r = 1; r < values.length; r++) {
+    const k = FORM_normalizeText_(values[r][0]);
+    const v = FORM_normalizeText_(values[r][1]);
+
+    if (k === key) return v;
+  }
+
+  return "";
+}
+
+function FORM_writeTable_(ss, sheetName, headers, rows) {
+  const sheet = FORM_getOrCreateSheet_(ss, sheetName);
+  sheet.clear();
+
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+
+  if (rows.length > 0) {
+    sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+  }
+
+  sheet.setFrozenRows(1);
+  sheet.autoResizeColumns(1, headers.length);
+
+  const existingFilter = sheet.getFilter();
+
+  if (existingFilter) {
+    existingFilter.remove();
+  }
+
+  const lastRow = Math.max(sheet.getLastRow(), 1);
+  sheet.getRange(1, 1, lastRow, headers.length).createFilter();
+}
+
+function FORM_getOrCreateSheet_(ss, sheetName) {
+  let sheet = ss.getSheetByName(sheetName);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+  }
+
+  return sheet;
+}
+
+function FORM_normalizeText_(value) {
+  if (value === null || value === undefined) return "";
+
+  return String(value)
+    .replace(/\u3000/g, " ")
+    .replace(/\u00a0/g, " ")
+    .replace(/[ \t\r\n]+/g, " ")
+    .trim();
+}
+
+function FORM_normalizeGameId_(value) {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  return digits.length === 8 ? digits : "";
+}
+
+function FORM_safeAlert_(message) {
+  try {
+    SpreadsheetApp.getUi().alert(message);
+  } catch (e) {
+    console.log("[NO_UI_ALERT] " + message);
+  }
+}
+/*******************************************************
+ * END FormResponseImporter.gs
+ *******************************************************/
+
+
+/*******************************************************
+ * BEGIN PwInputBuilder.gs
+ *******************************************************/
+/*******************************************************
+ * PwInputBuilder.gs
+ *
+ * 正式版
+ *
+ * 用途：
+ * 申請管理_TEST から PW_GAME_ID_INPUT を生成する
+ *
+ * 注意：
+ * 新流程では大会名は申請管理_TESTから読まない。
+ * PW_TOURNAMENT_INPUT は Discovery v0.2 が自動生成する。
+ *******************************************************/
+
+const PW_INPUT_BUILDER_CONFIG = {
+  sourceSheetName: "申請管理",
+
+  outputSheets: {
+    gameIds: "Game ID入力",
+    check: "Game ID入力チェック"
+  },
+
+  sourceHeaders: {
+    gameId: "Game ID",
+    name: "本名",
+    email: "メールアドレス",
+    invoiceName: "宛名",
+    status: "ステータス",
+    memo: "備考"
+  },
+
+  gameIdHeaders: [
+    "Game ID"
+  ],
+
+  checkHeaders: [
+    "行番号",
+    "Game ID",
+    "本名",
+    "メールアドレス",
+    "宛名",
+    "ステータス",
+    "判定",
+    "理由"
+  ],
+
+  skipStatuses: [
+    "取消",
+    "キャンセル",
+    "無効",
+    "完了",
+    "処理済み",
+    "送信済み",
+    "確認必要",
+    "処理中",
+    "エラー",
+    "ERROR"
+  ],
+
+  processStatuses: [
+    "",
+    "未処理",
+    "OK"
+  ]
+};
+
+function createPwInputs() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sourceSheet = ss.getSheetByName(PW_INPUT_BUILDER_CONFIG.sourceSheetName);
+
+  if (!sourceSheet) {
+    throw new Error(`シート「${PW_INPUT_BUILDER_CONFIG.sourceSheetName}」が見つかりません。`);
+  }
+
+  const rows = PWI_readObjectsFromSheet_(sourceSheet);
+  const gameIdSet = new Set();
+  const checkRows = [];
+  const activeGameIdCounts = {};
+
+  for (const row of rows) {
+    const gameId = PWI_normalizeGameId_(PWI_getAny_(row, ["Game ID", "GameID", "ゲームID"]));
+    const status = PWI_normalizeText_(PWI_getAny_(row, ["ステータス", "status"]));
+
+    if (!gameId) continue;
+    if (!PW_INPUT_BUILDER_CONFIG.processStatuses.includes(status)) continue;
+
+    activeGameIdCounts[gameId] = (activeGameIdCounts[gameId] || 0) + 1;
+  }
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const rowNumber = i + 2;
+
+    const gameId = PWI_normalizeGameId_(PWI_getAny_(row, ["Game ID", "GameID", "ゲームID"]));
+    const name = PWI_normalizeText_(PWI_getAny_(row, ["本名", "氏名", "顧客名"]));
+    const email = PWI_normalizeText_(PWI_getAny_(row, ["メールアドレス", "受け取り用メールアドレス", "Email", "email"]));
+    const invoiceName = PWI_normalizeText_(PWI_getAny_(row, ["宛名", "領収書の宛名"]));
+    const status = PWI_normalizeText_(PWI_getAny_(row, ["ステータス", "status"]));
+
+    const errors = [];
+
+    if (!gameId) errors.push("Game ID不正または空白");
+    if (!name) errors.push("本名空白");
+    if (!email) errors.push("メールアドレス空白");
+    if (PW_INPUT_BUILDER_CONFIG.skipStatuses.includes(status)) {
+      errors.push(`対象外ステータス：${status}`);
+    } else if (!PW_INPUT_BUILDER_CONFIG.processStatuses.includes(status)) {
+      errors.push(`対象外ステータス：${status}`);
+    } else if (gameId && activeGameIdCounts[gameId] > 1) {
+      errors.push("同一Game IDの未処理申請が複数あります。1行だけ未処理にしてください");
+    }
+
+    const judge = errors.length ? "要確認" : "OK";
+
+    checkRows.push({
+      "行番号": rowNumber,
+      "Game ID": gameId,
+      "本名": name,
+      "メールアドレス": email,
+      "宛名": invoiceName,
+      "ステータス": status,
+      "判定": judge,
+      "理由": errors.join(" / ")
+    });
+
+    if (judge !== "OK") continue;
+
+    gameIdSet.add(gameId);
+  }
+
+  const gameIdRows = Array.from(gameIdSet).map(gameId => ({
+    "Game ID": gameId
+  }));
+
+  PWI_writeObjectsToSheet_(
+    ss,
+    PW_INPUT_BUILDER_CONFIG.outputSheets.gameIds,
+    gameIdRows,
+    PW_INPUT_BUILDER_CONFIG.gameIdHeaders
+  );
+
+  PWI_writeObjectsToSheet_(
+    ss,
+    PW_INPUT_BUILDER_CONFIG.outputSheets.check,
+    checkRows,
+    PW_INPUT_BUILDER_CONFIG.checkHeaders
+  );
+
+  PWI_safeAlert_(
+    `PW入力を作成しました。\n\n` +
+    `Game ID：${gameIdRows.length}件\n` +
+    `CHECK：${checkRows.length}行\n` +
+    `要確認：${checkRows.filter(r => r["判定"] !== "OK").length}件\n\n` +
+    `※ 大会入力 は Discovery v0.2 で生成します。`
+  );
+}
+
+function PWI_readObjectsFromSheet_(sheet) {
+  const values = sheet.getDataRange().getValues();
+
+  if (values.length < 2) return [];
+
+  const headers = values[0].map(PWI_normalizeText_);
+  const rows = [];
+
+  for (let r = 1; r < values.length; r++) {
+    const obj = {};
+
+    for (let c = 0; c < headers.length; c++) {
+      const h = headers[c];
+      if (!h) continue;
+      obj[h] = values[r][c];
+    }
+
+    const hasAny = Object.values(obj).some(v => PWI_normalizeText_(v));
+    if (hasAny) rows.push(obj);
+  }
+
+  return rows;
+}
+
+function PWI_writeObjectsToSheet_(ss, sheetName, rows, headers) {
+  const sheet = PWI_getOrCreateSheet_(ss, sheetName);
+  sheet.clear();
+
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+
+  if (rows.length > 0) {
+    const values = rows.map(row => {
+      return headers.map(h => {
+        const v = row[h];
+        return v === undefined || v === null ? "" : v;
+      });
+    });
+
+    sheet.getRange(2, 1, values.length, headers.length).setValues(values);
+  }
+
+  sheet.setFrozenRows(1);
+  sheet.autoResizeColumns(1, headers.length);
+
+  const existingFilter = sheet.getFilter();
+  if (existingFilter) existingFilter.remove();
+
+  const lastRow = Math.max(sheet.getLastRow(), 1);
+  sheet.getRange(1, 1, lastRow, headers.length).createFilter();
+}
+
+function PWI_getOrCreateSheet_(ss, sheetName) {
+  let sheet = ss.getSheetByName(sheetName);
+  if (!sheet) sheet = ss.insertSheet(sheetName);
+  return sheet;
+}
+
+function PWI_getAny_(row, keys) {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(row, key)) {
+      const value = row[key];
+      if (value !== undefined && value !== null && String(value).trim() !== "") {
+        return value;
+      }
+    }
+  }
+  return "";
+}
+
+function PWI_normalizeText_(value) {
+  if (value === null || value === undefined) return "";
+
+  return String(value)
+    .replace(/\u3000/g, " ")
+    .replace(/\u00a0/g, " ")
+    .replace(/[ \t\r\n]+/g, " ")
+    .trim();
+}
+
+function PWI_normalizeGameId_(value) {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  return digits.length === 8 ? digits : "";
+}
+
+function PWI_safeAlert_(message) {
+  try {
+    SpreadsheetApp.getUi().alert(message);
+  } catch (e) {
+    console.log("[NO_UI_ALERT] " + message);
+  }
+}
+/*******************************************************
+ * END PwInputBuilder.gs
+ *******************************************************/
+
+
+/*******************************************************
+ * BEGIN PwResultReceiver.gs
+ *******************************************************/
+/*******************************************************
+ * PwResultReceiver.gs
+ *
+ * 正式版 v5対応
+ *
+ * 用途：
+ * 1. 接收 PW Receipt Full Auto v5.0 的整合结果
+ *    → PW_DISCOVERED_TOURNAMENTS
+ *    → PW_PASTE_ROWS
+ *    → PW_NEED_CHECK
+ *    → PW_REPORT
+ *
+ * 2. 保留旧 payment / discovery 兼容
+ *******************************************************/
+
+const PW_RECEIVER_CONFIG = {
+  outputSheets: {
+    pasteRows: "領収書元データ",
+    needCheck: "要確認",
+    report: "大会別処理レポート",
+    log: "受信ログ",
+
+    discoveredTournaments: "参加大会確認",
+    tournamentInput: "大会入力"
+  }
+};
+
+function doPost(e) {
+  try {
+    if (!e || !e.postData || !e.postData.contents) {
+      throw new Error("POST data が空です");
+    }
+
+    const payload = JSON.parse(e.postData.contents);
+
+if (payload.type === "full_auto_v7" || payload.type === "full_auto_v6") {
+  writeFullAutoResults_(payload);
+  const result = V6_handleFullAutoPost_(payload);
+  writeReceiverLog_(result.busy ? "BUSY" : "OK", "Full Auto V7受信", payload);
+
+  return jsonResponse_({
+    ok: true,
+    type: payload.type,
+    result,
+    receivedAt: new Date().toISOString()
+  });
+}
+
+if (payload.type === "full_auto") {
+  writeFullAutoResults_(payload);
+
+  // PW_PASTE_ROWS から領収書作成用データを生成
+  buildReceiptInput();
+
+  // 領収書PDFを全件作成し、同じメールアドレス宛てのPDFは1通にまとめて送信
+  const mailSummary = runReceiptPdfDirectSendAllPending();
+  const queueSummary = QUEUE_updateApplicationStatusesAfterFullAuto_(payload, mailSummary);
+  createPwInputs();
+
+  writeReceiverLog_("OK", "Full Auto受信成功 + 領収書PDF一括送信完了", payload);
+
+  return jsonResponse_({
+    ok: true,
+    type: "full_auto",
+    message: "Full Auto results written and receipt PDFs sent",
+    pdfMailSummary: mailSummary,
+    applicationQueueSummary: queueSummary,
+    receivedAt: new Date().toISOString()
+  });
+}
+
+    if (payload.type === "discovery") {
+      writeDiscoveryResults_(payload);
+      writeReceiverLog_("OK", "Discovery受信成功", payload);
+
+      return jsonResponse_({
+        ok: true,
+        type: "discovery",
+        message: "Discovery results written",
+        receivedAt: new Date().toISOString()
+      });
+    }
+
+    writePwResults_(payload);
+    writeReceiverLog_("OK", "PW結果受信成功", payload);
+
+    return jsonResponse_({
+      ok: true,
+      type: "payment",
+      message: "PW results written",
+      receivedAt: new Date().toISOString()
+    });
+
+  } catch (err) {
+    writeReceiverLog_("ERROR", err.message, {});
+
+    return jsonResponse_({
+      ok: false,
+      error: err.message
+    });
+  }
+}
+
+function writeFullAutoResults_(payload) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  writeDiscoveredRowsOnly_(ss, payload.discoveredRows || []);
+  writePwResults_(payload);
+}
+
+function writeDiscoveryResults_(payload) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const discoveredRows = payload.discoveredRows || [];
+
+  writeDiscoveredRowsOnly_(ss, discoveredRows);
+
+  const tournamentNames = [];
+  const seen = new Set();
+
+  for (const row of discoveredRows) {
+    if (row["判定"] !== "OK") continue;
+
+    const name = String(row["大会名"] || "").trim();
+    if (!name) continue;
+
+    if (seen.has(name)) continue;
+    seen.add(name);
+
+    tournamentNames.push({
+      "大会名": name
+    });
+  }
+
+  writeTable_(
+    ss,
+    PW_RECEIVER_CONFIG.outputSheets.tournamentInput,
+    tournamentNames,
+    [
+      "大会名"
+    ]
+  );
+}
+
+function writeDiscoveredRowsOnly_(ss, discoveredRows) {
+  writeTable_(
+    ss,
+    PW_RECEIVER_CONFIG.outputSheets.discoveredTournaments,
+    discoveredRows,
+    [
+      "Game ID",
+      "申請キー",
+      "internalId",
+      "参加日",
+      "大会名",
+      "Matched_Name",
+      "TournamentId",
+      "URL",
+      "判定",
+      "理由"
+    ]
+  );
+}
+
+function writePwResults_(payload) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  if (!payload) {
+    throw new Error("payload が空です");
+  }
+
+  writeTable_(
+    ss,
+    PW_RECEIVER_CONFIG.outputSheets.pasteRows,
+    payload.pasteRows || [],
+    [
+      "Game ID",
+      "申請キー",
+      "購入時間",
+      "年",
+      "月",
+      "日",
+      "大会名",
+      "種別",
+      "現金",
+      "クレジットカード",
+      "ポイント",
+      "USDT"
+    ]
+  );
+
+  writeTable_(
+    ss,
+    PW_RECEIVER_CONFIG.outputSheets.needCheck,
+    payload.needCheckRows || [],
+    [
+      "Game ID",
+      "申請キー",
+      "購入時間",
+      "大会名",
+      "確認区分",
+      "確認内容"
+    ]
+  );
+
+  writeTable_(
+    ss,
+    PW_RECEIVER_CONFIG.outputSheets.report,
+    payload.reportRows || [],
+    [
+      "大会番号",
+      "申請キー",
+      "大会名",
+      "処理結果",
+      "対象Game ID数",
+      "該当プレイヤー数",
+      "出力行数",
+      "確認必要件数",
+      "対象外件数",
+      "読込人数",
+      "備考"
+    ]
+  );
+}
+
+function QUEUE_updateApplicationStatusesAfterFullAuto_(payload, mailSummary) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const allGameIds = QUEUE_collectGameIds_(payload);
+  const needCheckIds = QUEUE_collectNeedCheckGameIds_(payload);
+  const errorIds = new Set((mailSummary && mailSummary.errorGameIds) || []);
+
+  const sentIds = new Set((mailSummary && mailSummary.sentGameIds) || []);
+  allGameIds.forEach(gameId => {
+    if (!needCheckIds.has(gameId) && !errorIds.has(gameId)) sentIds.add(gameId);
+  });
+
+  const needCheckCount = QUEUE_markApplicationRows_(ss, needCheckIds, "確認必要", "要確認シートを確認してください");
+  const errorCount = QUEUE_markApplicationRows_(ss, errorIds, "エラー", "PDF作成またはメール送信でエラー");
+  const sentCount = QUEUE_markApplicationRows_(ss, sentIds, "送信済み", "領収書PDF送信完了、または新規送信対象なし");
+
+  return {
+    sent: sentCount,
+    needCheck: needCheckCount,
+    error: errorCount
+  };
+}
+
+function QUEUE_collectGameIds_(payload) {
+  const out = new Set();
+
+  ["discoveredRows", "pasteRows", "needCheckRows"].forEach(key => {
+    (payload[key] || []).forEach(row => {
+      const gameId = QUEUE_normalizeGameId_(row["Game ID"] || row.GameID || row.gameId);
+      if (gameId) out.add(gameId);
+    });
+  });
+
+  return out;
+}
+
+function QUEUE_collectNeedCheckGameIds_(payload) {
+  const out = new Set();
+
+  (payload.needCheckRows || []).forEach(row => {
+    if (!QUEUE_isBlockingNeedCheckRow_(row)) return;
+
+    const gameId = QUEUE_normalizeGameId_(row["Game ID"] || row.GameID || row.gameId);
+    if (gameId) out.add(gameId);
+  });
+
+  (payload.discoveredRows || []).forEach(row => {
+    const gameId = QUEUE_normalizeGameId_(row["Game ID"] || row.GameID || row.gameId);
+    const judge = String(row["判定"] || "").trim();
+    if (gameId && judge && judge !== "OK") out.add(gameId);
+  });
+
+  return out;
+}
+
+function QUEUE_isBlockingNeedCheckRow_(row) {
+  const kind = String(row["確認区分"] || "").trim();
+  const message = String(row["確認内容"] || "").trim();
+
+  if (kind === "支払い金額取得なし（PDF対象外）") return false;
+  if (message.includes("この明細はPDF対象外として処理を継続しました")) return false;
+
+  return true;
+}
+
+function QUEUE_markApplicationRows_(ss, gameIds, status, note) {
+  if (!gameIds || gameIds.size === 0) return 0;
+
+  const sheet = ss.getSheetByName(FORM_IMPORT_CONFIG.applicationSheetName);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0].map(v => String(v || "").trim());
+  const gameIdCol = headers.indexOf("Game ID");
+  const statusCol = headers.indexOf("ステータス");
+  const memoCol = headers.indexOf("備考");
+
+  if (gameIdCol < 0 || statusCol < 0) return 0;
+
+  let count = 0;
+  for (let r = 1; r < values.length; r++) {
+    const gameId = QUEUE_normalizeGameId_(values[r][gameIdCol]);
+    if (!gameIds.has(gameId)) continue;
+
+    const currentStatus = String(values[r][statusCol] || "").trim();
+    if (currentStatus === "送信済み") continue;
+    if (status === "送信済み" && currentStatus === "エラー") continue;
+
+    sheet.getRange(r + 1, statusCol + 1).setValue(status);
+
+    if (memoCol >= 0 && note) {
+      sheet.getRange(r + 1, memoCol + 1).setValue(`${nowText()} ${note}`);
+    }
+
+    count++;
+  }
+
+  return count;
+}
+
+function QUEUE_normalizeGameId_(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  return digits.length === 8 ? digits : "";
+}
+
+function writeTable_(ss, sheetName, rows, headers) {
+  const sheet = getOrCreateSheet_(ss, sheetName);
+  sheet.clear();
+
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+
+  if (rows && rows.length > 0) {
+    const values = rows.map(row => {
+      return headers.map(h => {
+        const v = row[h];
+        return v === undefined || v === null ? "" : v;
+      });
+    });
+
+    sheet.getRange(2, 1, values.length, headers.length).setValues(values);
+  }
+
+  sheet.setFrozenRows(1);
+  sheet.autoResizeColumns(1, headers.length);
+
+  const existingFilter = sheet.getFilter();
+  if (existingFilter) {
+    existingFilter.remove();
+  }
+
+  const lastRow = Math.max(sheet.getLastRow(), 1);
+  sheet.getRange(1, 1, lastRow, headers.length).createFilter();
+}
+
+function writeReceiverLog_(status, message, payload) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = getOrCreateSheet_(ss, PW_RECEIVER_CONFIG.outputSheets.log);
+
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, 8).setValues([[
+      "日時",
+      "status",
+      "message",
+      "type",
+      "pasteRows",
+      "needCheckRows",
+      "reportRows",
+      "discoveredRows"
+    ]]);
+  }
+
+  sheet.appendRow([
+    new Date(),
+    status,
+    message,
+    payload && payload.type ? payload.type : "payment",
+    payload && payload.pasteRows ? payload.pasteRows.length : "",
+    payload && payload.needCheckRows ? payload.needCheckRows.length : "",
+    payload && payload.reportRows ? payload.reportRows.length : "",
+    payload && payload.discoveredRows ? payload.discoveredRows.length : ""
+  ]);
+}
+
+function getOrCreateSheet_(ss, sheetName) {
+  let sheet = ss.getSheetByName(sheetName);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+  }
+
+  return sheet;
+}
+
+function jsonResponse_(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+const V6_CONFIG = {
+  sheets: {
+    application: "申請管理",
+    system: "システム設定",
+    eventFolders: "イベント保存先",
+    pdf: "領収書PDF管理",
+    receiptNo: "領収書番号設定",
+    manualIssue: "領収書人工発行"
+  },
+
+  applicationHeaders: [
+    "申請日",
+    "Game ID",
+    "本名",
+    "メールアドレス",
+    "宛名",
+    "対象イベント",
+    "eventName",
+    "namePrefix",
+    "dateRange",
+    "申請キー",
+    "ステータス",
+    "確認内容"
+  ],
+
+  pdfHeaders: [
+    "pdfKey",
+    "paymentKey",
+    "領収書No",
+    "Game ID",
+    "メールアドレス",
+    "宛名",
+    "eventName",
+    "大会名",
+    "購入時間",
+    "種別",
+    "総金額",
+    "PDF_FILE_ID",
+    "PDF_URL",
+    "保存先フォルダID",
+    "保存先フォルダURL",
+    "PDF作成日時",
+    "メール送信日時",
+    "送信先",
+    "status",
+    "備考"
+  ],
+
+  receiptNoHeaders: [
+    "eventName",
+    "nextNo",
+    "prefix",
+    "memo"
+  ],
+
+  systemHeaders: [
+    "key",
+    "value"
+  ],
+
+  eventFolderHeaders: [
+    "eventName",
+    "receiptFolderUrl",
+    "note"
+  ],
+
+  manualIssueHeaders: [
+    "処理",
+    "Game ID",
+    "本名",
+    "メールアドレス",
+    "宛名",
+    "eventName",
+    "大会名",
+    "購入時間",
+    "年",
+    "月",
+    "日",
+    "種別",
+    "現金",
+    "クレジットカード",
+    "ポイント",
+    "USDT",
+    "領収書No",
+    "paymentKey",
+    "pdfKey",
+    "PDF_URL",
+    "status",
+    "確認内容",
+    "備考"
+  ],
+
+  processStatuses: ["", "未処理", "OK"],
+  inactivePdfStatuses: ["取消", "取消し", "取り消し", "差替済み"]
+};
+
+function setupReceiptFullAutoV7(showAlert) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  V6_ensureSheetHeaders_(ss, V6_CONFIG.sheets.application, V6_CONFIG.applicationHeaders);
+  V6_ensureSheetHeaders_(ss, V6_CONFIG.sheets.pdf, V6_CONFIG.pdfHeaders);
+  V6_ensureSheetHeaders_(ss, V6_CONFIG.sheets.receiptNo, V6_CONFIG.receiptNoHeaders);
+  V6_ensureSheetHeaders_(ss, V6_CONFIG.sheets.system, V6_CONFIG.systemHeaders);
+  V6_ensureSheetHeaders_(ss, V6_CONFIG.sheets.eventFolders, V6_CONFIG.eventFolderHeaders);
+  V6_ensureSheetHeaders_(ss, V6_CONFIG.sheets.manualIssue, V6_CONFIG.manualIssueHeaders);
+  V6_ensureSheetHeaders_(ss, FORM_IMPORT_CONFIG.checkSheetName, FORM_IMPORT_CONFIG.checkHeaders);
+  V6_ensureSheetHeaders_(ss, "大会URL一覧", ["Name", "TournamentId", "URL", "Actual_Name"]);
+  V6_ensureSheetHeaders_(ss, "参加大会確認", ["申請キー", "Game ID", "大会名", "判定", "理由"]);
+  V6_ensureSheetHeaders_(ss, "領収書元データ", ["申請キー", "Game ID", "購入時間", "年", "月", "日", "大会名", "種別", "現金", "クレジットカード", "ポイント", "USDT"]);
+  V6_ensureSheetHeaders_(ss, "要確認", ["申請キー", "Game ID", "購入時間", "大会名", "確認区分", "確認内容"]);
+  V6_ensureSheetHeaders_(ss, "大会別処理レポート", ["申請キー", "大会番号", "大会名", "処理結果", "対象Game ID数", "該当プレイヤー数", "出力行数", "確認必要件数", "対象外件数", "読込人数", "備考"]);
+  V6_ensureSheetHeaders_(ss, "受信ログ", ["日時", "status", "message", "payload"]);
+  V7_validateFormResponseSheetIfExists_(ss);
+  if (showAlert !== false) {
+    V7_ensureFormSubmitTrigger_();
+  }
+
+  const systemSheet = ss.getSheetByName(V6_CONFIG.sheets.system);
+  if (systemSheet.getLastRow() < 2) {
+    systemSheet.appendRow(["receiverUrl", ""]);
+  }
+  V7_ensureSystemKey_(systemSheet, "receiverUrl", "");
+
+  if (showAlert !== false) {
+    safeAlert_(
+      "領収書Full Auto V7 の必要シートを準備しました。\n\n" +
+      "フォーム送信時の自動反映トリガーも準備しました。\n\n" +
+      "次に システム設定.receiverUrl と イベント保存先.receiptFolderUrl を入力してください。"
+    );
+  }
+}
+
+function setupReceiptAutoV6(showAlert) {
+  return setupReceiptFullAutoV7(showAlert);
+}
+
+function V7_ensureRuntimeSheets_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  V6_ensureSheetHeaders_(ss, V6_CONFIG.sheets.application, V6_CONFIG.applicationHeaders);
+  V6_ensureSheetHeaders_(ss, V6_CONFIG.sheets.pdf, V6_CONFIG.pdfHeaders);
+  V6_ensureSheetHeaders_(ss, V6_CONFIG.sheets.receiptNo, V6_CONFIG.receiptNoHeaders);
+  V6_ensureSheetHeaders_(ss, V6_CONFIG.sheets.eventFolders, V6_CONFIG.eventFolderHeaders);
+  V6_ensureSheetHeaders_(ss, "参加大会確認", ["申請キー", "Game ID", "大会名", "判定", "理由"]);
+  V6_ensureSheetHeaders_(ss, "領収書元データ", ["申請キー", "Game ID", "購入時間", "年", "月", "日", "大会名", "種別", "現金", "クレジットカード", "ポイント", "USDT"]);
+  V6_ensureSheetHeaders_(ss, "要確認", ["申請キー", "Game ID", "購入時間", "大会名", "確認区分", "確認内容"]);
+  V6_ensureSheetHeaders_(ss, "大会別処理レポート", ["申請キー", "大会番号", "大会名", "処理結果", "対象Game ID数", "該当プレイヤー数", "出力行数", "確認必要件数", "対象外件数", "読込人数", "備考"]);
+  V6_ensureSheetHeaders_(ss, "受信ログ", ["日時", "status", "message", "payload"]);
+}
+
+function V7_setupDisplayRules() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  V7_ensureRuntimeSheets_();
+
+  V7_replaceConditionalFormatRulesForSheet_(
+    ss.getSheetByName(V6_CONFIG.sheets.application),
+    V7_buildApplicationDisplayRules_(ss)
+  );
+  V7_replaceConditionalFormatRulesForSheet_(
+    ss.getSheetByName(V6_CONFIG.sheets.pdf),
+    V7_buildPdfDisplayRules_(ss)
+  );
+
+  safeAlert_(
+    "表示ルールを設定しました。\n\n" +
+    "申請管理：再発行確認・確認必要・エラー・宛名/送信先違い候補\n" +
+    "領収書PDF管理：同一支払いの宛名/送信先違い・差替済み・取消・エラー"
+  );
+}
+
+function V7_buildApplicationDisplayRules_(ss) {
+  const sheet = ss.getSheetByName(V6_CONFIG.sheets.application);
+  if (!sheet) return [];
+
+  const headers = V7_getHeaderMapBySheet_(sheet);
+  const range = V7_getBodyRange_(sheet, V6_CONFIG.applicationHeaders.length);
+  if (!range) return [];
+
+  const cols = {
+    gameId: V7_requireHeaderLetter_(headers, "Game ID"),
+    email: V7_requireHeaderLetter_(headers, "メールアドレス"),
+    recipient: V7_requireHeaderLetter_(headers, "宛名"),
+    eventName: V7_requireHeaderLetter_(headers, "eventName"),
+    status: V7_requireHeaderLetter_(headers, "ステータス")
+  };
+
+  const activeFilter =
+    `${cols.status}$2:${cols.status}<>"送信済み",` +
+    `${cols.status}$2:${cols.status}<>"取消",` +
+    `${cols.status}$2:${cols.status}<>"取消し",` +
+    `${cols.status}$2:${cols.status}<>"取り消し"`;
+
+  const conflictFormula =
+    `=AND($${cols.gameId}2<>"",$${cols.eventName}2<>"",OR(` +
+    `IFERROR(COUNTUNIQUE(FILTER($${cols.recipient}$2:$${cols.recipient},$${cols.gameId}$2:$${cols.gameId}=$${cols.gameId}2,$${cols.eventName}$2:$${cols.eventName}=$${cols.eventName}2,${activeFilter})),0)>1,` +
+    `IFERROR(COUNTUNIQUE(FILTER($${cols.email}$2:$${cols.email},$${cols.gameId}$2:$${cols.gameId}=$${cols.gameId}2,$${cols.eventName}$2:$${cols.eventName}=$${cols.eventName}2,${activeFilter})),0)>1` +
+    `))`;
+
+  return [
+    V7_newFormatRule_(range, conflictFormula, "#fce8b2"),
+    V7_newFormatRule_(range, `=$${cols.status}2="再発行確認"`, "#f9cb9c"),
+    V7_newFormatRule_(range, `=$${cols.status}2="確認必要"`, "#fff2cc"),
+    V7_newFormatRule_(range, `=$${cols.status}2="エラー"`, "#f4cccc")
+  ];
+}
+
+function V7_buildPdfDisplayRules_(ss) {
+  const sheet = ss.getSheetByName(V6_CONFIG.sheets.pdf);
+  if (!sheet) return [];
+
+  const headers = V7_getHeaderMapBySheet_(sheet);
+  const range = V7_getBodyRange_(sheet, V6_CONFIG.pdfHeaders.length);
+  if (!range) return [];
+
+  const cols = {
+    paymentKey: V7_requireHeaderLetter_(headers, "paymentKey"),
+    recipient: V7_requireHeaderLetter_(headers, "宛名"),
+    sentTo: V7_requireHeaderLetter_(headers, "送信先"),
+    status: V7_requireHeaderLetter_(headers, "status")
+  };
+
+  const activeFilter =
+    `${cols.status}$2:${cols.status}<>"差替済み",` +
+    `${cols.status}$2:${cols.status}<>"取消",` +
+    `${cols.status}$2:${cols.status}<>"取消し",` +
+    `${cols.status}$2:${cols.status}<>"取り消し"`;
+
+  const conflictFormula =
+    `=AND($${cols.paymentKey}2<>"",OR(` +
+    `IFERROR(COUNTUNIQUE(FILTER($${cols.recipient}$2:$${cols.recipient},$${cols.paymentKey}$2:$${cols.paymentKey}=$${cols.paymentKey}2,${activeFilter})),0)>1,` +
+    `IFERROR(COUNTUNIQUE(FILTER($${cols.sentTo}$2:$${cols.sentTo},$${cols.paymentKey}$2:$${cols.paymentKey}=$${cols.paymentKey}2,${activeFilter})),0)>1` +
+    `))`;
+
+  return [
+    V7_newFormatRule_(range, conflictFormula, "#fce8b2"),
+    V7_newFormatRule_(range, `=$${cols.status}2="差替済み"`, "#d9d9d9"),
+    V7_newFormatRule_(range, `=OR($${cols.status}2="取消",$${cols.status}2="取消し",$${cols.status}2="取り消し")`, "#ead1dc"),
+    V7_newFormatRule_(range, `=$${cols.status}2="エラー"`, "#f4cccc")
+  ];
+}
+
+function V7_replaceConditionalFormatRulesForSheet_(sheet, newRules) {
+  if (!sheet) return;
+
+  const keptRules = sheet.getConditionalFormatRules().filter(rule => {
+    return !rule.getRanges().some(range =>
+      range.getRow() === 2 &&
+      range.getColumn() === 1
+    );
+  });
+
+  sheet.setConditionalFormatRules([...keptRules, ...newRules]);
+}
+
+function V7_newFormatRule_(range, formula, color) {
+  return SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied(formula)
+    .setBackground(color)
+    .setRanges([range])
+    .build();
+}
+
+function V7_getBodyRange_(sheet, fallbackColumnCount) {
+  const numRows = Math.max(sheet.getMaxRows() - 1, 1);
+  const numCols = Math.max(sheet.getLastColumn(), fallbackColumnCount);
+  if (numCols < 1) return null;
+  return sheet.getRange(2, 1, numRows, numCols);
+}
+
+function V7_getHeaderMapBySheet_(sheet) {
+  const values = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const map = {};
+  values.forEach((value, index) => {
+    const header = V6_normalizeText_(value);
+    if (header) map[header] = index + 1;
+  });
+  return map;
+}
+
+function V7_requireHeaderLetter_(headerMap, headerName) {
+  const col = headerMap[headerName];
+  if (!col) throw new Error(`表示ルール設定に必要な列がありません: ${headerName}`);
+  return V7_columnToLetter_(col);
+}
+
+function V7_columnToLetter_(column) {
+  let n = Number(column);
+  let s = "";
+  while (n > 0) {
+    const m = (n - 1) % 26;
+    s = String.fromCharCode(65 + m) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
+function V7_ensureSystemKey_(sheet, key, defaultValue) {
+  const values = sheet.getDataRange().getValues();
+  for (let r = 1; r < values.length; r++) {
+    if (V6_normalizeText_(values[r][0]) === key) return;
+  }
+  sheet.appendRow([key, defaultValue]);
+}
+
+function V7_ensureFormSubmitTrigger_() {
+  const handler = "V7_onFormSubmit";
+  const ss = SpreadsheetApp.getActive();
+  const triggers = ScriptApp.getProjectTriggers();
+  const exists = triggers.some(trigger =>
+    trigger.getHandlerFunction() === handler &&
+    trigger.getEventType() === ScriptApp.EventType.ON_FORM_SUBMIT
+  );
+
+  if (exists) return;
+
+  ScriptApp.newTrigger(handler)
+    .forSpreadsheet(ss)
+    .onFormSubmit()
+    .create();
+}
+
+function V7_validateFormResponseSheetIfExists_(ss) {
+  const sheet = ss.getSheetByName(FORM_IMPORT_CONFIG.sourceSheetName);
+  if (!sheet || sheet.getLastRow() < 1 || sheet.getLastColumn() < 1) return;
+
+  const expected = [
+    FORM_IMPORT_CONFIG.sourceHeaders.timestamp,
+    FORM_IMPORT_CONFIG.sourceHeaders.gameId,
+    FORM_IMPORT_CONFIG.sourceHeaders.name,
+    FORM_IMPORT_CONFIG.sourceHeaders.email,
+    FORM_IMPORT_CONFIG.sourceHeaders.invoiceName,
+    FORM_IMPORT_CONFIG.sourceHeaders.targetEvent
+  ];
+  const actual = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), expected.length))
+    .getValues()[0]
+    .map(FORM_normalizeText_);
+
+  expected.forEach((header, index) => {
+    if (actual[index] !== header) {
+      throw new Error(
+        `フォームの回答 1 の ${index + 1}列目の表頭が違います。期待: ${header} / 現在: ${actual[index] || "空白"}`
+      );
+    }
+  });
+}
+
+function V6_handleFullAutoPost_(payload) {
+  const lock = LockService.getScriptLock();
+
+  if (!lock.tryLock(30000)) {
+    return {
+      busy: true,
+      message: "別の自動処理が実行中です"
+    };
+  }
+
+  try {
+    V7_ensureRuntimeSheets_();
+    return V6_processFullAutoPayload_(payload);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function V6_processFullAutoPayload_(payload) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const applications = payload.applications || [];
+  const results = [];
+
+  for (const app of applications) {
+    results.push(V6_processOneApplication_(ss, app, payload));
+  }
+
+  return {
+    busy: false,
+    applications: results.length,
+    results
+  };
+}
+
+function V6_processOneApplication_(ss, app, payload) {
+  const applicationKey = V6_normalizeText_(app["申請キー"] || app.applicationKey);
+  const gameId = V6_normalizeGameId_(app["Game ID"] || app.gameId);
+  const email = V6_normalizeText_(app["メールアドレス"] || app.email);
+  const recipient = V6_normalizeText_(app["宛名"] || app.recipient);
+  const customerName = V6_normalizeText_(app["本名"] || app.customerName);
+  const eventName = V6_normalizeText_(app.eventName || app["eventName"]);
+
+  if (!applicationKey) {
+    return { applicationKey, status: "エラー", message: "申請キーが空です" };
+  }
+
+  V6_updateApplicationStatus_(ss, applicationKey, "処理中", "自動処理中");
+
+  if (!gameId) {
+    V6_updateApplicationStatus_(ss, applicationKey, "確認必要", "Game ID不正または空白");
+    return { applicationKey, status: "確認必要", message: "Game ID不正または空白" };
+  }
+
+  if (!V6_isValidEmail_(email)) {
+    V6_updateApplicationStatus_(ss, applicationKey, "確認必要", "メールアドレス不正");
+    return { applicationKey, status: "確認必要", message: "メールアドレス不正" };
+  }
+
+  const discoveredRows = V6_filterRowsByApplicationKey_(payload.discoveredRows || [], applicationKey);
+  const pasteRows = V6_filterRowsByApplicationKey_(payload.pasteRows || [], applicationKey);
+  const needCheckRows = V6_filterRowsByApplicationKey_(payload.needCheckRows || [], applicationKey);
+
+  const blockingNeedCheck = needCheckRows.filter(V6_isBlockingNeedCheckRow_);
+  const discoveryErrors = discoveredRows.filter(row => {
+    const judge = V6_normalizeText_(row["判定"]);
+    return judge && judge !== "OK";
+  });
+
+  if (blockingNeedCheck.length || discoveryErrors.length) {
+    const reason = [
+      ...blockingNeedCheck.map(row => V6_normalizeText_(row["確認内容"] || row["確認区分"])),
+      ...discoveryErrors.map(row => V6_normalizeText_(row["理由"] || row["判定"]))
+    ].filter(Boolean).join(" / ");
+
+    V6_updateApplicationStatus_(ss, applicationKey, "確認必要", reason || "確認が必要です");
+    return { applicationKey, status: "確認必要", message: reason || "確認が必要です" };
+  }
+
+  const payableRows = pasteRows.filter(row => V6_calcTotal_(row) > 0);
+
+  if (!payableRows.length) {
+    V6_updateApplicationStatus_(ss, applicationKey, "対象外", "領収書対象データなし");
+    return { applicationKey, status: "対象外", message: "領収書対象データなし" };
+  }
+
+  const pdfSheet = ss.getSheetByName(V6_CONFIG.sheets.pdf);
+  const pdfRows = V6_readObjectsFromSheet_(pdfSheet);
+  const pdfMap = V6_buildPdfMap_(pdfRows);
+  const folderInfo = V7_getReceiptFolderForEvent_(ss, eventName);
+  const folder = folderInfo.folder;
+  const sendItems = [];
+  const rowsToCreate = [];
+  let duplicateCount = 0;
+  let reissueConflictCount = 0;
+  let emailConflictCount = 0;
+  let autoReissueCount = 0;
+
+  for (const row of payableRows) {
+    const total = V6_calcTotal_(row);
+    const tournamentName = V6_normalizeText_(row["大会名"]);
+    const purchaseTime = V6_normalizeText_(row["購入時間"]);
+    const type = V6_normalizeText_(row["種別"]);
+    const paymentKey = V6_makePaymentKey_({ gameId, eventName, tournamentName, purchaseTime, type, total });
+    const pdfKey = V6_makePdfKey_(paymentKey, recipient);
+    const existingPdf = pdfMap.byPdfKey[pdfKey];
+    const existingPayment = pdfMap.byPaymentKey[paymentKey];
+
+    if (existingPdf && !V6_CONFIG.inactivePdfStatuses.includes(existingPdf.status)) {
+      const existingEmail = V6_normalizeText_(existingPdf["メールアドレス"]).toLowerCase();
+      if (existingEmail && existingEmail !== email.toLowerCase()) {
+        emailConflictCount++;
+        continue;
+      }
+
+      duplicateCount++;
+      continue;
+    }
+
+    const isAutoReissue = existingPayment &&
+      existingPayment.pdfKey !== pdfKey &&
+      !V6_CONFIG.inactivePdfStatuses.includes(existingPayment.status);
+
+    if (isAutoReissue) autoReissueCount++;
+
+    rowsToCreate.push({
+      row,
+      total,
+      tournamentName,
+      purchaseTime,
+      type,
+      paymentKey,
+      pdfKey,
+      receiptNo: isAutoReissue ? V6_normalizeText_(existingPayment["領収書No"]) : "",
+      reissueExistingPdfKey: isAutoReissue ? existingPayment.pdfKey : "",
+      isAutoReissue
+    });
+  }
+
+  if (!rowsToCreate.length) {
+    const hasReissueConflict = reissueConflictCount > 0 || emailConflictCount > 0;
+    const status = hasReissueConflict ? "再発行確認" : (duplicateCount > 0 ? "重複申請" : "対象外");
+    const message = hasReissueConflict
+      ? "同じ支払いで宛名または送信先が異なるPDFがあります"
+      : (duplicateCount > 0 ? "新規領収書対象なし" : "領収書対象データなし");
+    V6_updateApplicationStatus_(ss, applicationKey, status, message);
+    return { applicationKey, status, message };
+  }
+
+  for (const item of rowsToCreate) {
+    const receiptNo = item.receiptNo || V6_getAndIncrementReceiptNo_(ss, eventName);
+    const receiptData = V6_makeReceiptData_(app, item.row, receiptNo, item.total);
+    const fileName = V6_makeReceiptFileName_(eventName, receiptData);
+    const pdfBlob = RPDS_makeReceiptPdfBlob_(receiptData).setName(fileName);
+    const file = folder.createFile(pdfBlob).setName(fileName);
+
+    V6_appendPdfManagementRow_(pdfSheet, {
+      pdfKey: item.pdfKey,
+      paymentKey: item.paymentKey,
+      receiptNo,
+      gameId,
+      email,
+      recipient,
+      eventName,
+      tournamentName: item.tournamentName,
+      purchaseTime: item.purchaseTime,
+      type: item.type,
+      total: item.total,
+      file,
+      folderId: folderInfo.id,
+      folderUrl: folderInfo.url,
+      status: "PDF作成済み",
+      note: item.isAutoReissue ? `自動再発行 ${applicationKey}` : applicationKey
+    });
+
+    sendItems.push({
+      pdfKey: item.pdfKey,
+      reissueExistingPdfKey: item.reissueExistingPdfKey,
+      file,
+      data: receiptData
+    });
+  }
+
+  try {
+    V6_sendApplicationMail_(email, customerName, eventName, sendItems);
+    const sentAt = new Date();
+
+    sendItems.forEach(item => {
+      V6_updatePdfManagementStatus_(pdfSheet, item.pdfKey, "送信済み", sentAt, email, applicationKey);
+      if (item.reissueExistingPdfKey) {
+        V6_updatePdfManagementStatus_(pdfSheet, item.reissueExistingPdfKey, "差替済み", "", "", `差替先: ${item.pdfKey}`);
+      }
+    });
+
+    const skippedNotes = [];
+    if (duplicateCount > 0) skippedNotes.push(`重複PDF ${duplicateCount}件は送信対象外`);
+    if (autoReissueCount > 0) skippedNotes.push(`自動再発行 ${autoReissueCount}件`);
+    if (reissueConflictCount > 0) skippedNotes.push(`宛名違い既存PDF ${reissueConflictCount}件は送信対象外`);
+    if (emailConflictCount > 0) skippedNotes.push(`送信先違い既存PDF ${emailConflictCount}件は送信対象外`);
+
+    const doneMessage = [`新規PDF ${sendItems.length}件を送信しました`, ...skippedNotes].join(" / ");
+    V6_updateApplicationStatus_(ss, applicationKey, "送信済み", doneMessage);
+    return {
+      applicationKey,
+      status: "送信済み",
+      sent: sendItems.length,
+      duplicate: duplicateCount,
+      autoReissue: autoReissueCount,
+      reissueConflict: reissueConflictCount,
+      emailConflict: emailConflictCount
+    };
+
+  } catch (e) {
+    sendItems.forEach(item => {
+      V6_updatePdfManagementStatus_(pdfSheet, item.pdfKey, "エラー", "", email, e.message || String(e));
+    });
+
+    V6_updateApplicationStatus_(ss, applicationKey, "エラー", e.message || String(e));
+    return { applicationKey, status: "エラー", message: e.message || String(e) };
+  }
+}
+
+function V6_ensureSheetHeaders_(ss, sheetName, headers) {
+  let sheet = ss.getSheetByName(sheetName);
+  if (!sheet) sheet = ss.insertSheet(sheetName);
+
+  if (sheet.getLastRow() === 0 || sheet.getLastColumn() === 0) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.setFrozenRows(1);
+    return sheet;
+  }
+
+  const current = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(V6_normalizeText_);
+  let lastCol = sheet.getLastColumn();
+
+  headers.forEach(header => {
+    if (current.indexOf(header) >= 0) return;
+    lastCol++;
+    sheet.getRange(1, lastCol).setValue(header);
+    current.push(header);
+  });
+
+  sheet.setFrozenRows(1);
+  return sheet;
+}
+
+function V6_updateApplicationStatus_(ss, applicationKey, status, message) {
+  const sheet = ss.getSheetByName(V6_CONFIG.sheets.application);
+  if (!sheet) return false;
+
+  const values = sheet.getDataRange().getValues();
+  if (values.length < 2) return false;
+
+  const headers = values[0].map(V6_normalizeText_);
+  const keyCol = headers.indexOf("申請キー");
+  const statusCol = headers.indexOf("ステータス");
+  const confirmCol = headers.indexOf("確認内容");
+
+  if (keyCol < 0 || statusCol < 0) return false;
+
+  for (let r = 1; r < values.length; r++) {
+    if (V6_normalizeText_(values[r][keyCol]) !== applicationKey) continue;
+
+    sheet.getRange(r + 1, statusCol + 1).setValue(status);
+    if (confirmCol >= 0) sheet.getRange(r + 1, confirmCol + 1).setValue(message || "");
+    return true;
+  }
+
+  return false;
+}
+
+function V6_filterRowsByApplicationKey_(rows, applicationKey) {
+  return (rows || []).filter(row => {
+    const key = V6_normalizeText_(row["申請キー"] || row.applicationKey);
+    return key === applicationKey;
+  });
+}
+
+function V6_isBlockingNeedCheckRow_(row) {
+  const kind = V6_normalizeText_(row["確認区分"]);
+  const message = V6_normalizeText_(row["確認内容"]);
+
+  if (kind === "購入明細なし") return false;
+  if (kind === "支払い金額取得なし（PDF対象外）") return false;
+  if (message.includes("購入・支払い明細がありません")) return false;
+  if (message.includes("PDF対象外として処理を継続")) return false;
+  if (message.includes("チケット") || message.includes("無料") || message.includes("内部")) return false;
+  if (message.includes("選手契約") || message.includes("支払対象外")) return false;
+
+  return true;
+}
+
+function V6_readObjectsFromSheet_(sheet) {
+  if (!sheet || sheet.getLastRow() < 2) return [];
+
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0].map(V6_normalizeText_);
+  return values.slice(1).map(row => {
+    const obj = {};
+    headers.forEach((h, i) => {
+      if (h) obj[h] = row[i];
+    });
+    return obj;
+  }).filter(obj => Object.values(obj).some(v => V6_normalizeText_(v)));
+}
+
+function V6_buildPdfMap_(rows) {
+  const byPdfKey = {};
+  const byPaymentKey = {};
+
+  rows.forEach(row => {
+    const pdfKey = V6_normalizeText_(row.pdfKey);
+    const paymentKey = V6_normalizeText_(row.paymentKey);
+    const status = V6_normalizeText_(row.status);
+    const item = {
+      ...row,
+      pdfKey,
+      paymentKey,
+      status
+    };
+
+    if (pdfKey) byPdfKey[pdfKey] = item;
+    if (paymentKey) {
+      const current = byPaymentKey[paymentKey];
+      const currentInactive = current && V6_CONFIG.inactivePdfStatuses.includes(current.status);
+      const itemActive = !V6_CONFIG.inactivePdfStatuses.includes(item.status);
+      if (!current || (currentInactive && itemActive)) byPaymentKey[paymentKey] = item;
+    }
+  });
+
+  return { byPdfKey, byPaymentKey };
+}
+
+function V6_appendPdfManagementRow_(sheet, item) {
+  sheet.appendRow([
+    item.pdfKey,
+    item.paymentKey,
+    item.receiptNo,
+    item.gameId,
+    item.email,
+    item.recipient,
+    item.eventName,
+    item.tournamentName,
+    item.purchaseTime,
+    item.type,
+    item.total,
+    item.file.getId(),
+    item.file.getUrl(),
+    item.folderId || "",
+    item.folderUrl || "",
+    new Date(),
+    "",
+    "",
+    item.status,
+    item.note || ""
+  ]);
+}
+
+function V7_getReceiptFolderForEvent_(ss, eventName) {
+  const normalizedEventName = V6_normalizeText_(eventName);
+  if (!normalizedEventName) {
+    throw new Error("eventName が空のため、保存先フォルダを判定できません。");
+  }
+
+  const sheet = ss.getSheetByName(V6_CONFIG.sheets.eventFolders);
+  if (!sheet || sheet.getLastRow() < 2) {
+    throw new Error(`イベント保存先 に ${normalizedEventName} の receiptFolderUrl がありません。`);
+  }
+
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0].map(V6_normalizeText_);
+  const eventCol = headers.indexOf("eventName");
+  const urlCol = headers.indexOf("receiptFolderUrl");
+
+  if (eventCol < 0 || urlCol < 0) {
+    throw new Error("イベント保存先 の表頭 eventName / receiptFolderUrl が見つかりません。");
+  }
+
+  for (let r = 1; r < values.length; r++) {
+    if (V6_normalizeText_(values[r][eventCol]) !== normalizedEventName) continue;
+
+    const rawUrl = V6_normalizeText_(values[r][urlCol]);
+    if (!rawUrl) {
+      throw new Error(`イベント保存先 の ${normalizedEventName} に receiptFolderUrl が未設定です。`);
+    }
+
+    const id = RPDS_extractDriveId_(rawUrl);
+    return {
+      id,
+      url: rawUrl,
+      folder: DriveApp.getFolderById(id)
+    };
+  }
+
+  throw new Error(`イベント保存先 に ${normalizedEventName} の設定がありません。`);
+}
+
+function V6_updatePdfManagementStatus_(sheet, pdfKey, status, sentAt, to, note) {
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0].map(V6_normalizeText_);
+  const keyCol = headers.indexOf("pdfKey");
+  const statusCol = headers.indexOf("status");
+  const sentAtCol = headers.indexOf("メール送信日時");
+  const toCol = headers.indexOf("送信先");
+  const noteCol = headers.indexOf("備考");
+
+  for (let r = 1; r < values.length; r++) {
+    if (V6_normalizeText_(values[r][keyCol]) !== pdfKey) continue;
+
+    sheet.getRange(r + 1, statusCol + 1).setValue(status);
+    if (sentAtCol >= 0 && sentAt) sheet.getRange(r + 1, sentAtCol + 1).setValue(sentAt);
+    if (toCol >= 0 && to) sheet.getRange(r + 1, toCol + 1).setValue(to);
+    if (noteCol >= 0 && note) sheet.getRange(r + 1, noteCol + 1).setValue(note);
+    return;
+  }
+}
+
+function V6_getAndIncrementReceiptNo_(ss, eventName) {
+  const sheet = ss.getSheetByName(V6_CONFIG.sheets.receiptNo);
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0].map(V6_normalizeText_);
+  const eventCol = headers.indexOf("eventName");
+  const nextNoCol = headers.indexOf("nextNo");
+  const targetEvent = eventName || "DEFAULT";
+
+  for (let r = 1; r < values.length; r++) {
+    if (V6_normalizeText_(values[r][eventCol]) !== targetEvent) continue;
+    const nextNo = Number(values[r][nextNoCol] || 20000);
+    sheet.getRange(r + 1, nextNoCol + 1).setValue(nextNo + 1);
+    return nextNo;
+  }
+
+  sheet.appendRow([targetEvent, 20001, "", ""]);
+  return 20000;
+}
+
+function V6_makeReceiptData_(app, row, receiptNo, total) {
+  const dateParts = {
+    year: row["年"] || "",
+    month: row["月"] || "",
+    day: row["日"] || ""
+  };
+
+  return {
+    uniqueKey: V6_makePaymentKey_({
+      gameId: app["Game ID"] || app.gameId,
+      eventName: app.eventName,
+      tournamentName: row["大会名"],
+      purchaseTime: row["購入時間"],
+      type: row["種別"],
+      total
+    }),
+    receiptNo,
+    gameId: V6_normalizeGameId_(app["Game ID"] || app.gameId),
+    customerName: V6_normalizeText_(app["本名"] || app.customerName),
+    recipient: V6_normalizeText_(app["宛名"] || app.recipient),
+    email: V6_normalizeText_(app["メールアドレス"] || app.email),
+    year: dateParts.year,
+    month: dateParts.month,
+    day: dateParts.day,
+    tournamentName: V6_normalizeText_(row["大会名"]),
+    purchaseTime: V6_normalizeText_(row["購入時間"]),
+    type: V6_normalizeText_(row["種別"]),
+    totalAmountRaw: total,
+    totalAmount: RPDS_formatYen_(total),
+    cash: RPDS_formatYen_(row["現金"]),
+    creditCard: RPDS_formatYen_(row["クレジットカード"]),
+    point: RPDS_formatYen_(row["ポイント"]),
+    taxAmount: RPDS_formatYen_(Math.floor(total / 11)),
+    taxExcluded: RPDS_formatYen_(total - Math.floor(total / 11)),
+    titleA: V6_normalizeText_(app["本名"] || app.customerName) ? `${V6_normalizeText_(app["本名"] || app.customerName)} 様` : "お客様",
+    titleB: String(receiptNo)
+  };
+}
+
+function V6_sendApplicationMail_(to, customerName, eventName, items) {
+  const files = items.map(item => item.file);
+  const body = V6_buildMailBody_(customerName, eventName, items.length);
+  const opts = {
+    name: RPDS_MAIL_CONFIG.FROM_NAME,
+    attachments: files.map(file => file.getBlob().setName(file.getName()))
+  };
+
+  if (RPDS_MAIL_CONFIG.FROM_ALIAS) opts.from = RPDS_MAIL_CONFIG.FROM_ALIAS;
+  if (RPDS_MAIL_CONFIG.BCC) opts.bcc = RPDS_MAIL_CONFIG.BCC;
+
+  GmailApp.sendEmail(to, RPDS_MAIL_CONFIG.SUBJECT, body, opts);
+}
+
+function V6_buildMailBody_(customerName, eventName, count) {
+  const addressee = RPDS_buildAddressee_(customerName);
+  const eventLabel = RPDS_formatEventLabel_(eventName || RPDS_MAIL_CONFIG.EVENT_NAME);
+
+  return `${addressee}
+
+平素よりお世話になっております。
+ジャパンオープンポーカーツアー株式会社カスタマーサポートのショウです。
+
+この度は${eventLabel}にご参加いただき、誠にありがとうございました。
+
+電子領収書を${count}件発行いたしましたので、添付にてお送りいたします。
+なお、電子チケットおよび選手契約履行によるエントリーにつきましては、領収書の発行対象外となっております。
+
+※本メールは自動送信です。ご返信いただいても対応いたしかねます。
+領収書の内容に修正が必要な場合や、ご利用環境によって添付ファイルが表示されない場合は、JOPT公式LINEよりお問い合わせください。
+今後ともどうぞよろしくお願いいたします。`;
+}
+
+function V6_calcTotal_(row) {
+  return V6_toNumber_(row["現金"]) +
+    V6_toNumber_(row["クレジットカード"]) +
+    V6_toNumber_(row["ポイント"]) +
+    V6_toNumber_(row["USDT"]);
+}
+
+function V6_makePaymentKey_(data) {
+  return [
+    V6_normalizeGameId_(data.gameId),
+    V6_compactKey_(data.eventName),
+    V6_compactKey_(data.tournamentName),
+    V6_compactKey_(data.purchaseTime),
+    V6_compactKey_(data.type),
+    Math.round(Number(data.total || 0))
+  ].join("__");
+}
+
+function V6_makePdfKey_(paymentKey, recipient) {
+  return [paymentKey, V6_compactKey_(recipient)].join("__");
+}
+
+function V6_makeReceiptFileName_(eventName, data) {
+  const prefix = RPDS_formatEventLabel_(eventName || "") + " 領収書_";
+  return RPDS_sanitizeFileName_(prefix + data.titleA + "-" + data.receiptNo + ".pdf");
+}
+
+function V6_isValidEmail_(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || "").trim());
+}
+
+function V6_normalizeText_(value) {
+  return String(value === null || value === undefined ? "" : value)
+    .replace(/\u3000/g, " ")
+    .replace(/\u00a0/g, " ")
+    .replace(/[ \t\r\n]+/g, " ")
+    .trim();
+}
+
+function V6_normalizeGameId_(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  return digits.length === 8 ? digits : "";
+}
+
+function V6_toNumber_(value) {
+  const n = Number(String(value || "").replace(/[^\d.-]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function V6_compactKey_(value) {
+  return V6_normalizeText_(value)
+    .replace(/\s+/g, "")
+    .replace(/[\/／|｜]/g, "")
+    .toLowerCase();
+}
+
+function V6_setupManualIssueSheet() {
+  setupReceiptAutoV6(false);
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  V6_ensureSheetHeaders_(ss, V6_CONFIG.sheets.manualIssue, V6_CONFIG.manualIssueHeaders);
+  safeAlert_("領収書人工発行 表を準備しました。\n\n発行したい行の「処理」に 1 を入れてから、人工発行・再発行を実行してください。");
+}
+
+function V6_runManualIssue() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    safeAlert_("別の処理が実行中です。少し待ってから再実行してください。");
+    return;
+  }
+
+  try {
+    setupReceiptAutoV6(false);
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(V6_CONFIG.sheets.manualIssue);
+    const values = sheet.getDataRange().getValues();
+    if (values.length < 2) {
+      safeAlert_("領収書人工発行 に処理対象行がありません。");
+      return;
+    }
+
+    const headers = values[0].map(V6_normalizeText_);
+    let processed = 0;
+    let sent = 0;
+    let error = 0;
+
+    for (let r = 1; r < values.length; r++) {
+      const rowNo = r + 1;
+      const obj = V6_rowToObject_(headers, values[r]);
+      if (!V6_isRunMark_(obj["処理"])) continue;
+
+      processed++;
+      const result = V6_processManualIssueRow_(ss, sheet, rowNo, obj);
+      if (result.status === "送信済み") sent++;
+      if (result.status === "エラー") error++;
+    }
+
+    safeAlert_(
+      "人工発行・再発行が完了しました\n\n" +
+      "処理対象：" + processed + "件\n" +
+      "送信済み：" + sent + "件\n" +
+      "エラー：" + error + "件"
+    );
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function V6_processManualIssueRow_(ss, sheet, rowNo, obj) {
+  try {
+    const gameId = V6_normalizeGameId_(obj["Game ID"]);
+    const email = V6_normalizeText_(obj["メールアドレス"]);
+    const recipient = V6_normalizeText_(obj["宛名"]);
+    const customerName = V6_normalizeText_(obj["本名"]);
+    const eventName = V6_normalizeText_(obj.eventName);
+    const tournamentName = V6_normalizeText_(obj["大会名"]);
+    const purchaseTime = V6_normalizeText_(obj["購入時間"]);
+    const type = V6_normalizeText_(obj["種別"]);
+    const total = V6_calcTotal_(obj);
+
+    if (!gameId) throw new Error("Game ID が不正です");
+    if (!V6_isValidEmail_(email)) throw new Error("メールアドレスが不正です");
+    if (!eventName) throw new Error("eventName が空です");
+    if (!tournamentName) throw new Error("大会名が空です");
+    if (!purchaseTime) throw new Error("購入時間が空です");
+    if (!type) throw new Error("種別が空です");
+    if (total <= 0) throw new Error("金額が0以下です");
+
+    const paymentKey = V6_normalizeText_(obj.paymentKey) ||
+      V6_makePaymentKey_({ gameId, eventName, tournamentName, purchaseTime, type, total });
+    const pdfKey = V6_normalizeText_(obj.pdfKey) || V6_makePdfKey_(paymentKey, recipient);
+
+    const pdfSheet = ss.getSheetByName(V6_CONFIG.sheets.pdf);
+    const pdfRows = V6_readObjectsFromSheet_(pdfSheet);
+    const pdfMap = V6_buildPdfMap_(pdfRows);
+    const existingPdf = pdfMap.byPdfKey[pdfKey];
+    const existingPayment = pdfMap.byPaymentKey[paymentKey];
+
+    if (existingPdf && !V6_CONFIG.inactivePdfStatuses.includes(existingPdf.status)) {
+      V6_setRowValuesByHeader_(sheet, rowNo, {
+        pdfKey,
+        PDF_URL: existingPdf["PDF_URL"] || "",
+        status: "重複",
+        確認内容: "同じpdfKeyのPDFが既にあります",
+        処理: ""
+      });
+      return { status: "重複" };
+    }
+
+    const isReissue = existingPayment &&
+      existingPayment.pdfKey !== pdfKey &&
+      !V6_CONFIG.inactivePdfStatuses.includes(existingPayment.status);
+
+    const folderInfo = V7_getReceiptFolderForEvent_(ss, eventName);
+    const folder = folderInfo.folder;
+
+    const receiptNo = V6_normalizeText_(obj["領収書No"]) ||
+      (isReissue ? V6_normalizeText_(existingPayment["領収書No"]) : "") ||
+      V6_getAndIncrementReceiptNo_(ss, eventName);
+
+    const app = {
+      "Game ID": gameId,
+      "本名": customerName,
+      "メールアドレス": email,
+      "宛名": recipient,
+      eventName
+    };
+
+    const receiptRow = {
+      "大会名": tournamentName,
+      "購入時間": purchaseTime,
+      "年": obj["年"],
+      "月": obj["月"],
+      "日": obj["日"],
+      "種別": type,
+      "現金": obj["現金"],
+      "クレジットカード": obj["クレジットカード"],
+      "ポイント": obj["ポイント"],
+      "USDT": obj["USDT"]
+    };
+
+    const receiptData = V6_makeReceiptData_(app, receiptRow, receiptNo, total);
+    const fileName = V6_makeReceiptFileName_(eventName, receiptData);
+    const pdfBlob = RPDS_makeReceiptPdfBlob_(receiptData).setName(fileName);
+    const file = folder.createFile(pdfBlob).setName(fileName);
+
+    V6_appendPdfManagementRow_(pdfSheet, {
+      pdfKey,
+      paymentKey,
+      receiptNo,
+      gameId,
+      email,
+      recipient,
+      eventName,
+      tournamentName,
+      purchaseTime,
+      type,
+      total,
+      file,
+      folderId: folderInfo.id,
+      folderUrl: folderInfo.url,
+      status: "PDF作成済み",
+      note: isReissue ? `人工再発行 row=${rowNo}` : `人工発行 row=${rowNo}`
+    });
+
+    V6_sendApplicationMail_(email, customerName, eventName, [{ pdfKey, file, data: receiptData }]);
+    const sentAt = new Date();
+    V6_updatePdfManagementStatus_(pdfSheet, pdfKey, "送信済み", sentAt, email, isReissue ? "人工再発行" : "人工発行");
+
+    if (isReissue) {
+      V6_updatePdfManagementStatus_(pdfSheet, existingPayment.pdfKey, "差替済み", "", "", `差替先: ${pdfKey}`);
+    }
+
+    V6_setRowValuesByHeader_(sheet, rowNo, {
+      処理: "",
+      "領収書No": receiptNo,
+      paymentKey,
+      pdfKey,
+      PDF_URL: file.getUrl(),
+      status: "送信済み",
+      確認内容: isReissue ? "旧番号を引き継いで再発行しました" : "人工発行しました"
+    });
+
+    return { status: "送信済み" };
+  } catch (e) {
+    V6_setRowValuesByHeader_(sheet, rowNo, {
+      status: "エラー",
+      確認内容: e.message || String(e)
+    });
+    return { status: "エラー", message: e.message || String(e) };
+  }
+}
+
+function V6_resendSelectedPdf() {
+  setupReceiptAutoV6(false);
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getActiveSheet();
+  const rowNo = sheet.getActiveRange().getRow();
+  if (sheet.getName() !== V6_CONFIG.sheets.pdf || rowNo < 2) {
+    safeAlert_("領収書PDF管理 で再送信したいPDF行を選択してから実行してください。");
+    return;
+  }
+
+  const obj = V6_getRowObject_(sheet, rowNo);
+  const fileId = V6_normalizeText_(obj["PDF_FILE_ID"]);
+  if (!fileId) {
+    safeAlert_("PDF_FILE_ID が空です。");
+    return;
+  }
+
+  const defaultTo = V6_normalizeText_(obj["送信先"] || obj["メールアドレス"]);
+  const ui = SpreadsheetApp.getUi();
+  const res = ui.prompt("PDF再送信", "送信先メールアドレスを入力してください", ui.ButtonSet.OK_CANCEL);
+  if (res.getSelectedButton() !== ui.Button.OK) return;
+
+  const to = V6_normalizeText_(res.getResponseText() || defaultTo);
+  if (!V6_isValidEmail_(to)) {
+    safeAlert_("メールアドレスが不正です。");
+    return;
+  }
+
+  const file = DriveApp.getFileById(fileId);
+  const eventName = V6_normalizeText_(obj.eventName);
+  V6_sendApplicationMail_(to, "", eventName, [{ pdfKey: obj.pdfKey, file, data: {} }]);
+  V6_updatePdfManagementStatus_(sheet, V6_normalizeText_(obj.pdfKey), "送信済み", new Date(), to, "人工再送信");
+  safeAlert_("PDFを再送信しました。\n\n送信先：" + to);
+}
+
+function V6_cancelSelectedPdf() {
+  setupReceiptAutoV6(false);
+  const sheet = SpreadsheetApp.getActiveSheet();
+  const rowNo = sheet.getActiveRange().getRow();
+  if (sheet.getName() !== V6_CONFIG.sheets.pdf || rowNo < 2) {
+    safeAlert_("領収書PDF管理 で取り消したいPDF行を選択してから実行してください。");
+    return;
+  }
+
+  const obj = V6_getRowObject_(sheet, rowNo);
+  const ui = SpreadsheetApp.getUi();
+  const confirm = ui.alert("PDF取り消し", "選択したPDFを取り消しますか？\n\npdfKey:\n" + V6_normalizeText_(obj.pdfKey), ui.ButtonSet.YES_NO);
+  if (confirm !== ui.Button.YES) return;
+
+  V6_updatePdfManagementStatus_(sheet, V6_normalizeText_(obj.pdfKey), "取り消し", "", "", "人工取り消し");
+  safeAlert_("PDFを取り消しました。");
+}
+
+function V6_resetErrorApplicationsForRetry() {
+  setupReceiptAutoV6(false);
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(V6_CONFIG.sheets.application);
+  const values = sheet.getDataRange().getValues();
+  if (values.length < 2) {
+    safeAlert_("申請管理 に行がありません。");
+    return;
+  }
+
+  const headers = values[0].map(V6_normalizeText_);
+  const statusCol = headers.indexOf("ステータス");
+  const confirmCol = headers.indexOf("確認内容");
+  if (statusCol < 0) {
+    safeAlert_("申請管理 にステータス列がありません。");
+    return;
+  }
+
+  let count = 0;
+  for (let r = 1; r < values.length; r++) {
+    if (V6_normalizeText_(values[r][statusCol]) !== "エラー") continue;
+    sheet.getRange(r + 1, statusCol + 1).setValue("未処理");
+    if (confirmCol >= 0) sheet.getRange(r + 1, confirmCol + 1).setValue("エラー再処理待ち");
+    count++;
+  }
+
+  safeAlert_("エラー申請を未処理に戻しました。\n\n件数：" + count + "\n\nTampermonkey の人工実行、または自動監視の次回実行で再処理されます。");
+}
+
+function V6_rowToObject_(headers, row) {
+  const obj = {};
+  headers.forEach((h, i) => {
+    if (h) obj[h] = row[i];
+  });
+  return obj;
+}
+
+function V6_getHeaderMap_(sheet) {
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(V6_normalizeText_);
+  const map = {};
+  headers.forEach((h, i) => {
+    if (h) map[h] = i + 1;
+  });
+  return map;
+}
+
+function V6_getRowObject_(sheet, rowNo) {
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(V6_normalizeText_);
+  const row = sheet.getRange(rowNo, 1, 1, sheet.getLastColumn()).getValues()[0];
+  return V6_rowToObject_(headers, row);
+}
+
+function V6_setRowValuesByHeader_(sheet, rowNo, patch) {
+  const map = V6_getHeaderMap_(sheet);
+  Object.keys(patch).forEach(key => {
+    if (!map[key]) return;
+    sheet.getRange(rowNo, map[key]).setValue(patch[key]);
+  });
+}
+
+function V6_isRunMark_(value) {
+  const s = V6_normalizeText_(value).toUpperCase();
+  return s === "1" || s === "TRUE" || s === "Y" || s === "YES" || s === "実行" || s === "〇" || s === "○";
+}
+/*******************************************************
+ * END PwResultReceiver.gs
+ *******************************************************/
+
+
+/*******************************************************
+ * BEGIN ReceiptInputBuilder.gs
+ *******************************************************/
+/*******************************************************
+ * ReceiptInputBuilder.gs
+ *
+ * 正式版
+ *
+ * 用途：
+ * PW_PASTE_ROWS + 申請管理_TEST + PW_RECEIPT_ISSUED_LOG
+ * から領収書作成用の入力表を生成する
+ *
+ * 生成：
+ * PW_RECEIPT_INPUT_CLEAN
+ * PW_RECEIPT_INPUT_CHECK
+ *
+ * 参照：
+ * PW_RECEIPT_ISSUED_LOG
+ * 既に処理済みの uniqueKey は出力しない
+ *******************************************************/
+
+const RECEIPT_INPUT_CONFIG = {
+  sourceSheets: {
+    pasteRows: "領収書元データ",
+    application: "申請管理",
+    issuedLog: "領収書発行ログ"
+  },
+
+outputSheets: {
+  receiptInput: "領収書作成用データ",
+  check: "領収書作成チェック"
+},
+
+  receiptStartNo: 20000,
+
+  moneyAsText: true,
+
+  cancelStatuses: [
+    "取消",
+    "キャンセル",
+    "無効",
+    "ERROR",
+    "エラー"
+  ],
+
+  receiptInputHeaders: [
+    "uniqueKey",
+    "領収書No",
+    "Game ID",
+    "顧客名",
+    "メールアドレス",
+    "宛名",
+    "年",
+    "月",
+    "日",
+    "総金額",
+    "現金",
+    "クレジットカード",
+    "ポイント",
+    "USDT",
+    "消費税等",
+    "税抜き金額",
+    "トーナメント名",
+    "種別",
+    "購入時間",
+    "画像タイトルA",
+    "画像タイトルB"
+  ],
+
+  checkHeaders: [
+    "行番号",
+    "uniqueKey",
+    "Game ID",
+    "顧客名",
+    "メールアドレス",
+    "宛名",
+    "大会名",
+    "購入時間",
+    "種別",
+    "総金額",
+    "判定",
+    "理由"
+  ],
+
+  issuedLogHeaders: [
+    "uniqueKey",
+    "Game ID",
+    "TournamentId",
+    "大会名",
+    "購入時間",
+    "種別",
+    "総金額",
+    "領収書No",
+    "発行日時",
+    "メールアドレス",
+    "宛名",
+    "status",
+    "備考"
+  ]
+};
+
+function buildReceiptInput() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  const pasteSheet = ss.getSheetByName(RECEIPT_INPUT_CONFIG.sourceSheets.pasteRows);
+  const appSheet = ss.getSheetByName(RECEIPT_INPUT_CONFIG.sourceSheets.application);
+
+  if (!pasteSheet) {
+    throw new Error(`シート「${RECEIPT_INPUT_CONFIG.sourceSheets.pasteRows}」が見つかりません。`);
+  }
+
+  if (!appSheet) {
+    throw new Error(`シート「${RECEIPT_INPUT_CONFIG.sourceSheets.application}」が見つかりません。`);
+  }
+
+  RI_ensureIssuedLogSheet_(ss);
+
+  const pasteRows = RI_readObjectsFromSheet_(pasteSheet);
+  const appRows = RI_readObjectsFromSheet_(appSheet);
+  const issuedRows = RI_readObjectsFromSheet_(ss.getSheetByName(RECEIPT_INPUT_CONFIG.sourceSheets.issuedLog));
+
+  const appMap = RI_buildApplicationMap_(appRows);
+  const issuedKeySet = RI_buildIssuedKeySet_(issuedRows);
+
+  const nextReceiptNo = RI_getNextReceiptNo_(issuedRows);
+
+  const outputRows = [];
+  const checkRows = [];
+
+  const personCounter = {};
+  let receiptNo = nextReceiptNo;
+
+  for (let i = 0; i < pasteRows.length; i++) {
+    const p = pasteRows[i];
+
+    const gameId = RI_normalizeGameId_(RI_getAny_(p, ["Game ID", "GameID", "ゲームID"]));
+    const purchaseTime = RI_normalizeText_(RI_getAny_(p, ["購入時間"]));
+    const tournamentName = RI_normalizeText_(RI_getAny_(p, ["大会名", "トーナメント名"]));
+    const type = RI_normalizeText_(RI_getAny_(p, ["種別", "区分"]));
+
+    const cash = RI_toNumber_(RI_getAny_(p, ["現金"]));
+    const credit = RI_toNumber_(RI_getAny_(p, ["クレジットカード", "CC"]));
+    const point = RI_toNumber_(RI_getAny_(p, ["ポイント", "Coi", "Coin"]));
+    const usdt = RI_toNumber_(RI_getAny_(p, ["USDT", "USD"]));
+
+    const total = cash + credit + point + usdt;
+    const tax = Math.floor(total / 11);
+    const withoutTax = total - tax;
+
+    const year = RI_getAny_(p, ["年"]);
+    const month = RI_getAny_(p, ["月"]);
+    const day = RI_getAny_(p, ["日", "日付"]);
+
+    const uniqueKey = RI_makeUniqueKey_({
+      gameId,
+      tournamentName,
+      purchaseTime,
+      type,
+      total
+    });
+
+    const app = appMap[gameId] || {};
+
+    const customerName = RI_normalizeText_(app.name);
+    const email = RI_normalizeText_(app.email);
+    const invoiceName = RI_normalizeText_(app.invoiceName);
+
+    const errors = [];
+
+    if (!gameId) errors.push("Game ID空白");
+    if (!purchaseTime) errors.push("購入時間空白");
+    if (!tournamentName) errors.push("大会名空白");
+    if (!uniqueKey) errors.push("uniqueKey作成失敗");
+    if (!appMap[gameId]) errors.push("申請管理にGame IDなし");
+    if (!customerName) errors.push("本名空白");
+    if (!email) errors.push("メールアドレス空白");
+    if (total <= 0) errors.push("総金額0以下");
+
+    if (uniqueKey && issuedKeySet.has(uniqueKey)) {
+      errors.push("既に処理済み");
+    }
+
+    const checkStatus = errors.length ? "要確認" : "OK";
+
+    checkRows.push({
+      "行番号": i + 2,
+      "uniqueKey": uniqueKey,
+      "Game ID": gameId,
+      "顧客名": customerName,
+      "メールアドレス": email,
+      "宛名": invoiceName,
+      "大会名": tournamentName,
+      "購入時間": purchaseTime,
+      "種別": type,
+      "総金額": total,
+      "判定": checkStatus,
+      "理由": errors.join(" / ")
+    });
+
+    if (checkStatus !== "OK") {
+      continue;
+    }
+
+    const personKey = email || gameId || customerName || "UNKNOWN";
+    personCounter[personKey] = (personCounter[personKey] || 0) + 1;
+
+    outputRows.push({
+      "uniqueKey": uniqueKey,
+      "領収書No": receiptNo,
+      "Game ID": gameId,
+      "顧客名": customerName,
+      "メールアドレス": email,
+      "宛名": invoiceName,
+      "年": year,
+      "月": month,
+      "日": day,
+      "総金額": RI_formatMoney_(total),
+      "現金": RI_formatMoney_(cash),
+      "クレジットカード": RI_formatMoney_(credit),
+      "ポイント": RI_formatMoney_(point),
+      "USDT": RI_formatMoney_(usdt),
+      "消費税等": RI_formatMoney_(tax),
+      "税抜き金額": RI_formatMoney_(withoutTax),
+      "トーナメント名": tournamentName,
+      "種別": type,
+      "購入時間": purchaseTime,
+      "画像タイトルA": customerName ? `${customerName} 様` : "",
+      "画像タイトルB": personCounter[personKey]
+    });
+
+    receiptNo++;
+  }
+
+  RI_writeObjectsToSheet_(
+    ss,
+    RECEIPT_INPUT_CONFIG.outputSheets.receiptInput,
+    outputRows,
+    RECEIPT_INPUT_CONFIG.receiptInputHeaders
+  );
+
+  RI_writeObjectsToSheet_(
+    ss,
+    RECEIPT_INPUT_CONFIG.outputSheets.check,
+    checkRows,
+    RECEIPT_INPUT_CONFIG.checkHeaders
+  );
+
+  RI_safeAlert_(
+    `領収書入力表を作成しました。\n\n` +
+    `出力行数：${outputRows.length}\n` +
+    `CHECK行数：${checkRows.length}\n` +
+    `要確認：${checkRows.filter(r => r["判定"] !== "OK").length}`
+  );
+}
+
+/**
+ * 申請管理_TEST を Game ID 単位で読む
+ * 同じ Game ID が複数ある場合は下の行を優先
+ */
+function RI_buildApplicationMap_(appRows) {
+  const map = {};
+
+  for (const row of appRows) {
+    const gameId = RI_normalizeGameId_(RI_getAny_(row, ["Game ID", "GameID", "ゲームID"]));
+    if (!gameId) continue;
+
+    const name = RI_normalizeText_(RI_getAny_(row, ["本名", "氏名", "顧客名"]));
+    const email = RI_normalizeText_(RI_getAny_(row, ["メールアドレス", "受け取り用メールアドレス", "Email", "email"]));
+    const invoiceName = RI_normalizeText_(RI_getAny_(row, ["宛名", "領収書の宛名"]));
+
+    map[gameId] = {
+      name,
+      email,
+      invoiceName
+    };
+  }
+
+  return map;
+}
+
+/**
+ * 処理済み uniqueKey セットを作る
+ */
+function RI_buildIssuedKeySet_(issuedRows) {
+  const set = new Set();
+
+  for (const row of issuedRows) {
+    const uniqueKey = RI_normalizeText_(RI_getAny_(row, ["uniqueKey"]));
+    if (!uniqueKey) continue;
+
+    const status = RI_normalizeText_(RI_getAny_(row, ["status", "ステータス"]));
+
+    if (RECEIPT_INPUT_CONFIG.cancelStatuses.includes(status)) {
+      continue;
+    }
+
+    set.add(uniqueKey);
+  }
+
+  return set;
+}
+
+/**
+ * 次の領収書Noを決める
+ */
+function RI_getNextReceiptNo_(issuedRows) {
+  let maxNo = RECEIPT_INPUT_CONFIG.receiptStartNo - 1;
+
+  for (const row of issuedRows) {
+    const n = RI_toNumber_(RI_getAny_(row, ["領収書No"]));
+    if (n > maxNo) maxNo = n;
+  }
+
+  return maxNo + 1;
+}
+
+/**
+ * uniqueKey作成
+ */
+function RI_makeUniqueKey_(data) {
+  const gameId = RI_normalizeGameId_(data.gameId);
+  const tournamentName = RI_normalizeText_(data.tournamentName);
+  const purchaseTime = RI_normalizeText_(data.purchaseTime);
+  const type = RI_normalizeText_(data.type);
+  const total = Number(data.total || 0);
+
+  if (!gameId || !tournamentName || !purchaseTime || total <= 0) {
+    return "";
+  }
+
+  return [
+    gameId,
+    RI_compactKey_(tournamentName),
+    RI_compactKey_(purchaseTime),
+    RI_compactKey_(type),
+    Math.round(total)
+  ].join("__");
+}
+
+/**
+ * ISSUED_LOG がなければ作る
+ */
+function RI_ensureIssuedLogSheet_(ss) {
+  let sheet = ss.getSheetByName(RECEIPT_INPUT_CONFIG.sourceSheets.issuedLog);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(RECEIPT_INPUT_CONFIG.sourceSheets.issuedLog);
+    sheet.getRange(1, 1, 1, RECEIPT_INPUT_CONFIG.issuedLogHeaders.length)
+      .setValues([RECEIPT_INPUT_CONFIG.issuedLogHeaders]);
+    sheet.setFrozenRows(1);
+    sheet.autoResizeColumns(1, RECEIPT_INPUT_CONFIG.issuedLogHeaders.length);
+    return;
+  }
+
+  if (sheet.getLastRow() === 0 || sheet.getLastColumn() === 0) {
+    sheet.getRange(1, 1, 1, RECEIPT_INPUT_CONFIG.issuedLogHeaders.length)
+      .setValues([RECEIPT_INPUT_CONFIG.issuedLogHeaders]);
+    sheet.setFrozenRows(1);
+    sheet.autoResizeColumns(1, RECEIPT_INPUT_CONFIG.issuedLogHeaders.length);
+  }
+}
+
+/**
+ * Sheet → Object[]
+ */
+function RI_readObjectsFromSheet_(sheet) {
+  if (!sheet) return [];
+
+  const values = sheet.getDataRange().getValues();
+
+  if (values.length < 2) {
+    return [];
+  }
+
+  const headers = values[0].map(RI_normalizeText_);
+  const rows = [];
+
+  for (let r = 1; r < values.length; r++) {
+    const obj = {};
+
+    for (let c = 0; c < headers.length; c++) {
+      const h = headers[c];
+      if (!h) continue;
+      obj[h] = values[r][c];
+    }
+
+    const hasAny = Object.values(obj).some(v => RI_normalizeText_(v));
+    if (hasAny) rows.push(obj);
+  }
+
+  return rows;
+}
+
+/**
+ * Object[] → Sheet
+ */
+function RI_writeObjectsToSheet_(ss, sheetName, rows, headers) {
+  const sheet = RI_getOrCreateSheet_(ss, sheetName);
+  sheet.clear();
+
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+
+  if (rows.length > 0) {
+    const values = rows.map(row => {
+      return headers.map(h => {
+        const v = row[h];
+        return v === undefined || v === null ? "" : v;
+      });
+    });
+
+    sheet.getRange(2, 1, values.length, headers.length).setValues(values);
+  }
+
+  sheet.setFrozenRows(1);
+  sheet.autoResizeColumns(1, headers.length);
+
+  const existingFilter = sheet.getFilter();
+  if (existingFilter) existingFilter.remove();
+
+  const lastRow = Math.max(sheet.getLastRow(), 1);
+  sheet.getRange(1, 1, lastRow, headers.length).createFilter();
+}
+
+function RI_getOrCreateSheet_(ss, sheetName) {
+  let sheet = ss.getSheetByName(sheetName);
+  if (!sheet) sheet = ss.insertSheet(sheetName);
+  return sheet;
+}
+
+/**
+ * 複数候補ヘッダーから値取得
+ */
+function RI_getAny_(row, keys) {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(row, key)) {
+      const value = row[key];
+      if (value !== undefined && value !== null && String(value).trim() !== "") {
+        return value;
+      }
+    }
+  }
+  return "";
+}
+
+function RI_normalizeText_(value) {
+  if (value === null || value === undefined) return "";
+
+  return String(value)
+    .replace(/\u3000/g, " ")
+    .replace(/\u00a0/g, " ")
+    .replace(/[ \t\r\n]+/g, " ")
+    .trim();
+}
+
+function RI_normalizeGameId_(value) {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  return digits.length === 8 ? digits : "";
+}
+
+function RI_toNumber_(value) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  const cleaned = String(value ?? "").replace(/[^\d.-]/g, "");
+  const n = Number(cleaned);
+
+  return Number.isFinite(n) ? n : 0;
+}
+
+function RI_compactKey_(value) {
+  return RI_normalizeText_(value)
+    .replace(/\s+/g, "")
+    .replace(/[\/／]/g, "")
+    .replace(/[|｜]/g, "")
+    .replace(/__/g, "_");
+}
+
+function RI_formatMoney_(amount) {
+  const n = Math.round(Number(amount || 0));
+
+  if (!RECEIPT_INPUT_CONFIG.moneyAsText) {
+    return n;
+  }
+
+  return `¥${n.toLocaleString("ja-JP")}-`;
+}
+
+function RI_safeAlert_(message) {
+  try {
+    SpreadsheetApp.getUi().alert(message);
+  } catch (e) {
+    console.log("[NO_UI_ALERT] " + message);
+  }
+}
+/*******************************************************
+ * END ReceiptInputBuilder.gs
+ *******************************************************/
+
+
+/*******************************************************
+ * BEGIN ReceiptPdfDirectSend.gs
+ *******************************************************/
+/****************************************************
+ * ReceiptPdfDirectSendTest.gs
+ *
+ * 領収書PDF生成 + Drive保存 + Gmail直接送信 TEST版
+ *
+ * 用途：
+ * - PW_RECEIPT_INPUT_CLEAN の1行を読む
+ * - PDF領収書を生成
+ * - DriveにPDFを保存
+ * - Gmailで自分宛てに直接送信
+ *
+ * 重要：
+ * - PDF側では金額計算をしない
+ * - 総金額 / 消費税等 / 税抜き金額 は Sheet の値をそのまま読む
+ * - USDT列は読まない / 表示しない
+ * - ただし総金額にUSDTが含まれていても、そのまま表示する
+ *
+ * 最初に実行：
+ * - runReceiptPdfDirectSendTestOne()
+ ****************************************************/
+
+const RPDS_CONFIG = {
+  SHEET_NAME: '領収書作成用データ',
+
+  // テスト対象行。通常、データ1件目は2行目
+  TEST_ROW: 2,
+
+  // 空の場合：
+  // 現在のスプレッドシートと同じDrive場所に「領収書PDFテスト出力」フォルダを作成/使用
+  // 固定フォルダに保存したい場合はDriveフォルダURLまたはIDを入れる
+  OUTPUT_FOLDER_URL_OR_ID: '',
+
+  // PW_EVENT_CONFIG の namePrefix を優先。取得できない場合だけこの値を使う。
+  FILE_PREFIX: '【SPADIE Season 41st】 領収書_',
+
+  FONT_FAMILY: '"Noto Sans JP", "Yu Gothic", "Meiryo", "BIZ UDGothic", "BIZ UDPGothic", sans-serif',
+
+  COMPANY_ZIP_ADDRESS: '〒162-0845　東京都新宿区市谷本村町 2-21<br>市ケ谷キャナルコート 3階',
+  COMPANY_NAME: 'ジャパンオープンポーカーツアー株式会社',
+  REGISTRATION_NO: '登録番号：T2010001175193',
+
+  OUTPUT_COL_PDF_URL: 'PDF_URL',
+  OUTPUT_COL_MAIL_STATUS: 'メール送信ステータス',
+  OUTPUT_COL_MAIL_SENT_AT: 'メール送信日時',
+  OUTPUT_COL_ERROR: 'PDFメールエラー'
+};
+
+const RPDS_MAIL_CONFIG = {
+  // 空なら Session.getActiveUser().getEmail() を使う
+  // 取れない場合は自分のメールをここに直接入れる
+  TEST_TO_EMAIL: '',
+
+  SUBJECT: '電子領収書の送付について',
+
+  // 旧正式版に合わせる
+  FROM_ALIAS: 'customer@japanopenpoker.com',
+  FROM_NAME: 'Japan Open Poker Tour / JOPT',
+  BCC: 'customer@japanopenpoker.com',
+
+  // PW_EVENT_CONFIG の namePrefix / eventName を優先。取得できない場合だけこの値を使う。
+  EVENT_NAME: 'SPADIE Season 41st'
+};
+
+
+/**
+ * TEST：
+ * PW_RECEIPT_INPUT_CLEAN の TEST_ROW をPDF化して、
+ */
+function runReceiptPdfDirectSendTestOne() {
+  RPDS_processOneRowAndSendToSheetEmail_(RPDS_CONFIG.TEST_ROW);
+}
+
+/**
+ * 領収書入力表の未送信行を全件PDF化する。
+ * 同じメールアドレス宛てのPDFは、1通のメールにまとめて送信する。
+ */
+function runReceiptPdfDirectSendAllPending() {
+  const summary = RPDS_processAllPendingRowsGroupedByEmail_();
+
+  RPDS_safeAlert_(
+    '領収書PDF一括送信 完了\n\n' +
+    '対象行：' + summary.targetRows + '\n' +
+    '作成PDF：' + summary.pdfCount + '\n' +
+    '送信メール：' + summary.mailCount + '\n' +
+    '送信済みPDF：' + summary.sentRows + '\n' +
+    'エラー行：' + summary.errorRows
+  );
+
+  return summary;
+}
+
+function RPDS_processAllPendingRowsGroupedByEmail_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(RPDS_CONFIG.SHEET_NAME);
+
+  if (!sheet) {
+    throw new Error('対象シートが見つかりません: ' + RPDS_CONFIG.SHEET_NAME);
+  }
+
+  let lastCol = sheet.getLastColumn();
+  let headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+
+  RPDS_ensureOutputColumns_(sheet, headers);
+
+  lastCol = sheet.getLastColumn();
+  headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+
+  const headerMap = RPDS_buildHeaderMap_(headers);
+  const lastRow = sheet.getLastRow();
+  const folder = RPDS_getOutputFolder_();
+  const groups = {};
+  const errors = [];
+  const sentGameIds = {};
+  const errorGameIds = {};
+
+  let targetRows = 0;
+  let skippedRows = 0;
+  let pdfCount = 0;
+
+  for (let rowNo = 2; rowNo <= lastRow; rowNo++) {
+    const row = sheet.getRange(rowNo, 1, 1, lastCol).getValues()[0];
+
+    if (RPDS_isEmptyRow_(row)) {
+      skippedRows++;
+      continue;
+    }
+
+    const currentStatus = String(RPDS_pick_(row, headerMap, [RPDS_CONFIG.OUTPUT_COL_MAIL_STATUS]) || '').trim();
+
+    if (currentStatus === '送信済み') {
+      skippedRows++;
+      continue;
+    }
+
+    targetRows++;
+
+    try {
+      RPDS_clearRowOutput_(sheet, headerMap, rowNo);
+
+      const data = RPDS_buildReceiptData_(row, headerMap, rowNo);
+      const to = String(data.email || '').trim();
+
+      if (!to) {
+        throw new Error('Sheetのメールアドレスが空です');
+      }
+
+      const pdfBlob = RPDS_makeReceiptPdfBlob_(data);
+      const fileName = RPDS_makeReceiptFileName_(data);
+      const file = folder.createFile(pdfBlob).setName(fileName);
+
+      RPDS_writeOutput_(sheet, headerMap, rowNo, RPDS_CONFIG.OUTPUT_COL_PDF_URL, file.getUrl());
+
+      const groupKey = to.toLowerCase();
+      if (!groups[groupKey]) {
+        groups[groupKey] = {
+          to,
+          items: []
+        };
+      }
+
+      groups[groupKey].items.push({
+        rowNo,
+        data,
+        file,
+        fileName
+      });
+
+      pdfCount++;
+
+    } catch (e) {
+      const errorGameId = RPDS_normalizeGameIdForQueue_(RPDS_pick_(row, headerMap, ["Game ID", "GameID", "ゲームID"]));
+      if (errorGameId) errorGameIds[errorGameId] = true;
+
+      errors.push({
+        rowNo,
+        message: e.message || String(e)
+      });
+
+      try {
+        RPDS_writeOutput_(sheet, headerMap, rowNo, RPDS_CONFIG.OUTPUT_COL_MAIL_STATUS, 'エラー');
+        RPDS_writeOutput_(sheet, headerMap, rowNo, RPDS_CONFIG.OUTPUT_COL_ERROR, e.message || String(e));
+      } catch (writeErr) {
+        console.log('エラー書き込み失敗: ' + writeErr.message);
+      }
+    }
+  }
+
+  let mailCount = 0;
+  let sentRows = 0;
+
+  Object.keys(groups).forEach(key => {
+    const group = groups[key];
+    const items = group.items || [];
+
+    if (!items.length) return;
+
+    try {
+      const subject = RPDS_MAIL_CONFIG.SUBJECT;
+      const body = RPDS_buildGroupedMailBody_(items);
+      const files = items.map(item => item.file);
+
+      RPDS_sendMailWithFiles_(group.to, subject, body, files);
+
+      items.forEach(item => {
+        RPDS_writeOutput_(sheet, headerMap, item.rowNo, RPDS_CONFIG.OUTPUT_COL_MAIL_STATUS, '送信済み');
+        RPDS_writeOutput_(sheet, headerMap, item.rowNo, RPDS_CONFIG.OUTPUT_COL_MAIL_SENT_AT, new Date());
+        RPDS_appendIssuedLog_(ss, item.data, item.file);
+        if (item.data && item.data.gameId) sentGameIds[item.data.gameId] = true;
+      });
+
+      mailCount++;
+      sentRows += items.length;
+
+    } catch (e) {
+      items.forEach(item => {
+        if (item.data && item.data.gameId) errorGameIds[item.data.gameId] = true;
+
+        errors.push({
+          rowNo: item.rowNo,
+          message: e.message || String(e)
+        });
+
+        try {
+          RPDS_writeOutput_(sheet, headerMap, item.rowNo, RPDS_CONFIG.OUTPUT_COL_MAIL_STATUS, 'エラー');
+          RPDS_writeOutput_(sheet, headerMap, item.rowNo, RPDS_CONFIG.OUTPUT_COL_ERROR, e.message || String(e));
+        } catch (writeErr) {
+          console.log('エラー書き込み失敗: ' + writeErr.message);
+        }
+      });
+    }
+  });
+
+  return {
+    targetRows,
+    skippedRows,
+    pdfCount,
+    mailCount,
+    sentRows,
+    errorRows: errors.length,
+    sentGameIds: Object.keys(sentGameIds),
+    errorGameIds: Object.keys(errorGameIds)
+  };
+}
+/**
+ * 指定行をPDF化して、Sheetのメールアドレス宛てに送信
+ */
+function RPDS_processOneRowAndSendToSheetEmail_(rowNo) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(RPDS_CONFIG.SHEET_NAME);
+
+  if (!sheet) {
+    throw new Error('対象シートが見つかりません: ' + RPDS_CONFIG.SHEET_NAME);
+  }
+
+  let lastCol = sheet.getLastColumn();
+  let headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+
+  RPDS_ensureOutputColumns_(sheet, headers);
+
+  lastCol = sheet.getLastColumn();
+  headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+
+  const headerMap = RPDS_buildHeaderMap_(headers);
+
+  try {
+    RPDS_clearRowOutput_(sheet, headerMap, rowNo);
+
+    const row = sheet.getRange(rowNo, 1, 1, lastCol).getValues()[0];
+
+    if (RPDS_isEmptyRow_(row)) {
+      throw new Error('対象行が空です: row ' + rowNo);
+    }
+
+    const data = RPDS_buildReceiptData_(row, headerMap, rowNo);
+
+    const folder = RPDS_getOutputFolder_();
+    const pdfBlob = RPDS_makeReceiptPdfBlob_(data);
+    const fileName = RPDS_makeReceiptFileName_(data);
+    const file = folder.createFile(pdfBlob).setName(fileName);
+
+    const to = String(data.email || '').trim();
+
+    if (!to) {
+      throw new Error('Sheetのメールアドレスが空です');
+    }
+
+    const subject = RPDS_MAIL_CONFIG.SUBJECT;
+    const body = RPDS_buildMailBody_(data);
+
+    RPDS_sendMail_(to, subject, body, file);
+
+    RPDS_writeOutput_(sheet, headerMap, rowNo, RPDS_CONFIG.OUTPUT_COL_PDF_URL, file.getUrl());
+    RPDS_writeOutput_(sheet, headerMap, rowNo, RPDS_CONFIG.OUTPUT_COL_MAIL_STATUS, '送信済み');
+    RPDS_writeOutput_(sheet, headerMap, rowNo, RPDS_CONFIG.OUTPUT_COL_MAIL_SENT_AT, new Date());
+    QUEUE_markApplicationRows_(ss, new Set([data.gameId]), "送信済み", "領収書PDF送信完了");
+    createPwInputs();
+
+    RPDS_safeAlert_(
+      'PDF発行 + メール直接送信 完了\n\n' +
+      '対象行：' + rowNo + '\n' +
+      '送信先：' + to + '\n\n' +
+      'ファイル名：\n' + fileName + '\n\n' +
+      'PDF URL：\n' + file.getUrl()
+    );
+
+  } catch (e) {
+    try {
+      RPDS_writeOutput_(sheet, headerMap, rowNo, RPDS_CONFIG.OUTPUT_COL_MAIL_STATUS, 'エラー');
+      RPDS_writeOutput_(sheet, headerMap, rowNo, RPDS_CONFIG.OUTPUT_COL_ERROR, e.message);
+    } catch (writeErr) {
+      console.log('エラー書き込み失敗: ' + writeErr.message);
+    }
+
+    RPDS_safeAlert_(
+      'エラーが発生しました\n\n' +
+      '対象行：' + rowNo + '\n' +
+      '内容：\n' + e.message
+    );
+
+    throw e;
+  }
+}
+/**
+ * 指定行をPDF化して自分宛て送信
+ */
+function RPDS_processOneRowAndSendToSelf_(rowNo) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(RPDS_CONFIG.SHEET_NAME);
+
+  if (!sheet) {
+    throw new Error('対象シートが見つかりません: ' + RPDS_CONFIG.SHEET_NAME);
+  }
+
+  let lastCol = sheet.getLastColumn();
+  let headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+
+  RPDS_ensureOutputColumns_(sheet, headers);
+
+  lastCol = sheet.getLastColumn();
+  headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+
+  const headerMap = RPDS_buildHeaderMap_(headers);
+
+  try {
+    RPDS_clearRowOutput_(sheet, headerMap, rowNo);
+
+    const row = sheet.getRange(rowNo, 1, 1, lastCol).getValues()[0];
+
+    if (RPDS_isEmptyRow_(row)) {
+      throw new Error('対象行が空です: row ' + rowNo);
+    }
+
+    const data = RPDS_buildReceiptData_(row, headerMap, rowNo);
+
+    const folder = RPDS_getOutputFolder_();
+    const pdfBlob = RPDS_makeReceiptPdfBlob_(data);
+    const fileName = RPDS_makeReceiptFileName_(data);
+    const file = folder.createFile(pdfBlob).setName(fileName);
+
+    const to = RPDS_getSelfTestEmail_();
+    const subject = RPDS_MAIL_CONFIG.SUBJECT;
+    const body = RPDS_buildMailBody_(data);
+
+    RPDS_sendMail_(to, subject, body, file);
+
+    RPDS_writeOutput_(sheet, headerMap, rowNo, RPDS_CONFIG.OUTPUT_COL_PDF_URL, file.getUrl());
+    RPDS_writeOutput_(sheet, headerMap, rowNo, RPDS_CONFIG.OUTPUT_COL_MAIL_STATUS, '送信済み');
+    RPDS_writeOutput_(sheet, headerMap, rowNo, RPDS_CONFIG.OUTPUT_COL_MAIL_SENT_AT, new Date());
+
+    RPDS_safeAlert_(
+      'PDF発行 + メール直接送信 完了\n\n' +
+      '対象行：' + rowNo + '\n' +
+      '送信先：' + to + '\n\n' +
+      'ファイル名：\n' + fileName + '\n\n' +
+      'PDF URL：\n' + file.getUrl()
+    );
+
+  } catch (e) {
+    try {
+      RPDS_writeOutput_(sheet, headerMap, rowNo, RPDS_CONFIG.OUTPUT_COL_MAIL_STATUS, 'エラー');
+      RPDS_writeOutput_(sheet, headerMap, rowNo, RPDS_CONFIG.OUTPUT_COL_ERROR, e.message);
+    } catch (writeErr) {
+      console.log('エラー書き込み失敗: ' + writeErr.message);
+    }
+
+    RPDS_safeAlert_(
+      'エラーが発生しました\n\n' +
+      '対象行：' + rowNo + '\n' +
+      '内容：\n' + e.message
+    );
+
+    throw e;
+  }
+}
+
+
+/**
+ * Gmailで直接送信
+ */
+function RPDS_sendMail_(to, subject, body, file) {
+  RPDS_sendMailWithFiles_(to, subject, body, [file]);
+}
+
+function RPDS_sendMailWithFiles_(to, subject, body, files) {
+  const opts = {
+    name: RPDS_MAIL_CONFIG.FROM_NAME,
+    attachments: files.map(file => file.getBlob().setName(file.getName()))
+  };
+
+  if (RPDS_MAIL_CONFIG.FROM_ALIAS) {
+    opts.from = RPDS_MAIL_CONFIG.FROM_ALIAS;
+  }
+
+  if (RPDS_MAIL_CONFIG.BCC) {
+    opts.bcc = RPDS_MAIL_CONFIG.BCC;
+  }
+
+  GmailApp.sendEmail(to, subject, body, opts);
+}
+
+
+/**
+ * テスト送信先を取得
+ */
+function RPDS_getSelfTestEmail_() {
+  const configured = String(RPDS_MAIL_CONFIG.TEST_TO_EMAIL || '').trim();
+
+  if (configured) {
+    return configured;
+  }
+
+  const activeEmail = String(Session.getActiveUser().getEmail() || '').trim();
+
+  if (activeEmail) {
+    return activeEmail;
+  }
+
+  throw new Error('自分宛てテスト送信先を取得できません。RPDS_MAIL_CONFIG.TEST_TO_EMAIL に自分のメールを入れてください。');
+}
+
+
+/**
+ * メール本文
+ * 旧正式版の文面に合わせる
+ */
+function RPDS_buildMailBody_(data) {
+  const addressee = RPDS_buildAddressee_(data.customerName);
+  const eventLabel = RPDS_getCurrentEventLabel_();
+
+  return `${addressee}
+
+平素よりお世話になっております。
+ジャパンオープンポーカーツアー株式会社カスタマーサポートのショウです。
+
+この度は${eventLabel}にご参加いただき、誠にありがとうございました。
+
+電子領収書を発行いたしましたので、添付にてお送りいたします。
+なお、電子チケットおよび選手契約履行によるエントリーにつきましては、領収書の発行対象外となっております。
+
+※本メールは自動送信です。ご返信いただいても対応いたしかねます。
+領収書の内容に修正が必要な場合や、ご利用環境によって添付ファイルが表示されない場合は、JOPT公式LINEよりお問い合わせください。
+今後ともどうぞよろしくお願いいたします。`;
+}
+
+function RPDS_buildGroupedMailBody_(items) {
+  const first = items[0].data;
+
+  if (items.length <= 1) {
+    return RPDS_buildMailBody_(first);
+  }
+
+  const addressee = RPDS_buildAddressee_(first.customerName);
+  const eventLabel = RPDS_getCurrentEventLabel_();
+
+  return `${addressee}
+
+平素よりお世話になっております。
+ジャパンオープンポーカーツアー株式会社カスタマーサポートのショウです。
+
+この度は${eventLabel}にご参加いただき、誠にありがとうございました。
+
+電子領収書を${items.length}件発行いたしましたので、まとめて添付にてお送りいたします。
+なお、電子チケットおよび選手契約履行によるエントリーにつきましては、領収書の発行対象外となっております。
+
+※本メールは自動送信です。ご返信いただいても対応いたしかねます。
+領収書の内容に修正が必要な場合や、ご利用環境によって添付ファイルが表示されない場合は、JOPT公式LINEよりお問い合わせください。
+今後ともどうぞよろしくお願いいたします。`;
+}
+
+function RPDS_getCurrentEventLabel_() {
+  const namePrefix = RPDS_getEventConfigValue_("namePrefix");
+  if (namePrefix) return RPDS_formatEventLabel_(namePrefix);
+
+  const eventName = RPDS_getEventConfigValue_("eventName") || RPDS_MAIL_CONFIG.EVENT_NAME;
+  return RPDS_formatEventLabel_(eventName);
+}
+
+function RPDS_getReceiptFilePrefix_() {
+  const namePrefix = RPDS_getEventConfigValue_("namePrefix");
+
+  if (namePrefix) {
+    return RPDS_formatEventLabel_(namePrefix) + " 領収書_";
+  }
+
+  return RPDS_CONFIG.FILE_PREFIX || "領収書_";
+}
+
+function RPDS_formatEventLabel_(value) {
+  const s = String(value || "").trim();
+  if (!s) return "";
+  if (/^【.+】$/.test(s)) return s;
+  return `【${s}】`;
+}
+
+function RPDS_getEventConfigValue_(key) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(FORM_IMPORT_CONFIG.eventConfigSheetName);
+    if (!sheet) return "";
+
+    const values = sheet.getDataRange().getValues();
+
+    for (let r = 1; r < values.length; r++) {
+      const k = String(values[r][0] || "").trim();
+      const v = String(values[r][1] || "").trim();
+
+      if (k === key) return v;
+    }
+  } catch (e) {
+    console.log("PW_EVENT_CONFIG 読み込み失敗: " + (e.message || String(e)));
+  }
+
+  return "";
+}
+
+
+/**
+ * 宛名作成
+ * メール本文の先頭用なので、顧客名 + 様
+ */
+function RPDS_buildAddressee_(name) {
+  const value = String(name || '').trim();
+
+  if (!value) {
+    return 'お客様';
+  }
+
+  return value.endsWith('様') ? value : value + ' 様';
+}
+
+
+/**
+ * Sheet一行 → 領収書データ
+ *
+ * 重要：
+ * - 金額計算しない
+ * - USDTは読まない
+ */
+function RPDS_buildReceiptData_(row, headerMap, rowNo) {
+  const uniqueKey = RPDS_pick_(row, headerMap, [
+    'uniqueKey'
+  ]) || '';
+
+  const receiptNo = RPDS_pick_(row, headerMap, [
+    '領収書No',
+    '領収書No.',
+    'No',
+    'No.'
+  ]) || String(rowNo - 1);
+
+  const gameId = RPDS_pick_(row, headerMap, [
+    'Game ID',
+    'GameID'
+  ]) || '';
+
+  const customerName = RPDS_pick_(row, headerMap, [
+    '顧客名',
+    '本名',
+    '名前',
+    '氏名'
+  ]) || '';
+
+  const recipientRaw = RPDS_pick_(row, headerMap, [
+    '宛名'
+  ]) || '';
+
+  const recipient = RPDS_removeSama_(recipientRaw);
+
+  const email = RPDS_pick_(row, headerMap, [
+    'メールアドレス',
+    'メール',
+    'Email',
+    'email',
+    'E-mail',
+    'mail'
+  ]) || '';
+
+  const year = RPDS_pick_(row, headerMap, ['年']) || '';
+  const month = RPDS_pick_(row, headerMap, ['月']) || '';
+  const day = RPDS_pick_(row, headerMap, ['日', '日付']) || '';
+
+  const tournamentName = RPDS_pick_(row, headerMap, [
+    'トーナメント名',
+    'トーナメント',
+    '大会名'
+  ]) || '';
+
+  const purchaseTime = RPDS_pick_(row, headerMap, [
+    '購入時間'
+  ]) || '';
+
+  const type = RPDS_pick_(row, headerMap, [
+    '種別',
+    '区分'
+  ]) || '';
+
+  const totalAmountRaw = RPDS_pick_(row, headerMap, [
+    '総金額',
+    '合計金額',
+    '金額'
+  ]);
+
+  const totalAmount = RPDS_formatYen_(totalAmountRaw);
+
+  const cash = RPDS_formatYen_(RPDS_pick_(row, headerMap, [
+    '現金'
+  ]));
+
+  const creditCard = RPDS_formatYen_(RPDS_pick_(row, headerMap, [
+    'クレジットカード',
+    'カード'
+  ]));
+
+  const point = RPDS_formatYen_(RPDS_pick_(row, headerMap, [
+    'ポイント',
+    'Point'
+  ]));
+
+  const taxAmount = RPDS_formatYen_(RPDS_pick_(row, headerMap, [
+    '消費税等',
+    '消費税額等',
+    '消費税'
+  ]));
+
+  const taxExcluded = RPDS_formatYen_(RPDS_pick_(row, headerMap, [
+    '税抜き金額',
+    '税抜き',
+    '金額（税抜き）'
+  ]));
+
+  const titleA = RPDS_pick_(row, headerMap, ['画像タイトルA']) || (customerName ? customerName + ' 様' : 'お客様');
+  const titleB = RPDS_pick_(row, headerMap, ['画像タイトルB']) || '1';
+
+  return {
+    uniqueKey,
+    receiptNo,
+    gameId,
+    customerName,
+    recipient,
+    email,
+    year,
+    month,
+    day,
+    tournamentName,
+    purchaseTime,
+    type,
+    totalAmountRaw,
+    totalAmount,
+    cash,
+    creditCard,
+    point,
+    taxAmount,
+    taxExcluded,
+    titleA,
+    titleB
+  };
+}
+
+function RPDS_appendIssuedLog_(ss, data, file) {
+  RI_ensureIssuedLogSheet_(ss);
+
+  const sheet = ss.getSheetByName(RECEIPT_INPUT_CONFIG.sourceSheets.issuedLog);
+
+  sheet.appendRow([
+    data.uniqueKey,
+    data.gameId,
+    '',
+    data.tournamentName,
+    data.purchaseTime,
+    data.type,
+    data.totalAmount,
+    data.receiptNo,
+    new Date(),
+    data.email,
+    data.recipient,
+    '送信済み',
+    file.getUrl()
+  ]);
+}
+
+
+/**
+ * HTML → PDF Blob
+ */
+function RPDS_makeReceiptPdfBlob_(data) {
+  const html = RPDS_buildReceiptHtml_(data);
+  const blob = Utilities.newBlob(html, 'text/html', 'receipt.html');
+  return blob.getAs(MimeType.PDF).setName(RPDS_makeReceiptFileName_(data));
+}
+
+
+/**
+ * PDF用HTML
+ *
+ * USDTは表示しない。
+ */
+function RPDS_buildReceiptHtml_(d) {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  @page {
+    size: A4 landscape;
+    margin: 0;
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 297mm;
+    height: 210mm;
+    font-family: ${RPDS_CONFIG.FONT_FAMILY};
+    color: #231815;
+    background: #ffffff;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .page {
+    position: relative;
+    width: 297mm;
+    height: 210mm;
+    overflow: hidden;
+    background: #ffffff;
+  }
+
+  .headerSvg {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 297mm;
+    height: 31mm;
+  }
+
+  .tournament {
+    position: absolute;
+    left: 6mm;
+    top: 52mm;
+    width: 166mm;
+    max-height: 12mm;
+    font-size: 4.4mm;
+    font-weight: 400;
+    line-height: 1.35;
+    white-space: normal;
+    overflow: hidden;
+  }
+
+  .jp-latin-gap {
+    display: inline-block;
+    width: 1.4mm;
+  }
+
+  .right-info {
+    position: absolute;
+    left: 198mm;
+    top: 51mm;
+    width: 88mm;
+    font-weight: 700;
+    color: #231815;
+  }
+
+  .no-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 5.2mm;
+    margin-bottom: 4mm;
+  }
+
+  .no-value {
+    font-size: 6.8mm;
+    letter-spacing: 0.5mm;
+  }
+
+  .date-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 5.2mm;
+  }
+
+  .date-value {
+    font-size: 6.1mm;
+    letter-spacing: 0.5mm;
+  }
+
+  .recipient {
+    position: absolute;
+    top: 78mm;
+    left: 67mm;
+    width: 166mm;
+    text-align: center;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .recipient-name {
+    display: inline-block;
+    font-size: 10.5mm;
+    width: 122mm;
+    text-align: center;
+    vertical-align: baseline;
+  }
+
+  .recipient-sama {
+    display: inline-block;
+    font-size: 13.5mm;
+    margin-left: 10mm;
+    vertical-align: baseline;
+  }
+
+  .line1 {
+    position: absolute;
+    top: 96mm;
+    left: 67mm;
+    width: 166mm;
+    height: 0.25mm;
+    background: #231815;
+  }
+
+  .amount {
+    position: absolute;
+    top: 109mm;
+    left: 67mm;
+    width: 166mm;
+    text-align: center;
+    font-size: 13mm;
+    font-weight: 700;
+    letter-spacing: 1mm;
+  }
+
+  .line2 {
+    position: absolute;
+    top: 126mm;
+    left: 67mm;
+    width: 166mm;
+    height: 0.25mm;
+    background: #231815;
+  }
+
+  .note {
+    position: absolute;
+    top: 138mm;
+    left: 62mm;
+    width: 175mm;
+    text-align: center;
+    font-size: 5.4mm;
+    font-weight: 400;
+    letter-spacing: 0.45mm;
+    white-space: nowrap;
+  }
+
+  .breakdown {
+    position: absolute;
+    left: 7mm;
+    top: 148mm;
+    width: 113mm;
+    font-size: 5.2mm;
+    font-weight: 400;
+  }
+
+  .breakdown-title {
+    font-size: 5.7mm;
+    margin-bottom: 2mm;
+    font-weight: 500;
+  }
+
+  .b-line {
+    border-top: 0.25mm solid #231815;
+    height: 9.8mm;
+    display: flex;
+    align-items: center;
+  }
+
+  .b-label {
+    width: 68mm;
+    padding-left: 2mm;
+  }
+
+  .b-value {
+    width: 40mm;
+    text-align: left;
+  }
+
+  .tax-box {
+    border-top: 0.25mm solid #231815;
+    border-bottom: 0.25mm solid #231815;
+    display: grid;
+    grid-template-columns: 21mm 49mm 40mm;
+    height: 21mm;
+  }
+
+  .tax-rate {
+    border-right: 0.25mm solid #231815;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding-left: 3mm;
+    font-size: 5.1mm;
+    font-weight: 400;
+  }
+
+  .tax-labels {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .tax-label {
+    height: 10.5mm;
+    display: flex;
+    align-items: center;
+    padding-left: 4mm;
+    border-bottom: 0.25mm solid #231815;
+  }
+
+  .tax-label:last-child {
+    border-bottom: none;
+  }
+
+  .tax-values {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .tax-value {
+    height: 10.5mm;
+    display: flex;
+    align-items: center;
+    border-bottom: 0.25mm solid #231815;
+  }
+
+  .tax-value:last-child {
+    border-bottom: none;
+  }
+
+  .company {
+    position: absolute;
+    left: 151mm;
+    top: 166mm;
+    width: 135mm;
+    text-align: center;
+    font-size: 5.4mm;
+    font-weight: 400;
+    line-height: 1.55;
+  }
+
+  .company-name {
+    font-size: 6mm;
+    margin-top: 4mm;
+    font-weight: 700;
+  }
+
+  .reg {
+    font-size: 5.1mm;
+  }
+</style>
+</head>
+
+<body>
+  <div class="page">
+
+    <svg class="headerSvg" viewBox="0 0 2970 310" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="2970" height="310" fill="#2f4d9c"/>
+      <text x="1485" y="205"
+            text-anchor="middle"
+            font-family="Noto Sans JP, Yu Gothic, Meiryo, BIZ UDGothic, BIZ UDPGothic, sans-serif"
+            font-size="145"
+            font-weight="700"
+            letter-spacing="26"
+            fill="#ffffff">領収書</text>
+    </svg>
+
+    <div class="tournament">${RPDS_formatTournamentDisplayHtml_(d.tournamentName)}</div>
+
+    <div class="right-info">
+      <div class="no-row">
+        <div>No.</div>
+        <div class="no-value">${RPDS_escapeHtml_(d.receiptNo)}</div>
+      </div>
+      <div class="date-row">
+        <div>領収日</div>
+        <div class="date-value">${RPDS_escapeHtml_(d.year)}年　${RPDS_escapeHtml_(d.month)}月　${RPDS_escapeHtml_(d.day)}日</div>
+      </div>
+    </div>
+
+    <div class="recipient">
+      <span class="recipient-name">${RPDS_escapeHtml_(d.recipient)}</span>
+      <span class="recipient-sama">様</span>
+    </div>
+
+    <div class="line1"></div>
+
+    <div class="amount">${RPDS_escapeHtml_(d.totalAmount)}</div>
+
+    <div class="line2"></div>
+
+    <div class="note">但　施設利用料として　上記正に領収しました</div>
+
+    <div class="breakdown">
+      <div class="breakdown-title">内訳</div>
+
+      <div class="b-line">
+        <div class="b-label">現金</div>
+        <div class="b-value">${RPDS_escapeHtml_(d.cash)}</div>
+      </div>
+
+      <div class="b-line">
+        <div class="b-label">クレジットカード</div>
+        <div class="b-value">${RPDS_escapeHtml_(d.creditCard)}</div>
+      </div>
+
+      <div class="b-line">
+        <div class="b-label">ポイント</div>
+        <div class="b-value">${RPDS_escapeHtml_(d.point)}</div>
+      </div>
+
+      <div class="tax-box">
+        <div class="tax-rate">
+          <div>税率</div>
+          <div>10%</div>
+        </div>
+        <div class="tax-labels">
+          <div class="tax-label">金額（税抜き）</div>
+          <div class="tax-label">消費税額等</div>
+        </div>
+        <div class="tax-values">
+          <div class="tax-value">${RPDS_escapeHtml_(d.taxExcluded)}</div>
+          <div class="tax-value">${RPDS_escapeHtml_(d.taxAmount)}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="company">
+      <div>${RPDS_CONFIG.COMPANY_ZIP_ADDRESS}</div>
+      <div class="company-name">${RPDS_CONFIG.COMPANY_NAME}</div>
+      <div class="reg">${RPDS_CONFIG.REGISTRATION_NO}</div>
+    </div>
+
+  </div>
+</body>
+</html>
+`;
+}
+
+
+/**
+ * ファイル名
+ */
+function RPDS_makeReceiptFileName_(data) {
+  const base = RPDS_getReceiptFilePrefix_() + data.titleA + '-' + data.titleB + '.pdf';
+  return RPDS_sanitizeFileName_(base);
+}
+
+
+/**
+ * 出力フォルダ
+ */
+function RPDS_getOutputFolder_() {
+  const value = String(RPDS_CONFIG.OUTPUT_FOLDER_URL_OR_ID || '').trim();
+
+  if (value) {
+    const id = RPDS_extractDriveId_(value);
+    return DriveApp.getFolderById(id);
+  }
+
+  const ssFile = DriveApp.getFileById(SpreadsheetApp.getActiveSpreadsheet().getId());
+  const parents = ssFile.getParents();
+
+  let parentFolder = DriveApp.getRootFolder();
+
+  if (parents.hasNext()) {
+    parentFolder = parents.next();
+  }
+
+  const folderName = '領収書PDFテスト出力';
+  const existing = parentFolder.getFoldersByName(folderName);
+
+  if (existing.hasNext()) {
+    return existing.next();
+  }
+
+  return parentFolder.createFolder(folderName);
+}
+
+
+/**
+ * 出力列がなければ追加
+ */
+function RPDS_ensureOutputColumns_(sheet, currentHeaders) {
+  const headers = currentHeaders.map(RPDS_normalizeHeader_);
+
+  const needed = [
+    RPDS_CONFIG.OUTPUT_COL_PDF_URL,
+    RPDS_CONFIG.OUTPUT_COL_MAIL_STATUS,
+    RPDS_CONFIG.OUTPUT_COL_MAIL_SENT_AT,
+    RPDS_CONFIG.OUTPUT_COL_ERROR
+  ];
+
+  let lastCol = sheet.getLastColumn();
+
+  needed.forEach(name => {
+    const key = RPDS_normalizeHeader_(name);
+
+    if (headers.indexOf(key) === -1) {
+      lastCol++;
+      sheet.getRange(1, lastCol).setValue(name);
+      headers.push(key);
+    }
+  });
+}
+
+
+/**
+ * 処理前に該当行の出力欄をクリア
+ */
+function RPDS_clearRowOutput_(sheet, headerMap, rowNo) {
+  const cols = [
+    RPDS_CONFIG.OUTPUT_COL_PDF_URL,
+    RPDS_CONFIG.OUTPUT_COL_MAIL_STATUS,
+    RPDS_CONFIG.OUTPUT_COL_MAIL_SENT_AT,
+    RPDS_CONFIG.OUTPUT_COL_ERROR
+  ];
+
+  cols.forEach(name => {
+    const col = RPDS_getColumnByHeader_(headerMap, name);
+
+    if (col > 0) {
+      sheet.getRange(rowNo, col).clearContent();
+    }
+  });
+}
+
+
+/**
+ * 出力欄に書き込み
+ */
+function RPDS_writeOutput_(sheet, headerMap, rowNo, headerName, value) {
+  const col = RPDS_getColumnByHeader_(headerMap, headerName);
+
+  if (col <= 0) {
+    throw new Error('出力列が見つかりません: ' + headerName);
+  }
+
+  sheet.getRange(rowNo, col).setValue(value);
+}
+
+
+/**
+ * ヘッダー名から列番号を取得
+ */
+function RPDS_getColumnByHeader_(headerMap, headerName) {
+  const key = RPDS_normalizeHeader_(headerName);
+
+  if (!Object.prototype.hasOwnProperty.call(headerMap, key)) {
+    return -1;
+  }
+
+  return headerMap[key] + 1;
+}
+
+
+/**
+ * Helpers
+ */
+function RPDS_buildHeaderMap_(headers) {
+  const map = {};
+
+  headers.forEach((h, i) => {
+    const key = RPDS_normalizeHeader_(h);
+    if (key) map[key] = i;
+  });
+
+  return map;
+}
+
+
+function RPDS_normalizeHeader_(v) {
+  return String(v || '')
+    .replace(/\uFEFF/g, '')
+    .replace(/^[\s　]+|[\s　]+$/g, '');
+}
+
+
+function RPDS_pick_(row, headerMap, names) {
+  for (const name of names) {
+    const key = RPDS_normalizeHeader_(name);
+
+    if (Object.prototype.hasOwnProperty.call(headerMap, key)) {
+      return row[headerMap[key]];
+    }
+  }
+
+  return '';
+}
+
+function RPDS_normalizeGameIdForQueue_(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length === 8 ? digits : '';
+}
+
+
+/**
+ * Sheet内の金額値をPDF表示用に整えるだけ。
+ * 金額計算はしない。
+ */
+function RPDS_formatYen_(value) {
+  if (value === null || value === undefined || value === '') {
+    return '¥0-';
+  }
+
+  if (typeof value === 'number') {
+    return '¥' + Math.round(value).toLocaleString('ja-JP') + '-';
+  }
+
+  let s = String(value).trim();
+
+  if (!s) {
+    return '¥0-';
+  }
+
+  const cleaned = s.replace(/[￥¥,\s　円-]/g, '');
+  const n = Number(cleaned);
+
+  if (!isNaN(n)) {
+    return '¥' + Math.round(n).toLocaleString('ja-JP') + '-';
+  }
+
+  return s;
+}
+
+
+function RPDS_removeSama_(value) {
+  return String(value || '')
+    .replace(/様\s*$/g, '')
+    .replace(/^[\s　]+|[\s　]+$/g, '');
+}
+
+
+function RPDS_sanitizeFileName_(name) {
+  let s = String(name || 'receipt.pdf');
+
+  s = s.replace(/[\\\/:\*\?"<>\|]/g, '_');
+  s = s.replace(/[\r\n\t]/g, ' ');
+  s = s.replace(/^\s+|\s+$/g, '');
+
+  while (s.indexOf('  ') >= 0) {
+    s = s.replace(/  /g, ' ');
+  }
+
+  if (!s.toLowerCase().endsWith('.pdf')) {
+    s += '.pdf';
+  }
+
+  if (s.length > 180) {
+    s = s.substring(0, 176) + '.pdf';
+  }
+
+  return s;
+}
+
+
+function RPDS_escapeHtml_(value) {
+  return String(value === null || value === undefined ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+
+function RPDS_formatTournamentDisplayHtml_(value) {
+  return RPDS_escapeHtml_(value)
+    .replace(/】(?=[A-Za-z0-9])/g, '】<span class="jp-latin-gap"></span>');
+}
+
+
+function RPDS_extractDriveId_(value) {
+  const s = String(value || '').trim();
+
+  const folderMatch = s.match(/folders\/([a-zA-Z0-9_-]+)/);
+  if (folderMatch) return folderMatch[1];
+
+  const fileMatch = s.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (fileMatch) return fileMatch[1];
+
+  const idMatch = s.match(/[a-zA-Z0-9_-]{20,}/);
+  if (idMatch) return idMatch[0];
+
+  throw new Error('Drive folder ID/URLを取得できません: ' + value);
+}
+
+
+function RPDS_isEmptyRow_(row) {
+  return row.every(v => String(v || '').trim() === '');
+}
+
+
+function RPDS_safeAlert_(message) {
+  try {
+    SpreadsheetApp.getUi().alert(message);
+  } catch (e) {
+    console.log('[NO_UI_ALERT] ' + message);
+  }
+}
+/*******************************************************
+ * END ReceiptPdfDirectSend.gs
+ *******************************************************/
+

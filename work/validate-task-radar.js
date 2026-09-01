@@ -18,6 +18,9 @@ function formatDate(date, zone, pattern) {
   if (pattern === 'yyyy,M,d') return `${parts.year},${Number(parts.month)},${Number(parts.day)}`;
   if (pattern === 'yyyy/MM/dd HH:mm') return `${parts.year}/${parts.month}/${parts.day} ${parts.hour}:${parts.minute}`;
   if (pattern === 'yyyy-MM-dd') return `${parts.year}-${parts.month}-${parts.day}`;
+  if (pattern === 'yyyyMMddHHmm') return `${parts.year}${parts.month}${parts.day}${parts.hour}${parts.minute}`;
+  if (pattern === "yyyy-MM-dd'T'HH:mm") return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+  if (pattern === "yyyy-MM-dd'T'HH:mm:ssXXX") return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:00+09:00`;
   return `${parts.year}/${parts.month}/${parts.day}`;
 }
 
@@ -34,9 +37,10 @@ vm.runInContext(source, context, { filename: 'slack-task-scanner.gs' });
 
 const now = new Date('2026-08-21T04:00:00.000Z');
 function row(overrides = {}) {
-  const values = new Array(30).fill('');
+  const values = new Array(39).fill('');
   values[0] = overrides.status || '待确认';
   values[1] = overrides.title || '测试任务';
+  values[2] = overrides.category || '';
   values[3] = overrides.priority || '中';
   values[7] = overrides.waitingFor || '';
   values[8] = overrides.lastUpdated === undefined ? '2026/08/21' : overrides.lastUpdated;
@@ -45,6 +49,14 @@ function row(overrides = {}) {
   values[20] = Boolean(overrides.pinned);
   values[23] = overrides.deadline || '';
   values[25] = Boolean(overrides.syncCalendar);
+  values[30] = overrides.calendarReminderAt || '';
+  values[31] = overrides.calendarGuestEmails || '';
+  values[32] = Boolean(overrides.slackDmEnabled);
+  values[33] = overrides.slackDmRecipientNames || '';
+  values[35] = overrides.slackDmSendAt || '';
+  values[36] = overrides.slackDmText || '';
+  values[37] = overrides.slackDmScheduleRecords || '';
+  values[38] = overrides.tags || '';
   return values;
 }
 
@@ -84,25 +96,144 @@ if (!html.includes('＋ 新建任务') || !html.includes('.createTaskFromDashboa
 if (!html.includes('Slack 待整理') || !html.includes('.updateSlackInboxFromDashboard(payload)')) {
   throw new Error('Slack inbox UI is missing');
 }
+if (!html.includes('标签筛选') || !html.includes('taskExistingTagSelect') ||
+    !html.includes('taskNewTagInput') || !html.includes('activeTags')) {
+  throw new Error('multi-tag task filtering UI is missing');
+}
+if (!html.includes('已完成') || !html.includes('回收站') ||
+    !html.includes('恢复任务') || !html.includes('恢复到待整理')) {
+  throw new Error('completed and trash recovery UI is missing');
+}
+if (!html.includes('max-height: calc(100dvh - 40px)') || !html.includes('overflow-y: auto')) {
+  throw new Error('task modal must remain vertically scrollable');
+}
+if (html.includes('tasks.map(taskCard)')) {
+  throw new Error('active task cards must not receive the array index as completed mode');
+}
 if (!html.includes('关联现有任务') || !html.includes('applySlackUpdate')) {
   throw new Error('Slack task linking UI is missing');
 }
-if (!html.includes('截止日期（DL）') || !html.includes('同步到 Google Calendar')) {
+if (!html.includes('截止日期（DL）') || !html.includes('创建 Google Calendar 弹窗提醒') ||
+    !html.includes('提醒日期和时间（必须人工填写）') || !html.includes('同事邮箱（日历邀请）') ||
+    !html.includes('以我的个人 Slack 账号预约 DM') || !html.includes('Slack DM 原文（不会自动生成）')) {
   throw new Error('deadline and Calendar controls are missing');
 }
-if (html.includes("['completed', '已完成'")) {
-  throw new Error('completed task filter must stay hidden from the dashboard');
+if (html.includes('taskCategoryInput')) {
+  throw new Error('legacy category input must not remain in the task editor');
 }
 
 const normalized = context.normalizeDashboardTaskInput_({ title: '手动任务', priority: '高' });
 if (normalized.title !== '手动任务' || normalized.category !== '未分类') {
   throw new Error('manual task normalization failed');
 }
-const deadlineTask = context.normalizeDashboardTaskInput_({
-  title: '交稿', priority: '中', deadline: '2026-08-27', syncCalendar: true
+const taggedTask = context.normalizeDashboardTaskInput_({
+  title: '标签任务', priority: '中', tags: '#中国, PokerWeb，戦国, 中国'
 });
-if (deadlineTask.deadline !== '2026-08-27' || !deadlineTask.syncCalendar) {
+if (taggedTask.tags !== '中国, PokerWeb, 戦国') {
+  throw new Error('task tag normalization failed');
+}
+const tournamentTagCases = [
+  ['【JOPT 2026 Tokyo #03】事前予約', 'JOPT TOKYO'],
+  ['JOPT GRAND FINAL', 'JOPT TOKYO'],
+  ['JOPT 2027 Fukuoka #02', 'JOPT FUKUOKA'],
+  ['SPADIE Osaka 2nd', 'SPADIE OSAKA'],
+  ['戦国ポーカーツアー 2026 -秋の陣-', '戦国'],
+  ['戦国ポーカーツアー 春の陣', '戦国'],
+  ['JOPT MASTER 2026', 'master'],
+  ['U30 POKER CHAMPIONSHIP #04', 'U-30'],
+  ['ABC Poker Tour 2026 Osaka #2', 'ABC POKER TOUR OSAKA']
+];
+tournamentTagCases.forEach(([input, expected]) => {
+  const actual = context.inferTournamentTags_(input);
+  if (actual !== expected) throw new Error(`tournament tag expected ${expected}, got ${actual}`);
+});
+const autoTaggedManualTask = context.normalizeDashboardTaskInput_({
+  title: 'JOPT 2026 Sapporo #02 受付準備', tags: '受付'
+});
+if (autoTaggedManualTask.tags !== '受付, JOPT SAPPORO') {
+  throw new Error('manual task tournament tag inference failed');
+}
+const legacyCategoryTask = context.dashboardTaskFromRow_(row({
+  category: '国际・中文', tags: '中国, JOPT #03'
+}), 2, now);
+if (legacyCategoryTask.tags !== '国际・中文, 中国, JOPT #03') {
+  throw new Error('legacy category must be exposed as a normal tag');
+}
+if (context.mergeDashboardTags_('客户支持', 'false, 频道: jopt_tokyo_全体, JOPT TOKYO') !== '客户支持, JOPT TOKYO') {
+  throw new Error('legacy false and channel metadata must not become tags');
+}
+const migratedCategoryTask = context.normalizeDashboardTaskInput_({
+  title: '旧分类迁移', category: '客户支持', tags: 'PokerWeb'
+});
+if (migratedCategoryTask.category !== '未分类' || migratedCategoryTask.tags !== '客户支持, PokerWeb') {
+  throw new Error('legacy category must migrate into tags when saved');
+}
+const recentCompletedValues = row({ status: '已完成', lastUpdated: '2026/08/21' });
+recentCompletedValues[15] = 'C1';
+recentCompletedValues[22] = '任务';
+if (context.taskFromValues_(recentCompletedValues, 2).ignored) {
+  throw new Error('recent completed Slack task must remain trackable for 90 days');
+}
+const oldCompletedValues = row({ status: '已完成', lastUpdated: '2026/01/01' });
+oldCompletedValues[15] = 'C1';
+oldCompletedValues[22] = '任务';
+if (!context.taskFromValues_(oldCompletedValues, 2).ignored) {
+  throw new Error('completed Slack task older than 90 days must stop tracking');
+}
+if (!source.includes('isDirectTask') || !source.includes('isLinkedThread')) {
+  throw new Error('Slack update adoption must support direct and linked tasks');
+}
+const deadlineTask = context.normalizeDashboardTaskInput_({
+  title: '交稿', priority: '中', deadline: '2026-08-27', syncCalendar: true,
+  calendarReminderAt: '2026-09-04T09:00',
+  calendarGuestEmails: 'COLLEAGUE@example.com, colleague@example.com; second@example.com'
+});
+if (deadlineTask.deadline !== '2026-08-27' || !deadlineTask.syncCalendar ||
+    deadlineTask.calendarReminderAt !== '2026-09-04T09:00' ||
+    deadlineTask.calendarGuestEmails !== 'colleague@example.com, second@example.com') {
   throw new Error('deadline normalization failed');
+}
+const noCalendarTask = context.normalizeDashboardTaskInput_({
+  title: '不自动提醒', priority: '中', syncCalendar: false,
+  calendarReminderAt: '2026-09-04T09:00', calendarGuestEmails: 'ignored@example.com'
+});
+if (noCalendarTask.calendarReminderAt !== '' || noCalendarTask.calendarGuestEmails !== '') {
+  throw new Error('disabled Calendar must not retain automatic reminder settings');
+}
+if (source.includes('resetRemindersToDefault') ||
+    !source.includes("overrides: [{ method: 'popup', minutes: 0 }]")) {
+  throw new Error('Calendar default reminders must never be enabled automatically');
+}
+const futureSlackDmAt = formatDate(new Date(Date.now() + 24 * 60 * 60 * 1000), 'Asia/Tokyo', "yyyy-MM-dd'T'HH:mm");
+const slackDmTask = context.normalizeDashboardTaskInput_({
+  title: 'DM提醒', priority: '中', slackDmEnabled: true,
+  slackDmRecipientNames: 'ピヴォ / Fumiya Aizawa, ピヴォ',
+  slackDmSendAt: futureSlackDmAt,
+  slackDmText: '这是人工填写的原文。'
+});
+if (slackDmTask.slackDmRecipientNames !== 'ピヴォ / Fumiya Aizawa' ||
+    slackDmTask.slackDmSendAt !== futureSlackDmAt ||
+    slackDmTask.slackDmText !== '这是人工填写的原文。') {
+  throw new Error('personal Slack DM normalization failed');
+}
+let groupRejected = false;
+try {
+  context.normalizeSlackDmRecipientNames_('@CS / Fumiya Aizawa');
+} catch (error) {
+  groupRejected = /用户组/.test(String(error));
+}
+if (!groupRejected) throw new Error('Slack user groups must not be expanded into DMs');
+vm.runInContext(`SLACK_CACHE_.allUsers = [
+  { id: 'UPIVO', real_name: 'Pivo', profile: { real_name: 'Pivo', display_name: 'ピヴォ' } },
+  { id: 'UFUMIYA', real_name: 'Fumiya Aizawa', profile: { real_name: 'Fumiya Aizawa', display_name: '' } }
+]`, context);
+const resolvedSlackUsers = context.resolveSlackUsersByFormalNames_('ピヴォ / Fumiya Aizawa');
+if (resolvedSlackUsers.map(user => user.id).join(',') !== 'UPIVO,UFUMIYA') {
+  throw new Error('Slack formal-name exact matching failed');
+}
+if (!source.includes("slackApiPost_('chat.scheduleMessage'") ||
+    !source.includes("slackApiPost_('chat.deleteScheduledMessage'")) {
+  throw new Error('Slack scheduled DM create/cancel implementation is missing');
 }
 
 const extractedTitle = context.extractSlackThreadTitle_(
@@ -144,13 +275,13 @@ context.upsertTask_(fakeSheet, null, {
   sheetStatus: '待确认', title: '主题', category: '', priority: '中', nextAction: '下一步',
   completion: '', waitingFor: '对方', memo: '测试'
 });
-if (!capturedSlackRow || capturedSlackRow.length !== 30 || capturedSlackRow[27] !== '12.000001') {
-  throw new Error('new Slack row schema is not A:AD');
+if (!capturedSlackRow || capturedSlackRow.length !== 39 || capturedSlackRow[27] !== '12.000001') {
+  throw new Error('new Slack row schema is not A:AM');
 }
 
 const manualLinkedRow = row({ id: 'manual-linked', title: 'hendon比赛反映' });
 manualLinkedRow[22] = '任务';
-const relationRow = new Array(30).fill('');
+const relationRow = new Array(39).fill('');
 relationRow[0] = '待确认';
 relationRow[1] = '【Hendon Mob 掲載状況について】';
 relationRow[3] = '中';
@@ -180,6 +311,14 @@ const waitingTask = context.dashboardTaskFromRow_(row({ waitingFor: '领导' }),
 if (waitingTask.waitingFor !== '领导') {
   throw new Error('waiting-for label must preserve its original text');
 }
+if (context.dashboardHasSlackDmSchedule_(false) ||
+    context.dashboardHasSlackDmSchedule_('false') ||
+    context.dashboardHasSlackDmSchedule_('[]') ||
+    !context.dashboardHasSlackDmSchedule_(JSON.stringify([{
+      channel: 'U123', scheduledMessageId: 'Q123'
+    }]))) {
+  throw new Error('Slack DM scheduled badge validation failed');
+}
 
 if (vm.runInContext('CONFIG.SHEET_HEADERS[0]', context) !== '状态') {
   throw new Error('Chinese Sheet headers are missing');
@@ -192,7 +331,12 @@ if (vm.runInContext('CONFIG.SHEET_HEADERS[23]', context) !== '截止日期' ||
   throw new Error('deadline backend columns are missing');
 }
 if (vm.runInContext('CONFIG.SHEET_HEADERS[26]', context) !== '关联任务 ID' ||
-    vm.runInContext('CONFIG.SHEET_HEADERS[29]', context) !== 'Slack 最新进展摘要') {
+    vm.runInContext('CONFIG.SHEET_HEADERS[29]', context) !== 'Slack 最新进展摘要' ||
+    vm.runInContext('CONFIG.SHEET_HEADERS[30]', context) !== 'Calendar 提醒时间' ||
+    vm.runInContext('CONFIG.SHEET_HEADERS[31]', context) !== 'Calendar 同事邮箱' ||
+    vm.runInContext('CONFIG.SHEET_HEADERS[32]', context) !== 'Slack DM 提醒' ||
+    vm.runInContext('CONFIG.SHEET_HEADERS[37]', context) !== 'Slack Scheduled Message Records' ||
+    vm.runInContext('CONFIG.SHEET_HEADERS[38]', context) !== '标签') {
   throw new Error('Slack link backend columns are missing');
 }
 if (!context.isExcludedSlackChannel_('C093Z293J5N') || context.isExcludedSlackChannel_('C0924RS04CU')) {
@@ -270,7 +414,7 @@ if (replyMentionHits.length !== 1 || replyMentionHits[0].slackType !== '@cs' ||
   throw new Error('raw @cs mention in a recent thread reply was not collected');
 }
 
-const taskSlackRow = new Array(30).fill('');
+const taskSlackRow = new Array(39).fill('');
 taskSlackRow[0] = '进行中';
 taskSlackRow[1] = '用户手动修改后的标题';
 taskSlackRow[10] = true;

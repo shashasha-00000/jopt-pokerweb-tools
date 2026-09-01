@@ -101,7 +101,7 @@
     {
         "file":  "pw-ticket-link-semi-auto.user.js",
         "name":  "PW Ticket Link Semi Auto",
-        "version":  "1.2.0",
+        "version":  "1.2.2",
         "description":  "幅広Ticketルール表の無関係列を無視し、対応外大会はSKIP報告。確認済み大会だけを独立workerで逐次Ticket Linkし、tn_ optionのみPOST。",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js",
         "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js",

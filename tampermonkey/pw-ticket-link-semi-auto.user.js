@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW Ticket Link Semi Auto
 // @namespace    pw-ticket-link-semi-auto
-// @version      1.2.0
+// @version      1.2.2
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
 // @description  幅広Ticketルール表の無関係列を無視し、対応外大会はSKIP報告。確認済み大会だけを独立workerで逐次Ticket Linkし、tn_ optionのみPOST。
@@ -126,7 +126,7 @@
   }
 
   function log(...args) {
-    console.log("[PW-TICKET-LINK-v1.2.0]", ...args);
+    console.log("[PW-TICKET-LINK-v1.2.2]", ...args);
     const el = document.querySelector("#pw-ticket-link-status");
     if (el) el.textContent = args.map(String).join(" ");
   }
@@ -270,8 +270,38 @@
     return m ? m[0] : "";
   }
 
+  function extractMonthDayKey(text) {
+    const s = norm(text);
+    const re = /(?:^|[^\d])0?(\d{1,2})\s*(?:\/|月)\s*0?(\d{1,2})(?:日)?(?:$|[^\d])/g;
+    let m;
+
+    while ((m = re.exec(s))) {
+      const month = Number(m[1]);
+      const day = Number(m[2]);
+      if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+        return `${month}/${day}`;
+      }
+    }
+
+    return "";
+  }
+
   function getTournamentNoKeyFromName(name) {
     const s = norm(name);
+
+    if (/\bsit\s*(?:(?:&|＆|and)\s*)?go\b/i.test(s) || /^sit$/i.test(s)) {
+      const monthDay = extractMonthDayKey(s);
+      return monthDay ? `Sit ${monthDay}` : "Sit";
+    }
+
+    const bareDatedSix = s.match(/(?:^|[^\d])0*6\s*[（(]?\s*(\d{1,2})\s*(?:\/|月)\s*(\d{1,2})(?:日)?\s*[）)]?(?:$|[^\d])/);
+    if (bareDatedSix) {
+      const month = Number(bareDatedSix[1]);
+      const day = Number(bareDatedSix[2]);
+      if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+        return `#06 ${month}/${day}`;
+      }
+    }
 
     const sat = s.match(/\(?\s*s\s*0*(\d{1,3})\s*\)?/i);
     if (sat) return `s${String(Number(sat[1])).padStart(2, "0")}`;
@@ -290,6 +320,11 @@
       const day1Alt = after.match(/\bday1([A-Za-z])\b/i);
       if (day1Alt) return `#${num}${day1Alt[1].toUpperCase()}`;
 
+      if (num === "06") {
+        const monthDay = extractMonthDayKey(s);
+        if (monthDay) return `#06 ${monthDay}`;
+      }
+
       return `#${num}`;
     }
 
@@ -305,12 +340,34 @@
   }
 
   function normalizeKey(raw) {
-    let s = norm(raw)
+    const spaced = norm(raw)
       .replace(/[＃]/g, "#")
-      .replace(/\s+/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
       .replace(/[－ー―]/g, "-");
 
+    const datedSit = spaced.match(/^sit\s*(?:(?:&|＆|and)\s*go)?\s*[（(]?\s*(\d{1,2})\s*(?:\/|月)\s*(\d{1,2})(?:日)?\s*[）)]?$/i);
+    if (datedSit) {
+      const month = Number(datedSit[1]);
+      const day = Number(datedSit[2]);
+      return month >= 1 && month <= 12 && day >= 1 && day <= 31 ? `Sit ${month}/${day}` : "";
+    }
+
+    const datedNumber = spaced.match(/^#\s*0*(\d{1,3})\s+(\d{1,2})\s*(?:\/|月)\s*(\d{1,2})(?:日)?$/);
+    if (datedNumber) {
+      const num = String(Number(datedNumber[1])).padStart(2, "0");
+      const month = Number(datedNumber[2]);
+      const day = Number(datedNumber[3]);
+      return month >= 1 && month <= 12 && day >= 1 && day <= 31 ? `#${num} ${month}/${day}` : "";
+    }
+
+    let s = spaced.replace(/\s+/g, "");
+
     if (!s) return "";
+
+    if (/^sit(?:(?:&|＆|and)go)?$/i.test(s)) {
+      return "Sit";
+    }
 
     const m = s.match(/^#0*(\d{1,3})([A-Za-z])?$/);
     if (m) {
@@ -329,7 +386,7 @@
 
   function looksLikeMatrixKey(raw) {
     const k = normalizeKey(raw);
-    return /^#\d{2,3}[A-Z]?$/.test(k) || /^s\d{2,3}$/.test(k);
+    return /^Sit \d{1,2}\/\d{1,2}$/.test(k) || /^#\d{2,3}(?:[A-Z]| \d{1,2}\/\d{1,2})?$/.test(k) || /^s\d{2,3}$/.test(k);
   }
 
   function extractTournamentKeyAuto(tournamentName) {
@@ -339,6 +396,22 @@
       return {
         key: "",
         source: "認識不可 / 无法识别"
+      };
+    }
+
+    if (key === "Sit" || /^Sit \d{1,2}\/\d{1,2}$/.test(key)) {
+      return {
+        key,
+        source: key === "Sit"
+          ? "自動認識 / 自动识别: Sit & Go（日付なし / 无日期）"
+          : "自動認識 / 自动识别: Sit & Go + 日付 / 日期"
+      };
+    }
+
+    if (/^#\d{2,3} \d{1,2}\/\d{1,2}$/.test(key)) {
+      return {
+        key,
+        source: "自動認識 / 自动识别: #番号 + 日付 / 日期"
       };
     }
 
@@ -2672,7 +2745,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <div style="font-weight:bold;">PW Ticket Link Semi Auto v1.2.0</div>
+        <div style="font-weight:bold;">PW Ticket Link Semi Auto v1.2.2</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-ticket-link-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-ticket-link-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>
@@ -2726,7 +2799,7 @@ JOPT 2026 Osaka #02 / Main Event / -2027.09.30"
             2. TicketLink用ルール表 / TicketLink规则表
           </div>
           <textarea id="pw-ticket-link-rules"
-            placeholder="Sheetから、チケット名称列 + #01/#01A/s01列を含めて貼り付け"
+            placeholder="Sheetから、チケット名称列 + #01/#01A/#06 9/17/s01/Sit 9/17列を含めて貼り付け"
             style="width:100%;height:125px;background:#111;color:#fff;border:1px solid #555;padding:8px;font-family:Consolas,monospace;font-size:12px;"></textarea>
 
           <div style="font-size:12px;font-weight:bold;color:#fff;margin-top:6px;margin-bottom:3px;">

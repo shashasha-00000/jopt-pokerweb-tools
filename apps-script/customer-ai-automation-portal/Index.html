@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><?= appTitle ?></title>
+  <?!= include('Styles'); ?>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero__content">
+      <p class="eyebrow">CUSTOMER TEAM / AI TASK LIBRARY</p>
+      <h1><?= appTitle ?></h1>
+      <div class="hero__footer">
+        <div class="hero__meta">
+          <span id="currentUser">社内アカウントを確認中</span>
+          <span>v<?= appVersion ?></span>
+        </div>
+        <div class="hero__actions">
+          <a class="button button--hero-secondary" id="openSheetButton" href="#" target="_blank" rel="noopener">Google Sheetを開く</a>
+          <button class="button button--hero" id="addTaskButton" type="button" hidden>タスクを追加</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="ai-instruction" aria-label="AIマニュアルの使い方">
+      <strong>マニュアルMDは、自分が使用しているAIへそのままコピーしてください。</strong>
+      <span>対象タスクのファイル・Sheet・Form・TSV・URLも同じAIへ渡し、そのAIの案内に従って導入・使用します。</span>
+    </section>
+
+    <section class="guide-panel" id="guidePanel" aria-label="利用ガイド"></section>
+
+    <section class="toolbar" aria-label="タスク検索">
+      <label class="search-field">
+        <span>検索</span>
+        <input id="searchInput" type="search" placeholder="タスク名、説明、リソース名で検索">
+      </label>
+      <label>
+        <span>カテゴリ</span>
+        <select id="categoryFilter"><option value="">すべて</option></select>
+      </label>
+      <label>
+        <span>完成度</span>
+        <select id="completionFilter">
+          <option value="">すべて</option>
+          <option value="80">80%以上</option>
+          <option value="60">60%以上</option>
+          <option value="under60">60%未満</option>
+        </select>
+      </label>
+      <label>
+        <span>易用度</span>
+        <select id="usabilityFilter">
+          <option value="">すべて</option>
+          <option value="易">易</option>
+          <option value="普通">普通</option>
+          <option value="難">難</option>
+        </select>
+      </label>
+    </section>
+
+    <p class="result-count" id="resultCount"></p>
+    <section class="task-list" id="taskList" aria-live="polite"></section>
+    <div class="empty-state" id="emptyState" hidden>条件に合うタスクがありません。</div>
+  </main>
+
+  <dialog id="manualDialog" class="modal modal--manual">
+    <div class="modal__header">
+      <div>
+        <p class="eyebrow">AI OPERATION MANUAL</p>
+        <h2 id="manualTitle">AI操作マニュアル</h2>
+      </div>
+      <button class="icon-button" data-close-dialog="manualDialog" aria-label="閉じる">×</button>
+    </div>
+    <pre id="manualText" class="manual-text"></pre>
+    <div class="modal__actions">
+      <button class="button button--secondary" id="copyManualButton" type="button">内容をコピー</button>
+      <button class="button" id="downloadManualButton" type="button">MDを保存</button>
+    </div>
+  </dialog>
+
+  <dialog id="editDialog" class="modal modal--edit">
+    <div class="modal__header">
+      <div>
+        <p class="eyebrow">TASK EDITOR</p>
+        <h2 id="editDialogTitle">タスクを編集</h2>
+      </div>
+      <button class="icon-button" data-close-dialog="editDialog" aria-label="閉じる">×</button>
+    </div>
+    <form id="editForm">
+      <input type="hidden" name="taskId">
+      <div class="form-grid">
+        <label><span>タスク名 *</span><input name="name" required maxlength="160" placeholder="例: TICKET自動付与"></label>
+        <label><span>カテゴリ</span><input name="category" maxlength="100"></label>
+        <label class="form-grid__wide"><span>説明 *</span><textarea name="description" required maxlength="600" rows="3" placeholder="このタスクで何を行うかを簡潔に記載"></textarea></label>
+        <label><span>完成度（0〜100%）</span><input name="completion" type="number" min="0" max="100" step="1" required></label>
+        <label><span>易用度</span><select name="usability" required><option value="易">易</option><option value="普通">普通</option><option value="難">難</option></select></label>
+        <label class="form-grid__wide"><span>完成状況・更新理由</span><textarea name="completionStatus" maxlength="1600" rows="3" placeholder="進捗、既知のBug、更新が必要になる条件を記載"></textarea></label>
+        <label class="form-grid__wide"><span>利用難易度</span><textarea name="difficulty" maxlength="1200" rows="2" placeholder="導入や利用時に必要な操作を記載"></textarea></label>
+        <label><span>担当者</span><input name="manager" maxlength="120" value="Sha"></label>
+        <label><span>利用者・利用部署</span><input name="users" maxlength="300" value="カスタマー"></label>
+        <label><span>最終動作確認日</span><input name="lastVerified" type="date"></label>
+        <label><span>表示順</span><input name="order" type="number" min="1" step="1"></label>
+        <label class="form-grid__wide"><span>MDファイル名</span><input name="manualFile" maxlength="260"></label>
+        <label class="form-grid__wide"><span>AI操作マニュアル本文</span><textarea name="manualMarkdown" maxlength="50000" rows="16"></textarea></label>
+      </div>
+
+      <section class="resource-editor">
+        <div class="resource-editor__header">
+          <div><h3>タスク内のリソース</h3><p>コード、Google Sheet、Web App、AI操作MDなどをタスクの中へ登録します。</p></div>
+          <button class="button button--secondary" id="addResourceButton" type="button">リソースを追加</button>
+        </div>
+        <div id="resourceEditorList" class="resource-editor__list"></div>
+      </section>
+
+      <div class="modal__actions">
+        <button class="button button--secondary" type="button" data-close-dialog="editDialog">キャンセル</button>
+        <button class="button" type="submit">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <template id="resourceEditorTemplate">
+    <article class="resource-editor__item">
+      <input type="hidden" data-resource-field="resourceId">
+      <div class="resource-editor__item-header">
+        <strong>リソース</strong>
+        <button class="text-button text-button--danger" data-remove-resource type="button">このリソースを削除</button>
+      </div>
+      <div class="form-grid form-grid--resource">
+        <label><span>リソース名 *</span><input data-resource-field="name" maxlength="180" required></label>
+        <label><span>種類</span><select data-resource-field="type"><option value="Tampermonkey">Tampermonkey</option><option value="Google Apps Script">Google Apps Script</option><option value="HTML">HTML</option><option value="Google Sheet">Google Sheet</option><option value="Web App">Web App</option><option value="AI操作マニュアル">AI操作マニュアル</option><option value="その他">その他</option></select></label>
+        <label><span>必要ツール</span><input data-resource-field="requiredTools" maxlength="500"></label>
+        <label><span>導入方式</span><input data-resource-field="installMode" maxlength="160"></label>
+        <label class="form-grid__wide"><span>配布URL（GitHub / Google Drive）</span><input data-resource-field="url" maxlength="1200" placeholder="GitHub Raw、GitHub blob、Google Drive、Google Sheet、Web AppなどのURL"><small class="field-help">GitHubの通常のblob URLはRaw URLへ変換します。GitHubを使わない場合は、自分のGoogle Driveへファイルをアップロードし、社内向け共有設定を確認してから共有URLを貼ってください。</small></label>
+        <label class="form-grid__wide"><span>ソース・参照</span><textarea data-resource-field="source" maxlength="1600" rows="2"></textarea></label>
+        <label class="form-grid__wide"><span>補足</span><textarea data-resource-field="note" maxlength="1600" rows="2"></textarea></label>
+      </div>
+    </article>
+  </template>
+
+  <dialog id="deleteDialog" class="modal modal--confirm">
+    <div class="modal__header">
+      <div>
+        <p class="eyebrow">ARCHIVE TASK</p>
+        <h2>タスクを削除</h2>
+      </div>
+      <button class="icon-button" data-close-dialog="deleteDialog" aria-label="閉じる">×</button>
+    </div>
+    <div class="confirm-body">
+      <p><strong id="deleteTaskName"></strong> を公開一覧から削除します。</p>
+      <p>タスク、リソース、AIマニュアルは管理Sheetの削除済みページへ移動します。</p>
+    </div>
+    <div class="modal__actions">
+      <button class="button button--secondary" type="button" data-close-dialog="deleteDialog">キャンセル</button>
+      <button class="button button--danger" id="confirmDeleteButton" type="button">削除する</button>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div class="loading" id="loading"><div class="spinner"></div><span>読み込み中</span></div>
+  <?!= include('Client'); ?>
+</body>
+</html>

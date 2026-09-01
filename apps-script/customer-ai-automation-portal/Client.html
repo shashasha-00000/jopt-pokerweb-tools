@@ -1,0 +1,407 @@
+<script>
+  const portalState = {
+    tasks: [],
+    guides: [],
+    currentManual: null,
+    sheetUrl: '',
+    canManage: false,
+    deletingTaskId: '',
+  };
+
+  const byId = (id) => document.getElementById(id);
+  const escapeHtml = (value) => String(value == null ? '' : value)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+
+  document.addEventListener('DOMContentLoaded', () => {
+    bindEvents();
+    google.script.run
+      .withSuccessHandler(initializePortal)
+      .withFailureHandler(handleFailure)
+      .getPortalBootstrap();
+  });
+
+  function bindEvents() {
+    ['searchInput', 'categoryFilter', 'completionFilter', 'usabilityFilter'].forEach((id) => {
+      byId(id).addEventListener(id === 'searchInput' ? 'input' : 'change', renderTasks);
+    });
+    byId('addTaskButton').addEventListener('click', () => openEditor(''));
+    byId('addResourceButton').addEventListener('click', () => addResourceEditor({}));
+    byId('copyManualButton').addEventListener('click', copyManual);
+    byId('downloadManualButton').addEventListener('click', downloadManual);
+    byId('editForm').addEventListener('submit', saveTask);
+    byId('confirmDeleteButton').addEventListener('click', confirmDeleteTask);
+    document.querySelectorAll('[data-close-dialog]').forEach((button) => {
+      button.addEventListener('click', () => byId(button.dataset.closeDialog).close());
+    });
+  }
+
+  function initializePortal(data) {
+    portalState.tasks = Array.isArray(data.tasks) ? data.tasks : [];
+    portalState.guides = Array.isArray(data.guides) ? data.guides : [];
+    portalState.sheetUrl = String(data.sheetUrl || '');
+    portalState.canManage = Boolean(data.canManage);
+    byId('currentUser').textContent = data.currentUser || '@japanopenpoker.com 社内限定';
+    byId('openSheetButton').href = portalState.sheetUrl;
+    byId('addTaskButton').hidden = !portalState.canManage;
+    refreshPortalView();
+    renderGuides();
+    setLoading(false);
+  }
+
+  function refreshPortalView() {
+    populateCategories();
+    renderTasks();
+  }
+
+  function renderGuides() {
+    byId('guidePanel').innerHTML = portalState.guides.map((guide) => `
+      <article class="guide-card">
+        <h3>${escapeHtml(guide.title)}</h3>
+        <button class="text-button" type="button" data-guide-id="${escapeHtml(guide.id)}">マニュアルを開く</button>
+      </article>
+    `).join('');
+    document.querySelectorAll('[data-guide-id]').forEach((button) => {
+      button.addEventListener('click', () => openGuideManual(button.dataset.guideId));
+    });
+  }
+
+  function populateCategories() {
+    const select = byId('categoryFilter');
+    const selected = select.value;
+    const categories = [...new Set(portalState.tasks.map((item) => item['カテゴリ']).filter(Boolean))]
+      .sort((a, b) => String(a).localeCompare(String(b), 'ja'));
+    select.innerHTML = '<option value="">すべて</option>' + categories.map((category) =>
+      `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`
+    ).join('');
+    select.value = categories.includes(selected) ? selected : '';
+  }
+
+  function renderTasks() {
+    const query = byId('searchInput').value.trim().toLowerCase();
+    const category = byId('categoryFilter').value;
+    const completion = byId('completionFilter').value;
+    const usability = byId('usabilityFilter').value;
+    const tasks = portalState.tasks.filter((item) => {
+      const resources = Array.isArray(item.resources) ? item.resources : [];
+      const haystack = [
+        item['タスク名'], item['説明'], item['カテゴリ'], item['完成状況・更新理由'],
+        item['利用難易度'], item['担当者'], item['利用者・利用部署'],
+        ...resources.flatMap((resource) => [resource['リソース名'], resource['種類'], resource['必要ツール'], resource['ソース・参照']]),
+      ].join(' ').toLowerCase();
+      if (query && !haystack.includes(query)) return false;
+      if (category && item['カテゴリ'] !== category) return false;
+      if (usability && item['易用度'] !== usability) return false;
+      const score = numberValue(item['完成度']);
+      if (completion === 'under60' && score >= 60) return false;
+      if (completion && completion !== 'under60' && score < Number(completion)) return false;
+      return true;
+    });
+
+    byId('resultCount').textContent = `${tasks.length}件を表示`;
+    byId('emptyState').hidden = tasks.length > 0;
+    byId('taskList').innerHTML = tasks.map(taskRow).join('');
+    document.querySelectorAll('[data-manual-id]').forEach((button) => {
+      button.addEventListener('click', () => openManual(button.dataset.manualId));
+    });
+    document.querySelectorAll('[data-edit-id]').forEach((button) => {
+      button.addEventListener('click', () => openEditor(button.dataset.editId));
+    });
+    document.querySelectorAll('[data-delete-id]').forEach((button) => {
+      button.addEventListener('click', () => openDeleteDialog(button.dataset.deleteId));
+    });
+    document.querySelectorAll('[data-download-resource]').forEach((button) => {
+      button.addEventListener('click', () => downloadGitHubResource(button.dataset.downloadUrl));
+    });
+  }
+
+  function taskRow(item) {
+    const completion = numberValue(item['完成度']);
+    const taskId = item['タスクID'];
+    const resources = Array.isArray(item.resources) ? item.resources : [];
+    const manageButtons = portalState.canManage ? `
+      <button class="button button--edit" type="button" data-edit-id="${escapeHtml(taskId)}">編集</button>
+      <button class="button button--danger-ghost" type="button" data-delete-id="${escapeHtml(taskId)}">削除</button>
+    ` : '';
+    return `
+      <article class="task-row">
+        <section class="task-row__identity">
+          <div class="task-row__top">
+            <span class="badge">${escapeHtml(item['カテゴリ'] || '未分類')}</span>
+          </div>
+          <h2>${escapeHtml(item['タスク名'])}</h2>
+          <dl class="task-row__people">
+            <div><dt>担当</dt><dd>${escapeHtml(item['担当者'] || 'Sha')}</dd></div>
+          </dl>
+        </section>
+
+        <section class="task-row__status">
+          <div class="status-block status-block--completion">
+            <div class="score__label"><span>完成度</span><strong>${completion}%</strong></div>
+            <div class="score__bar"><span style="width:${clampScore(completion)}%"></span></div>
+            <p>${escapeHtml(item['完成状況・更新理由'] || '更新情報は未登録です。')}</p>
+          </div>
+          <div class="status-block status-block--usability">
+            <div class="usability__label">
+              <span>易用度</span>
+              <strong class="ease ease--${usabilityClass(item['易用度'])}">${escapeHtml(item['易用度'] || '未設定')}</strong>
+            </div>
+            <p>${escapeHtml(item['利用難易度'] || '未登録')}</p>
+          </div>
+        </section>
+
+        <section class="task-row__resources">
+          <div class="section-heading"><strong>必要なリソース</strong><span>${resources.length}件</span></div>
+          <div class="resource-list">${resources.length ? resources.map(resourceRow).join('') : '<p class="resource-empty">登録されているリソースはありません。</p>'}</div>
+        </section>
+
+        <aside class="task-row__actions">
+          <button class="button" type="button" data-manual-id="${escapeHtml(taskId)}">AIマニュアル</button>
+          ${manageButtons}
+        </aside>
+      </article>
+    `;
+  }
+
+  function resourceRow(resource) {
+    const url = safeHttpUrl(resource['URL']);
+    const isGitHubRaw = /^https:\/\/raw\.githubusercontent\.com\//i.test(url);
+    const isDriveUrl = /^https:\/\/(?:drive|docs)\.google\.com\//i.test(url);
+    const type = String(resource['種類'] || 'その他');
+    const actionLabel = isDriveUrl ? 'Driveで開く' : type === 'Tampermonkey' ? 'インストール' : type === 'Google Apps Script' ? 'コードを開く' : '開く';
+    return `
+      <article class="resource-item">
+        <div class="resource-item__main">
+          <span class="resource-type">${escapeHtml(type)}</span>
+          <strong>${escapeHtml(resource['リソース名'])}</strong>
+        </div>
+        <div class="resource-item__actions">
+          ${isGitHubRaw && type !== 'Tampermonkey' ? `<button class="resource-link" type="button" data-download-resource data-download-url="${escapeHtml(url)}">GitHubからダウンロード</button>` : ''}
+          ${url && (!isGitHubRaw || type === 'Tampermonkey') ? `<a class="resource-link" href="${escapeHtml(url)}" target="_blank" rel="noopener">${actionLabel}</a>` : ''}
+        </div>
+      </article>
+    `;
+  }
+
+  function openManual(taskId) {
+    setLoading(true);
+    google.script.run
+      .withSuccessHandler((manual) => {
+        portalState.currentManual = manual;
+        byId('manualTitle').textContent = manual.taskName;
+        byId('manualText').textContent = manual.markdown;
+        byId('manualDialog').showModal();
+        setLoading(false);
+      })
+      .withFailureHandler(handleFailure)
+      .getTaskManual(taskId);
+  }
+
+  function openGuideManual(guideId) {
+    setLoading(true);
+    google.script.run
+      .withSuccessHandler((manual) => {
+        portalState.currentManual = manual;
+        byId('manualTitle').textContent = manual.taskName;
+        byId('manualText').textContent = manual.markdown;
+        byId('manualDialog').showModal();
+        setLoading(false);
+      })
+      .withFailureHandler(handleFailure)
+      .getGuideManual(guideId);
+  }
+
+  function openEditor(taskId) {
+    if (!portalState.canManage) return;
+    setLoading(true);
+    google.script.run
+      .withSuccessHandler((data) => {
+        fillEditForm(data.task, data.resources, data.manual);
+        byId('editDialogTitle').textContent = taskId ? data.task['タスク名'] : 'タスクを追加';
+        byId('editDialog').showModal();
+        setLoading(false);
+      })
+      .withFailureHandler(handleFailure)
+      .getTaskForEdit(taskId);
+  }
+
+  function fillEditForm(task, resources, manual) {
+    const form = byId('editForm');
+    const values = {
+      taskId: task['タスクID'],
+      name: task['タスク名'],
+      description: task['説明'],
+      category: task['カテゴリ'],
+      completion: numberValue(task['完成度']),
+      completionStatus: task['完成状況・更新理由'],
+      usability: task['易用度'] || '普通',
+      difficulty: task['利用難易度'],
+      manager: task['担当者'] || 'Sha',
+      users: task['利用者・利用部署'] || 'カスタマー',
+      lastVerified: dateInputValue(task['最終動作確認日']),
+      order: numberValue(task['表示順']) || portalState.tasks.length + 1,
+      manualFile: manual.fileName || task['AI操作マニュアルMD'],
+      manualMarkdown: manual.markdown || '',
+    };
+    Object.entries(values).forEach(([name, value]) => {
+      const field = form.elements.namedItem(name);
+      if (field) field.value = value == null ? '' : value;
+    });
+    const list = byId('resourceEditorList');
+    list.innerHTML = '';
+    (Array.isArray(resources) ? resources : []).forEach((resource) => addResourceEditor({
+      resourceId: resource['リソースID'], name: resource['リソース名'], type: resource['種類'],
+      requiredTools: resource['必要ツール'], installMode: resource['導入方式'], url: resource['URL'],
+      source: resource['ソース・参照'], note: resource['補足'],
+    }));
+  }
+
+  function addResourceEditor(resource) {
+    const fragment = byId('resourceEditorTemplate').content.cloneNode(true);
+    const item = fragment.querySelector('.resource-editor__item');
+    Object.entries(resource || {}).forEach(([key, value]) => {
+      const field = item.querySelector(`[data-resource-field="${key}"]`);
+      if (field) field.value = value == null ? '' : value;
+    });
+    item.querySelector('[data-remove-resource]').addEventListener('click', () => item.remove());
+    byId('resourceEditorList').appendChild(fragment);
+  }
+
+  async function saveTask(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const payload = Object.fromEntries(new FormData(form).entries());
+    payload.resources = [...byId('resourceEditorList').querySelectorAll('.resource-editor__item')].map((item) => {
+      const resource = {};
+      item.querySelectorAll('[data-resource-field]').forEach((field) => { resource[field.dataset.resourceField] = field.value; });
+      return resource;
+    });
+    setLoading(true);
+    google.script.run
+      .withSuccessHandler((updatedTask) => {
+        const index = portalState.tasks.findIndex((item) => item['タスクID'] === updatedTask['タスクID']);
+        if (index >= 0) portalState.tasks.splice(index, 1, updatedTask);
+        else portalState.tasks.push(updatedTask);
+        portalState.tasks.sort((a, b) => numberValue(a['表示順']) - numberValue(b['表示順']));
+        byId('editDialog').close();
+        refreshPortalView();
+        setLoading(false);
+        showToast('タスクを保存しました。');
+      })
+      .withFailureHandler(handleFailure)
+      .saveTask(payload);
+  }
+
+  async function downloadGitHubResource(resourceUrl) {
+    setLoading(true);
+    try {
+      const response = await fetch(resourceUrl, { credentials: 'omit' });
+      if (!response.ok) throw new Error(`GitHubファイルを取得できません: HTTP ${response.status}`);
+      const blob = await response.blob();
+      const fileName = decodeURIComponent(new URL(resourceUrl).pathname.split('/').pop() || 'resource.txt');
+      saveBlob(blob, fileName);
+      setLoading(false);
+      showToast(`ダウンロードを開始しました: ${fileName}`);
+    } catch (error) {
+      handleFailure(error);
+    }
+  }
+
+  function saveBlob(blob, fileName) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function openDeleteDialog(taskId) {
+    if (!portalState.canManage) return;
+    const task = portalState.tasks.find((item) => item['タスクID'] === taskId);
+    if (!task) return;
+    portalState.deletingTaskId = taskId;
+    byId('deleteTaskName').textContent = task['タスク名'];
+    byId('deleteDialog').showModal();
+  }
+
+  function confirmDeleteTask() {
+    if (!portalState.deletingTaskId) return;
+    setLoading(true);
+    google.script.run
+      .withSuccessHandler((result) => {
+        portalState.tasks = portalState.tasks.filter((item) => item['タスクID'] !== result.taskId);
+        portalState.deletingTaskId = '';
+        byId('deleteDialog').close();
+        refreshPortalView();
+        setLoading(false);
+        showToast('タスクを削除済みページへ移動しました。');
+      })
+      .withFailureHandler(handleFailure)
+      .archiveTask(portalState.deletingTaskId);
+  }
+
+  async function copyManual() {
+    if (!portalState.currentManual) return;
+    await navigator.clipboard.writeText(portalState.currentManual.markdown);
+    showToast('AI操作マニュアルをコピーしました。');
+  }
+
+  function downloadManual() {
+    if (!portalState.currentManual) return;
+    const blob = new Blob([portalState.currentManual.markdown], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = portalState.currentManual.fileName || `${portalState.currentManual.taskId}_AI操作マニュアル.md`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleFailure(error) {
+    setLoading(false);
+    showToast(error && error.message ? error.message : String(error), true);
+  }
+
+  function showToast(message, isError) {
+    const toast = byId('toast');
+    toast.textContent = message;
+    toast.classList.toggle('is-error', Boolean(isError));
+    toast.classList.add('is-visible');
+    window.setTimeout(() => toast.classList.remove('is-visible'), 3600);
+  }
+
+  function setLoading(visible) {
+    byId('loading').hidden = !visible;
+  }
+
+  function numberValue(value) {
+    const normalized = String(value == null ? '' : value).trim().replace(/%$/, '');
+    const number = Number(normalized);
+    return Number.isFinite(number) ? number : 0;
+  }
+
+  function clampScore(value) {
+    return Math.max(0, Math.min(100, numberValue(value)));
+  }
+
+  function usabilityClass(value) {
+    if (value === '易') return 'easy';
+    if (value === '難') return 'hard';
+    return 'normal';
+  }
+
+  function dateInputValue(value) {
+    const normalized = String(value || '').trim().replace(/\//g, '-');
+    return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : '';
+  }
+
+  function safeHttpUrl(value) {
+    const url = String(value || '').trim();
+    return /^https?:\/\//i.test(url) ? url : '';
+  }
+</script>

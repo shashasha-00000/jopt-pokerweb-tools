@@ -7,10 +7,11 @@ Slack Events API と定期scanを併用し、`#cs_カスタマーチーム`、�
 - 対象 Spreadsheet ID: `1GU_7gpdV8PeU07JLq4MsG2lmtPJaDegJejwhQBrTsCs`（`sha タスク`）
 - 対象 Sheet: `シート1`
 - A:J は追加時の書き込みと指定項目の更新だけに使用し、列構成や既存見出しは変更しません。
-- K:AD は初回の `setupProject()` / `setupDashboard()` / `scanSlackTasks()` で不足見出しだけを追加します。
+- K:AL は初回の `setupProject()` / `setupDashboard()` / `scanSlackTasks()` で不足見出しだけを追加します。
 - S:V はWeb App用の `任务 ID` / `提醒时间` / `置顶` / `最后界面操作` です。
 - WはSlack候補の処理段階、X:Zは `截止日期` / `Calendar Event ID` / `同步日历` です。
 - AA:ADは `关联任务 ID` / `Slack 最新消息 TS` / `Slack 新进展` / `Slack 最新进展摘要` です。
+- AE:AFは `Calendar 提醒时间` / `Calendar 同事邮箱`、AG:ALは個人Slack DM予約用の設定・送信先ID・予約記録です。
 - K列は checkbox です。`TRUE` の `待整理` 行と、W列が `忽略` の行はその後更新しません。`任务`へ変換済みのSlack行は、K列が `TRUE` でもSlack追跡用のR/AB:ADだけを更新します。
 - A列が `已完成` の行も、その後一切更新しません。
 - 一意キーは `Slack Channel ID + Slack Thread TS`、threadがない場合は `Slack Channel ID + Slack Message TS` です。
@@ -24,7 +25,7 @@ Slack Events API と定期scanを併用し、`#cs_カスタマーチーム`、�
 
 Slack の `search.messages` は `search:read` を持つ user token のみを受け付けます。本ツールは自分宛と参加threadの補助検索に使用しますが、`@cs` の発見には使用しません。bot token（`xoxb-...`）は使用しません。
 
-Events APIも **Subscribe to events on behalf of users** を使用します。Bot User Eventsは使用せず、Appを各channelへ追加しません。また、Slackへの書き込みscopeは要求しません。
+Events APIも **Subscribe to events on behalf of users** を使用します。Bot User Eventsは使用せず、Appを各channelへ追加しません。Task Radarから個人Slack DMを予約する場合だけ、同じUser Tokenへ `chat:write` を追加します。
 
 また、検索結果は token のユーザーが Slack 上で閲覧できるメッセージに限られます。Slack の `search.messages` は現在 legacy method ですが、GASから定期的に既存Workspaceを検索する本MVPでは実際に利用可能な方法です。
 
@@ -34,6 +35,7 @@ Events APIも **Subscribe to events on behalf of users** を使用します。Bo
 - [conversations.history](https://docs.slack.dev/reference/methods/conversations.history/)
 - [conversations.replies](https://docs.slack.dev/reference/methods/conversations.replies/)
 - [chat.getPermalink](https://docs.slack.dev/reference/methods/chat.getPermalink/)
+- [chat.scheduleMessage](https://docs.slack.dev/reference/methods/chat.scheduleMessage/)
 - [Slack Web API rate limits](https://docs.slack.dev/apis/web-api/rate-limits/)
 
 ## 1. Slack App を作成する
@@ -59,6 +61,7 @@ Events APIも **Subscribe to events on behalf of users** を使用します。Bo
 | `im:read` | DM情報の取得 |
 | `mpim:read` | group DM情報の取得 |
 | `users:read` | requester表示名の取得 |
+| `chat:write` | operator本人として個人DMを予約・取消 |
 
 メールアドレスは取得しないため `users:read.email` は不要です。対象をpublic/private channelだけに限定するなら、DM用の `im:*` / `mpim:*` は省略できます。ただし、その会話種別にmentionが存在した場合はthread情報を取得できません。
 
@@ -179,7 +182,9 @@ B / F / G はルールベースで原文から生成するため、句読点やS
 
 Sheetは監査・重複防止用のバックエンドとして扱い、日常操作はHTMLだけで完結します。HTMLでは未完了taskだけを表示し、`＋ 新建任务` から手動taskを追加できます。Slack候補は直接taskにせず、まず `Slack 待整理` に表示します。`#cs_カスタマーチーム`内はmentionの有無にかかわらず収集対象です。threadの根messageに `【...】` の見出しがある場合はそれを候補タイトルとして使います。`转为任务` のほか、`关联现有任务` で既存の手動taskへthreadを紐づけられます。関連行とSlackからtaskへ変換した行は、task完了までthreadを継続確認します。`不是任务` はthreadを永久ignoreします。
 
-task編集画面では日付だけの `截止日期（DL）` を設定できます。DLが3日以内または超過したtaskは `现在做` へ上がります。`同步到 Google Calendar` をONにするとdefault Calendarへ全天eventを作成し、Calendar側のdefault通知を使用します。完了または同期OFFで、このtoolが保存したevent IDのeventだけを削除します。`提醒时间` は従来どおり一時的なsnoozeで、DLとは別管理です。
+task編集画面では日付だけの `截止日期（DL）` を設定できます。DLが3日以内または超過したtaskは `现在做` へ上がります。Calendar通知を使う場合は、operatorが `创建 Google Calendar 弹窗提醒` をONにし、`提醒日期和时间` を必ず手動入力します。入力日時に15分間の `[提醒]` eventを作り、event開始時（0分前）にpopup通知するoverrideを明示設定します。Calendar側のdefault通知やDLからの自動計算は使用しません。popup表示にはbrowser / OS / Google Calendar app側の通知許可が必要です。任意で同事emailを入力するとCalendar guestとして招待しますが、各guestの実際の通知方法はguest自身のCalendar設定に従います。完了または同期OFFで、このtoolが保存したevent IDのeventだけを削除します。既存の `提醒时间` は従来どおりoperatorがbuttonで指定する一時的なsnoozeで、Calendar popupとは別管理です。
+
+同事へ通知する場合は `以我的个人 Slack 账号预约 DM` をONにし、個人のSlack正式全名、送信日時、DM原文をすべてoperatorが手動入力します。複数名は `/`、comma、改行で区切り、各人へ1対1 DMを個別予約します。正式全名はactiveな個人memberへexactかつ一意に一致する場合だけ使用し、見つからない名前、重複名、bot、停止accountは拒否します。`@CS` のようなuser groupは展開・群発しません。本文をAI生成したり、DLから時刻・宛先を自動決定したりしません。編集・完了・OFF時は保存済み `scheduled_message_id` を使って未送信予約を取消します。
 
 - `现在做`: 进行中、置顶、または高優先度
 - `等回复`: H列に待ち相手がいるtask

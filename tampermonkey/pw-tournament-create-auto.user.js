@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW 大会作成 Auto
 // @namespace    pw-tournament-create-auto
-// @version      0.3.0
+// @version      0.3.1
 // @description  API-first tournament create flow from fixed TSV with independent per-tournament workers.
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js
@@ -15,8 +15,8 @@
 (function () {
   "use strict";
 
-  const DEFAULT_INPUT = `大会名\t日付\t開始時間\tEN名称\tEN略称\tEN金額\tEN手数料\tEN回数\tENチップ数\tRE名称\tRE略称\tRE金額\tRE手数料\tRE回数\tREチップ数\tTE名称\tTE略称\tTE金額\tTE手数料\tTE回数\tチケット名称
-test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t\t\t-74998\t0\t0\t【SPADIE TOKYO 42nd】Main Event / -2026.08.31`;
+  const DEFAULT_INPUT = `大会名\t日付\t開始時間\tEN名称\tEN略称\tEN金額\tEN手数料\tEN回数\tENチップ数\tRE名称\tRE略称\tRE金額\tRE手数料\tRE回数\tREチップ数\tチケット名称
+test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t【SPADIE TOKYO 42nd】Main Event / -2026.08.31`;
 
   const STORAGE = {
     input: "PW_BG_CREATE_INPUT_V01",
@@ -72,9 +72,6 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t\t\t-74998
     "RE金額",
     "RE手数料",
     "RE回数",
-    "TE金額",
-    "TE手数料",
-    "TE回数",
     "チケット名称"
   ];
 

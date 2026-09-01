@@ -1,0 +1,1217 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>任务雷达</title>
+  <style>
+    :root {
+      --ink: #182230;
+      --muted: #687386;
+      --paper: #f6f7f4;
+      --card: rgba(255, 255, 255, 0.92);
+      --line: rgba(24, 34, 48, 0.09);
+      --navy: #172a3a;
+      --navy-2: #23465b;
+      --signal: #ff7a45;
+      --signal-soft: #fff0e8;
+      --mint: #3d9b80;
+      --mint-soft: #e8f6f1;
+      --violet: #7668cc;
+      --violet-soft: #f0edff;
+      --danger: #d94f63;
+      --danger-soft: #fff0f2;
+      --shadow: 0 16px 45px rgba(31, 47, 61, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 92% 8%, rgba(255, 122, 69, 0.12), transparent 28rem),
+        radial-gradient(circle at 8% 88%, rgba(61, 155, 128, 0.10), transparent 30rem),
+        var(--paper);
+      font-family: Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+    }
+
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+
+    .shell { min-height: 100vh; }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 17px clamp(18px, 4vw, 58px);
+      color: #fff;
+      background: linear-gradient(125deg, var(--navy), var(--navy-2));
+      box-shadow: 0 10px 30px rgba(21, 42, 57, 0.18);
+    }
+
+    .brand { display: flex; align-items: center; gap: 13px; }
+    .radar-mark {
+      position: relative;
+      width: 42px;
+      height: 42px;
+      border: 1px solid rgba(255,255,255,.38);
+      border-radius: 50%;
+      background:
+        linear-gradient(90deg, transparent 49%, rgba(255,255,255,.22) 50%, transparent 51%),
+        linear-gradient(transparent 49%, rgba(255,255,255,.22) 50%, transparent 51%);
+    }
+    .radar-mark::before {
+      content: "";
+      position: absolute;
+      inset: 8px;
+      border: 1px solid rgba(255,255,255,.25);
+      border-radius: 50%;
+    }
+    .radar-mark::after {
+      content: "";
+      position: absolute;
+      width: 5px;
+      height: 5px;
+      top: 9px;
+      right: 8px;
+      border-radius: 50%;
+      background: var(--signal);
+      box-shadow: 0 0 0 5px rgba(255,122,69,.18);
+    }
+    .brand h1 { margin: 0; font-size: 20px; letter-spacing: .08em; }
+    .brand p { margin: 2px 0 0; color: rgba(255,255,255,.64); font-size: 12px; }
+
+    .top-actions { display: flex; align-items: center; gap: 9px; }
+    .sync-time { color: rgba(255,255,255,.67); font-size: 12px; }
+    .top-button {
+      padding: 9px 13px;
+      color: #fff;
+      border: 1px solid rgba(255,255,255,.24);
+      border-radius: 10px;
+      background: rgba(255,255,255,.08);
+    }
+    .top-button:hover { background: rgba(255,255,255,.16); }
+
+    main { width: min(1460px, calc(100% - 32px)); margin: 0 auto; padding: 30px 0 52px; }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(260px, .75fr);
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+    .hero-copy, .focus-card {
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+    }
+    .hero-copy { padding: clamp(24px, 4vw, 42px); }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 13px;
+      color: var(--signal);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .14em;
+    }
+    .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 0 6px var(--signal-soft); }
+    .hero h2 { margin: 0; font-size: clamp(29px, 4vw, 48px); line-height: 1.08; letter-spacing: -.04em; }
+    .hero h2 span { color: var(--signal); }
+    .hero-copy > p { max-width: 670px; margin: 16px 0 0; color: var(--muted); line-height: 1.75; }
+
+    .focus-card { position: relative; overflow: hidden; padding: 26px; color: #fff; background: linear-gradient(145deg, #223b4d, #172a3a); }
+    .focus-card::after {
+      content: "";
+      position: absolute;
+      width: 220px;
+      height: 220px;
+      right: -95px;
+      bottom: -105px;
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 50%;
+      box-shadow: 0 0 0 34px rgba(255,255,255,.035), 0 0 0 72px rgba(255,255,255,.025);
+    }
+    .focus-label { color: rgba(255,255,255,.58); font-size: 12px; }
+    .focus-number { margin: 10px 0 2px; font-size: 54px; font-weight: 800; line-height: 1; }
+    .focus-note { max-width: 240px; color: rgba(255,255,255,.72); line-height: 1.6; font-size: 13px; }
+
+    .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+    .metric {
+      padding: 18px 20px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(255,255,255,.78);
+    }
+    .metric-label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+    .metric-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .metric strong { display: block; margin-top: 7px; font-size: 27px; }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin: 24px 0 17px;
+    }
+    .workspace-switch { display: inline-flex; gap: 6px; margin: 4px 0 2px; padding: 5px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.72); }
+    .workspace-tab { padding: 10px 15px; color: var(--muted); border: 0; border-radius: 10px; background: transparent; font-weight: 750; }
+    .workspace-tab.active { color: #fff; background: var(--navy); box-shadow: 0 7px 18px rgba(23,42,58,.16); }
+    .workspace-tab span { margin-left: 7px; opacity: .72; }
+    .filters { display: flex; flex-wrap: wrap; gap: 8px; }
+    .filter {
+      padding: 9px 13px;
+      color: var(--muted);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,.72);
+    }
+    .filter.active { color: #fff; border-color: var(--navy); background: var(--navy); }
+    .filter span { margin-left: 6px; opacity: .7; }
+    .tag-filter-panel {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 12px;
+      align-items: center;
+      margin: 18px 0 -7px;
+      padding: 13px 15px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255,255,255,.72);
+    }
+    .tag-filter-panel[hidden] { display: none; }
+    .tag-filter-label { color: var(--navy); font-size: 12px; font-weight: 850; }
+    .tag-filter-note { color: var(--muted); font-size: 11px; }
+    .tag-filter-control { display: grid; gap: 8px; }
+    .tag-select { width: 100%; padding: 9px 11px; color: var(--ink); border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+    .selected-tag-list { display: flex; flex-wrap: wrap; gap: 7px; }
+    .selected-tag { padding: 7px 10px; color: #5b4870; border: 0; border-radius: 999px; background: #f1eafb; font-size: 12px; }
+    .selected-tag span { margin-left: 5px; opacity: .65; }
+    .tag.topic { color: #5b4870; background: #f1eafb; }
+    .search {
+      width: min(330px, 100%);
+      padding: 11px 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      outline: none;
+      background: rgba(255,255,255,.82);
+    }
+    .search:focus { border-color: rgba(255,122,69,.55); box-shadow: 0 0 0 4px var(--signal-soft); }
+
+    .lane { margin: 25px 0 34px; }
+    .lane-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .lane-title { display: flex; align-items: center; gap: 10px; }
+    .lane-icon {
+      display: grid;
+      place-items: center;
+      width: 31px;
+      height: 31px;
+      border-radius: 10px;
+      background: #fff;
+      box-shadow: 0 6px 18px rgba(25,40,52,.08);
+    }
+    .lane h3 { margin: 0; font-size: 18px; }
+    .lane-description { color: var(--muted); font-size: 12px; }
+    .task-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+
+    .task-card {
+      position: relative;
+      overflow: hidden;
+      padding: 19px 19px 16px;
+      border: 1px solid var(--line);
+      border-radius: 17px;
+      background: var(--card);
+      box-shadow: 0 8px 25px rgba(37,52,63,.065);
+      transition: transform .18s ease, box-shadow .18s ease;
+    }
+    .task-card:hover { transform: translateY(-2px); box-shadow: 0 15px 34px rgba(37,52,63,.10); }
+    .task-card::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--mint); }
+    .task-card[data-lane="now"]::before { background: var(--signal); }
+    .task-card[data-lane="waiting"]::before { background: var(--violet); }
+    .task-card[data-lane="forgotten"]::before { background: var(--danger); }
+    .task-card[data-lane="snoozed"]::before { background: #4294c6; }
+    .task-card[data-lane="completed"] { opacity: .66; }
+    .task-card[data-lane="inbox"]::before { background: var(--violet); }
+    .task-card[data-deadline="overdue"] { border-color: rgba(217,79,99,.42); box-shadow: 0 12px 30px rgba(217,79,99,.12); }
+    .task-card[data-deadline="today"], .task-card[data-deadline="soon"] { border-color: rgba(255,122,69,.34); }
+    .inbox-summary { margin: 13px 0 0; padding: 12px; color: var(--muted); border-radius: 11px; background: var(--violet-soft); line-height: 1.6; white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+
+    .card-top { display: flex; justify-content: space-between; gap: 12px; }
+    .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 9px; }
+    .tag { padding: 4px 8px; border-radius: 7px; color: var(--muted); background: #f0f2f2; font-size: 11px; font-weight: 700; }
+    .tag.high { color: #b94535; background: #fff0ea; }
+    .tag.source { color: #337b69; background: var(--mint-soft); }
+    .tag.deadline { color: #a64a2d; background: var(--signal-soft); }
+    .tag.deadline.overdue { color: #b7334a; background: var(--danger-soft); }
+    .tag.calendar { color: #376fa0; background: #eaf4ff; }
+    .tag.update { color: #9a3d28; background: #fff0ea; }
+    .pin-button { flex: none; padding: 5px 8px; border: 0; border-radius: 8px; color: #8b94a1; background: transparent; }
+    .pin-button.active { color: var(--signal); background: var(--signal-soft); }
+    .task-card h4 { margin: 0; font-size: 17px; line-height: 1.45; }
+    .next-action { margin: 13px 0 10px; padding: 11px 12px; border-radius: 11px; background: #f6f7f5; }
+    .next-action small { display: block; margin-bottom: 4px; color: var(--muted); }
+    .next-action p { margin: 0; line-height: 1.55; }
+    .details { display: flex; flex-wrap: wrap; gap: 12px; min-height: 18px; color: var(--muted); font-size: 12px; }
+    .details strong { color: var(--ink); font-weight: 650; }
+    .card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 15px; padding-top: 13px; border-top: 1px solid var(--line); }
+    .linked-threads { margin-top: 12px; padding: 11px 12px; border-radius: 11px; background: #f4f8f7; color: var(--muted); font-size: 12px; }
+    .linked-threads strong { display: block; margin-bottom: 5px; color: var(--ink); }
+    .linked-threads a { display: inline-block; margin: 3px 10px 0 0; color: #407d99; text-decoration: none; }
+    .linked-update { margin-top: 9px; padding: 9px 10px; border-left: 3px solid var(--signal); background: #fff8f3; color: var(--ink); line-height: 1.5; }
+    .action {
+      padding: 7px 10px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      color: var(--ink);
+      background: #fff;
+    }
+    .action:hover { border-color: rgba(255,122,69,.35); background: var(--signal-soft); }
+    .action.primary { color: #fff; border-color: var(--navy); background: var(--navy); }
+    .action.complete { margin-left: auto; color: #fff; border-color: var(--mint); background: var(--mint); }
+    .slack-link { margin-left: auto; color: #407d99; text-decoration: none; font-size: 12px; font-weight: 700; }
+    .slack-link:hover { text-decoration: underline; }
+
+    .empty {
+      grid-column: 1 / -1;
+      padding: 38px;
+      border: 1px dashed rgba(24,34,48,.16);
+      border-radius: 16px;
+      color: var(--muted);
+      text-align: center;
+      background: rgba(255,255,255,.5);
+    }
+    .loading { padding: 90px 20px; text-align: center; color: var(--muted); }
+    .spinner { width: 35px; height: 35px; margin: 0 auto 14px; border: 3px solid rgba(24,34,48,.1); border-top-color: var(--signal); border-radius: 50%; animation: spin .85s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .toast {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      z-index: 50;
+      max-width: min(390px, calc(100vw - 40px));
+      padding: 13px 16px;
+      color: #fff;
+      border-radius: 12px;
+      background: var(--navy);
+      box-shadow: var(--shadow);
+      transform: translateY(20px);
+      opacity: 0;
+      pointer-events: none;
+      transition: .2s ease;
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast.error { background: #a83e50; }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      display: none;
+      place-items: center;
+      padding: 20px;
+      background: rgba(15,28,38,.50);
+      backdrop-filter: blur(4px);
+    }
+    .modal-backdrop.show { display: grid; }
+    .modal { width: min(580px, 100%); max-height: calc(100dvh - 40px); overflow-y: auto; overscroll-behavior: contain; padding: 24px; border-radius: 18px; background: #fff; box-shadow: 0 28px 80px rgba(12,24,34,.28); }
+    .modal h3 { margin: 0 0 6px; }
+    .modal p { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
+    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; margin-top: 18px; }
+    .form-field { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 700; }
+    .form-field.wide { grid-column: 1 / -1; }
+    .form-field input, .form-field select, .form-field textarea { width: 100%; padding: 11px 12px; color: var(--ink); border: 1px solid var(--line); border-radius: 10px; outline: none; background: #fff; }
+    .form-field textarea { min-height: 82px; resize: vertical; }
+    .form-field input:focus, .form-field select:focus, .form-field textarea:focus { border-color: var(--signal); box-shadow: 0 0 0 4px var(--signal-soft); }
+    .tag-editor { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+    .tag-editor .selected-tag-list { grid-column: 1 / -1; min-height: 30px; }
+    .tag-editor .manual-tag-input { grid-column: 1; }
+    .tag-editor-help { grid-column: 1 / -1; color: var(--muted); font-size: 11px; font-weight: 500; }
+    .calendar-check { display: flex; align-items: center; gap: 9px; padding: 12px 13px; border: 1px solid var(--line); border-radius: 11px; background: #f7fbff; color: var(--muted); }
+    .calendar-check input { width: 17px; height: 17px; accent-color: var(--signal); }
+    .modal-actions { position: sticky; bottom: -24px; display: flex; justify-content: flex-end; gap: 8px; margin: 14px -24px -24px; padding: 14px 24px 18px; border-top: 1px solid var(--line); background: rgba(255,255,255,.97); }
+
+    @media (max-width: 900px) {
+      .hero { grid-template-columns: 1fr; }
+      .metrics { grid-template-columns: repeat(2, 1fr); }
+      .task-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 620px) {
+      .topbar { align-items: flex-start; padding: 14px 16px; }
+      .brand p, .sync-time, .sheet-button { display: none; }
+      main { width: min(100% - 20px, 1460px); padding-top: 18px; }
+      .hero-copy { padding: 24px 21px; }
+      .metrics { gap: 8px; }
+      .metric { padding: 15px; }
+      .toolbar { align-items: stretch; flex-direction: column; }
+      .tag-filter-panel { grid-template-columns: 1fr; }
+      .search { width: 100%; }
+      .task-card { padding: 17px 15px 14px; }
+      .action.complete, .slack-link { margin-left: 0; }
+      .form-grid { grid-template-columns: 1fr; }
+      .form-field.wide { grid-column: auto; }
+      .modal-backdrop { align-items: start; padding: 10px; }
+      .modal { max-height: calc(100dvh - 20px); }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="radar-mark" aria-hidden="true"></div>
+        <div>
+          <h1>任务雷达</h1>
+          <p>从 Slack 到下一步，把工作变得看得见</p>
+        </div>
+      </div>
+      <div class="top-actions">
+        <span class="sync-time" id="syncTime">正在读取数据…</span>
+        <button class="top-button" id="createTaskButton">＋ 新建任务</button>
+        <button class="top-button sheet-button" id="openSheet">打开表格</button>
+        <button class="top-button" id="refreshButton">刷新</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="hero-copy">
+          <div class="eyebrow"><span class="pulse"></span> 今日行动面板</div>
+          <h2>先做<span>最该做的事</span>，<br>其余交给雷达。</h2>
+          <p>这里不会替你做最终判断。它只负责把 Slack 里的请求、等待中的回复和快被遗忘的事项放回视野。</p>
+        </div>
+        <aside class="focus-card">
+          <div class="focus-label">当前需要你行动</div>
+          <div class="focus-number" id="focusNumber">—</div>
+          <div class="focus-note">“现在做”会优先显示已开始、置顶、高优先级或临近截止的任务。</div>
+        </aside>
+      </section>
+
+      <section class="metrics" id="metrics"></section>
+
+      <section class="workspace-switch" id="workspaceSwitch"></section>
+
+      <section class="tag-filter-panel" id="tagFilterPanel">
+        <span class="tag-filter-label">标签筛选</span>
+        <div class="tag-filter-control">
+          <select class="tag-select" id="tagFilterSelect" aria-label="选择标签筛选"><option value="">选择标签…</option></select>
+          <div class="selected-tag-list" id="tagFilters"></div>
+        </div>
+        <span class="tag-filter-note">多选时显示同时拥有全部标签的任务</span>
+      </section>
+
+      <section class="toolbar">
+        <div class="filters" id="filters"></div>
+        <input class="search" id="searchInput" type="search" placeholder="搜索任务、下一步、等待对象…">
+      </section>
+
+      <div id="content" class="loading">
+        <div class="spinner"></div>
+        正在整理你的任务…
+      </div>
+    </main>
+  </div>
+
+  <div class="modal-backdrop" id="editModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal">
+      <h3 id="modalTitle">新建任务</h3>
+      <p id="modalDescription">自建任务和 Slack 任务会在同一个面板里管理。</p>
+      <div class="form-grid">
+        <label class="form-field wide">任务名称<input id="taskTitleInput" maxlength="120" required></label>
+        <label class="form-field">优先级<select id="taskPriorityInput"><option>高</option><option selected>中</option><option>低</option></select></label>
+        <label class="form-field wide">标签
+          <div class="tag-editor">
+            <select class="tag-select" id="taskExistingTagSelect"><option value="">从已有标签选择…</option></select>
+            <button class="action" id="addExistingTag" type="button">追加</button>
+            <div class="selected-tag-list" id="taskSelectedTags"></div>
+            <input class="manual-tag-input" id="taskNewTagInput" maxlength="40" placeholder="没有的标签可在这里手动输入">
+            <button class="action" id="addManualTag" type="button">新增</button>
+            <span class="tag-editor-help">可以选择多个；点击已选标签即可移除。</span>
+          </div>
+          <input id="taskTagsInput" type="hidden">
+        </label>
+        <label class="form-field">预计时间<input id="taskEstimateInput" maxlength="60" placeholder="例如：30分钟"></label>
+        <label class="form-field">等待对象<input id="taskWaitingInput" maxlength="100" placeholder="没有可留空"></label>
+        <label class="form-field">截止日期（DL）<input id="taskDeadlineInput" type="date"></label>
+        <label class="form-field calendar-check"><input id="taskCalendarInput" type="checkbox">创建 Google Calendar 弹窗提醒</label>
+        <label class="form-field">提醒日期和时间（必须人工填写）<input id="taskCalendarReminderInput" type="datetime-local"></label>
+        <label class="form-field">同事邮箱（日历邀请）<input id="taskCalendarGuestsInput" maxlength="1000" placeholder="多个邮箱用逗号分隔"></label>
+        <label class="form-field wide calendar-check"><input id="taskSlackDmInput" type="checkbox">以我的个人 Slack 账号预约 DM</label>
+        <label class="form-field">Slack 收件人正式全名<input id="taskSlackDmRecipientsInput" maxlength="500" placeholder="多人用 /、逗号或换行分隔；不支持 @CS"></label>
+        <label class="form-field">Slack DM 发送时间（必须人工填写）<input id="taskSlackDmSendAtInput" type="datetime-local"></label>
+        <label class="form-field wide">Slack DM 原文（不会自动生成）<textarea id="taskSlackDmTextInput" maxlength="2000" placeholder="请亲自填写要发送给同事的完整内容"></textarea></label>
+        <label class="form-field wide">下一步<textarea id="taskNextActionInput" maxlength="500" placeholder="写一个可以马上执行的动作"></textarea></label>
+        <label class="form-field wide">完成条件<input id="taskCompletionInput" maxlength="300" placeholder="怎样才算真正完成"></label>
+        <label class="form-field wide">备注<textarea id="taskMemoInput" maxlength="500"></textarea></label>
+      </div>
+      <div class="modal-actions">
+        <button class="action" id="cancelEdit">取消</button>
+        <button class="action primary" id="saveEdit">保存</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-backdrop" id="linkModal" role="dialog" aria-modal="true" aria-labelledby="linkModalTitle">
+    <div class="modal">
+      <h3 id="linkModalTitle">关联现有任务</h3>
+      <p>Slack thread 会继续追踪，但不会再创建一张重复任务卡。</p>
+      <div class="form-grid">
+        <label class="form-field wide">选择任务<select id="linkTaskSelect"></select></label>
+        <label class="form-field wide calendar-check"><input id="linkApplyUpdate" type="checkbox" checked>用这条 Slack 的最新内容更新“下一步”</label>
+      </div>
+      <div class="modal-actions">
+        <button class="action" id="cancelLink">取消</button>
+        <button class="action primary" id="saveLink">确认关联</button>
+      </div>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const laneMeta = {
+      now: { label: '现在做', icon: '⚡', description: '已开始、置顶、高优先级或临近截止' },
+      waiting: { label: '等回复', icon: '↗', description: '下一步在别人手上' },
+      forgotten: { label: '可能忘了', icon: '!', description: '超过 7 天没有更新' },
+      backlog: { label: '任务库', icon: '•', description: '可以安排但不用马上做' },
+      snoozed: { label: '稍后提醒', icon: '◷', description: '到时间会重新出现' },
+    };
+    const laneOrder = ['now', 'waiting', 'forgotten', 'backlog', 'snoozed'];
+    let dashboard = null;
+    let activeFilter = 'active';
+    let activeView = 'tasks';
+    const activeTags = new Set();
+    let editingTaskId = '';
+    let linkingInboxId = '';
+    let modalMode = 'create';
+
+    document.getElementById('refreshButton').addEventListener('click', loadDashboard);
+    document.getElementById('createTaskButton').addEventListener('click', openCreateModal);
+    document.getElementById('searchInput').addEventListener('input', renderTasks);
+    document.getElementById('openSheet').addEventListener('click', () => {
+      if (dashboard && dashboard.spreadsheetUrl) window.open(dashboard.spreadsheetUrl, '_blank', 'noopener');
+    });
+    document.getElementById('cancelEdit').addEventListener('click', closeEditModal);
+    document.getElementById('saveEdit').addEventListener('click', saveTaskForm);
+    document.getElementById('taskCalendarInput').addEventListener('change', updateCalendarControls);
+    document.getElementById('taskSlackDmInput').addEventListener('change', updateSlackDmControls);
+    document.getElementById('tagFilterSelect').addEventListener('change', event => {
+      if (!event.target.value) return;
+      activeTags.add(event.target.value);
+      renderTagFilters();
+      renderTasks();
+    });
+    document.getElementById('addExistingTag').addEventListener('click', () => {
+      addTaskTag(document.getElementById('taskExistingTagSelect').value);
+    });
+    document.getElementById('addManualTag').addEventListener('click', addManualTaskTag);
+    document.getElementById('taskNewTagInput').addEventListener('keydown', event => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      addManualTaskTag();
+    });
+    document.getElementById('cancelLink').addEventListener('click', closeLinkModal);
+    document.getElementById('saveLink').addEventListener('click', saveTaskLink);
+    document.getElementById('editModal').addEventListener('click', event => {
+      if (event.target.id === 'editModal') closeEditModal();
+    });
+    document.getElementById('linkModal').addEventListener('click', event => {
+      if (event.target.id === 'linkModal') closeLinkModal();
+    });
+
+    function loadDashboard() {
+      setBusy(true);
+      if (window.google && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(data => {
+            dashboard = data;
+            renderAll();
+            setBusy(false);
+          })
+          .withFailureHandler(error => {
+            setBusy(false);
+            showError(error);
+          })
+          .getTaskDashboardData();
+      } else {
+        dashboard = previewData();
+        renderAll();
+        setBusy(false);
+        showToast('当前是本地界面预览，操作不会写入表格。');
+      }
+    }
+
+    function renderAll() {
+      document.getElementById('syncTime').textContent = '更新于 ' + dashboard.updatedAt;
+      document.getElementById('focusNumber').textContent = dashboard.counts.now;
+      renderMetrics();
+      renderWorkspaceSwitch();
+      renderFilters();
+      renderTagFilters();
+      renderTasks();
+    }
+
+    function renderWorkspaceSwitch() {
+      const views = [
+        ['tasks', '我的任务', dashboard.counts.active],
+        ['inbox', 'Slack 待整理', dashboard.counts.inbox],
+        ['completed', '已完成', dashboard.counts.completed],
+        ['trash', '回收站', dashboard.counts.trash]
+      ];
+      const container = document.getElementById('workspaceSwitch');
+      container.innerHTML = views.map(view => `
+        <button class="workspace-tab ${activeView === view[0] ? 'active' : ''}" data-view="${view[0]}">
+          ${view[1]}<span>${view[2]}</span>
+        </button>`).join('');
+      container.querySelectorAll('[data-view]').forEach(button => {
+        button.addEventListener('click', () => {
+          activeView = button.dataset.view;
+          document.getElementById('searchInput').placeholder = ['inbox', 'trash'].includes(activeView)
+            ? '搜索 Slack 消息、频道、发起人…'
+            : '搜索任务、下一步、等待对象…';
+          renderWorkspaceSwitch();
+          renderFilters();
+          renderTagFilters();
+          renderTasks();
+        });
+      });
+    }
+
+    function renderMetrics() {
+      const items = [
+        ['现在做', dashboard.counts.now, '#ff7a45'],
+        ['等回复', dashboard.counts.waiting, '#7668cc'],
+        ['可能忘了', dashboard.counts.forgotten, '#d94f63'],
+        ['全部未完成', dashboard.counts.active, '#3d9b80']
+      ];
+      document.getElementById('metrics').innerHTML = items.map(item => `
+        <div class="metric">
+          <div class="metric-label"><span class="metric-dot" style="background:${item[2]}"></span>${item[0]}</div>
+          <strong>${item[1]}</strong>
+        </div>`).join('');
+    }
+
+    function renderFilters() {
+      const filters = [
+        ['active', '全部未完成', dashboard.counts.active],
+        ['now', '现在做', dashboard.counts.now],
+        ['waiting', '等回复', dashboard.counts.waiting],
+        ['forgotten', '可能忘了', dashboard.counts.forgotten],
+        ['snoozed', '稍后提醒', dashboard.counts.snoozed]
+      ];
+      const container = document.getElementById('filters');
+      if (activeView !== 'tasks') {
+        const notes = {
+          inbox: '先判断是不是任务，再决定是否进入主列表。',
+          completed: `显示最近 90 天完成的任务；更早的 ${dashboard.counts.archivedCompleted || 0} 项只保留在 Sheet 档案中。`,
+          trash: '这里保留被标记为“不是任务”的 Slack 项目，可以随时恢复。'
+        };
+        container.innerHTML = `<span class="lane-description">${notes[activeView]}</span>`;
+        return;
+      }
+      container.innerHTML = filters.map(item => `
+        <button class="filter ${activeFilter === item[0] ? 'active' : ''}" data-filter="${item[0]}">
+          ${item[1]}<span>${item[2]}</span>
+        </button>`).join('');
+      container.querySelectorAll('[data-filter]').forEach(button => {
+        button.addEventListener('click', () => {
+          activeFilter = button.dataset.filter;
+          renderFilters();
+          renderTasks();
+        });
+      });
+    }
+
+    function parseTaskTags(value) {
+      const unique = new Set();
+      return String(value || '').split(/[\n\r,，、;；]+/).map(tag =>
+        tag.trim().replace(/^#+/, '')
+      ).filter(Boolean).filter(tag => {
+        const key = tag.toLowerCase();
+        if (unique.has(key)) return false;
+        unique.add(key);
+        return true;
+      });
+    }
+
+    function getTagCatalog() {
+      const catalog = new Map();
+      [...(dashboard && dashboard.tasks || []), ...(dashboard && dashboard.completed || [])].forEach(task => {
+        parseTaskTags(task.tags).forEach(tag => {
+          const key = tag.toLowerCase();
+          const current = catalog.get(key) || { label: tag, count: 0 };
+          current.count += 1;
+          catalog.set(key, current);
+        });
+      });
+      return Array.from(catalog.entries()).sort((a, b) =>
+        b[1].count - a[1].count || a[1].label.localeCompare(b[1].label, 'ja')
+      );
+    }
+
+    function renderTagFilters() {
+      const panel = document.getElementById('tagFilterPanel');
+      if (activeView === 'inbox' || activeView === 'trash') {
+        panel.hidden = true;
+        return;
+      }
+      panel.hidden = false;
+      const entries = getTagCatalog();
+      const catalog = new Map(entries);
+      Array.from(activeTags).forEach(key => {
+        if (!catalog.has(key)) activeTags.delete(key);
+      });
+      const select = document.getElementById('tagFilterSelect');
+      const container = document.getElementById('tagFilters');
+      if (!entries.length) {
+        select.innerHTML = '<option value="">还没有可选标签</option>';
+        select.disabled = true;
+        container.innerHTML = '<span class="lane-description">任务还没有标签，可在新建或编辑任务时追加。</span>';
+        return;
+      }
+      select.disabled = false;
+      select.innerHTML = '<option value="">选择标签…</option>' + entries
+        .filter(([key]) => !activeTags.has(key))
+        .map(([key, item]) => `<option value="${escapeHtml(key)}">${escapeHtml(item.label)} (${item.count})</option>`)
+        .join('');
+      container.innerHTML = Array.from(activeTags).map(key => {
+        const item = catalog.get(key);
+        return `<button class="selected-tag" data-tag-key="${escapeHtml(key)}">#${escapeHtml(item.label)}<span>×</span></button>`;
+      }).join('') + (activeTags.size ? '<button class="filter" data-clear-tags="true">清除</button>' : '');
+      container.querySelectorAll('[data-tag-key]').forEach(button => {
+        button.addEventListener('click', () => {
+          activeTags.delete(button.dataset.tagKey);
+          renderTagFilters();
+          renderTasks();
+        });
+      });
+      const clearButton = container.querySelector('[data-clear-tags]');
+      if (clearButton) clearButton.addEventListener('click', () => {
+        activeTags.clear();
+        renderTagFilters();
+        renderTasks();
+      });
+    }
+
+    function setTaskTags(value) {
+      document.getElementById('taskTagsInput').value = parseTaskTags(value).join(', ');
+      renderTaskTagEditor();
+    }
+
+    function addTaskTag(value) {
+      const tag = String(value || '').trim().replace(/^#+/, '');
+      if (!tag) return;
+      if (tag.length > 40) return showToast('每个标签不能超过 40 个字符。', true);
+      const tags = parseTaskTags(document.getElementById('taskTagsInput').value);
+      if (!tags.some(item => item.toLowerCase() === tag.toLowerCase())) tags.push(tag);
+      setTaskTags(tags.join(', '));
+      document.getElementById('taskNewTagInput').value = '';
+    }
+
+    function addManualTaskTag() {
+      addTaskTag(document.getElementById('taskNewTagInput').value);
+    }
+
+    function renderTaskTagEditor() {
+      const selected = parseTaskTags(document.getElementById('taskTagsInput').value);
+      const selectedKeys = new Set(selected.map(tag => tag.toLowerCase()));
+      const select = document.getElementById('taskExistingTagSelect');
+      select.innerHTML = '<option value="">从已有标签选择…</option>' + getTagCatalog()
+        .filter(([key]) => !selectedKeys.has(key))
+        .map(([, item]) => `<option value="${escapeHtml(item.label)}">${escapeHtml(item.label)} (${item.count})</option>`)
+        .join('');
+      const container = document.getElementById('taskSelectedTags');
+      container.innerHTML = selected.length
+        ? selected.map(tag => `<button class="selected-tag" type="button" data-remove-task-tag="${escapeHtml(tag.toLowerCase())}">#${escapeHtml(tag)}<span>×</span></button>`).join('')
+        : '<span class="lane-description">尚未选择标签</span>';
+      container.querySelectorAll('[data-remove-task-tag]').forEach(button => {
+        button.addEventListener('click', () => {
+          setTaskTags(selected.filter(tag => tag.toLowerCase() !== button.dataset.removeTaskTag).join(', '));
+        });
+      });
+    }
+
+    function renderTasks() {
+      if (!dashboard) return;
+      if (activeView === 'inbox') return renderInbox();
+      if (activeView === 'trash') return renderTrash();
+      if (activeView === 'completed') return renderCompleted();
+      const query = document.getElementById('searchInput').value.trim().toLowerCase();
+      const visible = dashboard.tasks.filter(task => {
+        const filterMatch = activeFilter === 'active' || task.lane === activeFilter;
+        const taskTagKeys = new Set(parseTaskTags(task.tags).map(tag => tag.toLowerCase()));
+        const tagMatch = Array.from(activeTags).every(tag => taskTagKeys.has(tag));
+        const haystack = [task.title, task.nextAction, task.category, task.tags, task.waitingFor, task.memo]
+          .join(' ').toLowerCase();
+        return filterMatch && tagMatch && (!query || haystack.includes(query));
+      });
+
+      const lanes = activeFilter === 'active' ? laneOrder : [activeFilter];
+      const sections = lanes.map(lane => {
+        const tasks = visible.filter(task => task.lane === lane);
+        if (!tasks.length) return '';
+        const meta = laneMeta[lane];
+        return `
+          <section class="lane">
+            <div class="lane-head">
+              <div class="lane-title"><span class="lane-icon">${meta.icon}</span><h3>${meta.label}</h3></div>
+              <div class="lane-description">${meta.description} · ${tasks.length} 项</div>
+            </div>
+            <div class="task-grid">${tasks.map(taskCard).join('')}</div>
+          </section>`;
+      }).join('');
+
+      document.getElementById('content').className = '';
+      document.getElementById('content').innerHTML = sections || '<div class="empty">这个视图里没有任务。</div>';
+      bindCardActions();
+    }
+
+    function renderCompleted() {
+      const query = document.getElementById('searchInput').value.trim().toLowerCase();
+      const items = (dashboard.completed || []).filter(task => {
+        const taskTagKeys = new Set(parseTaskTags(task.tags).map(tag => tag.toLowerCase()));
+        const tagMatch = Array.from(activeTags).every(tag => taskTagKeys.has(tag));
+        const haystack = [task.title, task.nextAction, task.tags, task.waitingFor, task.memo].join(' ').toLowerCase();
+        return tagMatch && (!query || haystack.includes(query));
+      });
+      document.getElementById('content').className = '';
+      document.getElementById('content').innerHTML = items.length ? `
+        <section class="lane">
+          <div class="lane-head">
+            <div class="lane-title"><span class="lane-icon">✓</span><h3>已完成</h3></div>
+            <div class="lane-description">最近 90 天 · ${items.length} 项</div>
+          </div>
+          <div class="task-grid">${items.map(task => taskCard(task, true)).join('')}</div>
+        </section>` : '<div class="empty">最近 90 天没有符合条件的已完成任务。</div>';
+      bindCardActions();
+    }
+
+    function renderTrash() {
+      const query = document.getElementById('searchInput').value.trim().toLowerCase();
+      const items = (dashboard.trash || []).filter(item => {
+        const haystack = [item.title, item.nextAction, item.waitingFor, item.memo].join(' ').toLowerCase();
+        return !query || haystack.includes(query);
+      });
+      document.getElementById('content').className = '';
+      document.getElementById('content').innerHTML = items.length ? `
+        <section class="lane">
+          <div class="lane-head">
+            <div class="lane-title"><span class="lane-icon">↺</span><h3>回收站</h3></div>
+            <div class="lane-description">${items.length} 条可恢复项目</div>
+          </div>
+          <div class="task-grid">${items.map(trashCard).join('')}</div>
+        </section>` : '<div class="empty">回收站是空的。</div>';
+      bindTrashActions();
+    }
+
+    function renderInbox() {
+      const query = document.getElementById('searchInput').value.trim().toLowerCase();
+      const items = (dashboard.inbox || []).filter(item => {
+        const haystack = [item.title, item.nextAction, item.waitingFor, item.memo].join(' ').toLowerCase();
+        return !query || haystack.includes(query);
+      });
+      document.getElementById('content').className = '';
+      document.getElementById('content').innerHTML = items.length ? `
+        <section class="lane">
+          <div class="lane-head">
+            <div class="lane-title"><span class="lane-icon">↘</span><h3>Slack 待整理</h3></div>
+            <div class="lane-description">${items.length} 条候选消息</div>
+          </div>
+          <div class="task-grid">${items.map(inboxCard).join('')}</div>
+        </section>` : '<div class="empty">Slack 收件箱已经整理干净。</div>';
+      bindInboxActions();
+    }
+
+    function inboxCard(item) {
+      return `
+        <article class="task-card" data-lane="inbox" data-id="${escapeHtml(item.id)}">
+          <div class="tags">
+            <span class="tag source">${escapeHtml(item.slackType || 'Slack mention')}</span>
+            <span class="tag">${escapeHtml(item.lastUpdated || '')}</span>
+          </div>
+          <h4>${escapeHtml(item.title)}</h4>
+          <div class="inbox-summary">${escapeHtml(item.memo || item.nextAction)}</div>
+          <div class="card-actions">
+            <button class="action primary" data-inbox-action="convert">转为任务</button>
+            <button class="action" data-inbox-action="link">关联现有任务</button>
+            <button class="action" data-inbox-action="ignore">不是任务</button>
+            ${safeUrl(item.slackUrl) ? `<a class="slack-link" href="${escapeHtml(safeUrl(item.slackUrl))}" target="_blank" rel="noopener">打开 Slack ↗</a>` : ''}
+          </div>
+        </article>`;
+    }
+
+    function trashCard(item) {
+      return `
+        <article class="task-card" data-lane="inbox" data-id="${escapeHtml(item.id)}">
+          <div class="tags">
+            <span class="tag source">Slack 已忽略</span>
+            <span class="tag">${escapeHtml(item.lastUpdated || '')}</span>
+          </div>
+          <h4>${escapeHtml(item.title)}</h4>
+          <div class="inbox-summary">${escapeHtml(item.memo || item.nextAction)}</div>
+          <div class="card-actions">
+            <button class="action primary" data-trash-action="restore">恢复到待整理</button>
+            ${safeUrl(item.slackUrl) ? `<a class="slack-link" href="${escapeHtml(safeUrl(item.slackUrl))}" target="_blank" rel="noopener">打开 Slack ↗</a>` : ''}
+          </div>
+        </article>`;
+    }
+
+    function bindTrashActions() {
+      document.querySelectorAll('.task-card [data-trash-action="restore"]').forEach(button => {
+        button.addEventListener('click', () => {
+          const taskId = button.closest('.task-card').dataset.id;
+          runInboxUpdate({ taskId, action: 'restore' });
+        });
+      });
+    }
+
+    function bindInboxActions() {
+      document.querySelectorAll('.task-card [data-inbox-action]').forEach(button => {
+        button.addEventListener('click', () => {
+          const card = button.closest('.task-card');
+          const item = (dashboard.inbox || []).find(candidate => candidate.id === card.dataset.id);
+          if (!item) return;
+          if (button.dataset.inboxAction === 'convert') return openConvertModal(item);
+          if (button.dataset.inboxAction === 'link') return openLinkModal(item);
+          if (!window.confirm('确认这条 Slack 消息不是任务？确认后不会再次抓取这个 thread。')) return;
+          runInboxUpdate({ taskId: item.id, action: 'ignore' });
+        });
+      });
+    }
+
+    function taskCard(task, completedMode) {
+      const details = [];
+      const linkedThreads = task.linkedThreads || [];
+      const latestPending = linkedThreads.find(link => link.updatePending);
+      const taskTags = parseTaskTags(task.tags);
+      if (task.waitingFor) details.push(`<span>等待：<strong>${escapeHtml(task.waitingFor)}</strong></span>`);
+      if (task.lastUpdated) details.push(`<span>更新：<strong>${escapeHtml(task.lastUpdated)}</strong></span>`);
+      if (task.remindAt) details.push(`<span>提醒：<strong>${escapeHtml(task.remindAt)}</strong></span>`);
+      if (task.deadline) details.push(`<span>DL：<strong>${escapeHtml(task.deadline)}</strong></span>`);
+      if (task.syncCalendar && task.calendarReminderAt) details.push(`<span>Calendar弹窗：<strong>${escapeHtml(task.calendarReminderAt.replace('T', ' '))}</strong></span>`);
+      if (task.syncCalendar && task.calendarGuestEmails) details.push(`<span>日历邀请：<strong>${escapeHtml(task.calendarGuestEmails)}</strong></span>`);
+      if (task.slackDmScheduled) details.push(`<span>Slack DM：<strong>${escapeHtml((task.slackDmSendAt || '').replace('T', ' '))} → ${escapeHtml(task.slackDmRecipientNames || '')}</strong></span>`);
+      if (task.estimate) details.push(`<span>预计：<strong>${escapeHtml(task.estimate)}</strong></span>`);
+      return `
+        <article class="task-card" data-lane="${task.lane}" data-deadline="${escapeHtml(task.deadlineState || '')}" data-id="${escapeHtml(task.id)}">
+          <div class="card-top">
+            <div>
+              <div class="tags">
+                <span class="tag ${task.priority === '高' ? 'high' : ''}">${escapeHtml(task.priority)}优先级</span>
+                ${taskTags.map(tag => `<span class="tag topic">#${escapeHtml(tag)}</span>`).join('')}
+                <span class="tag source">${escapeHtml(task.sourceLabel)}</span>
+                ${task.deadlineLabel ? `<span class="tag deadline ${task.deadlineState === 'overdue' ? 'overdue' : ''}">${escapeHtml(task.deadlineLabel)}</span>` : ''}
+                ${task.syncCalendar ? '<span class="tag calendar">Calendar 弹窗已设定</span>' : ''}
+                ${task.slackDmScheduled ? '<span class="tag update">Slack DM 已预约</span>' : ''}
+                ${linkedThreads.length ? `<span class="tag source">Slack ${linkedThreads.length} 个主题</span>` : ''}
+                ${task.hasSlackUpdate ? '<span class="tag update">Slack 有新进展</span>' : ''}
+              </div>
+              <h4>${escapeHtml(task.title)}</h4>
+            </div>
+            ${completedMode ? '' : `<button class="pin-button ${task.pinned ? 'active' : ''}" data-action="pin" title="${task.pinned ? '取消置顶' : '置顶'}">◆</button>`}
+          </div>
+          <div class="next-action">
+            <small>下一步</small>
+            <p>${escapeHtml(task.nextAction)}</p>
+          </div>
+          <div class="details">${details.join('')}</div>
+          ${linkedThreads.length ? `<div class="linked-threads"><strong>关联的 Slack 主题</strong>${linkedThreads.map((link, index) => safeUrl(link.slackUrl) ? `<a href="${escapeHtml(safeUrl(link.slackUrl))}" target="_blank" rel="noopener">${escapeHtml(link.title || `主题 ${index + 1}`)} ↗</a>` : `<span>${escapeHtml(link.title)}</span>`).join('')}${latestPending ? `<div class="linked-update">最新进展：${escapeHtml(latestPending.latestUpdate || '')}</div>` : ''}</div>` : ''}
+          <div class="card-actions">
+            ${completedMode ? '<button class="action primary" data-action="restore">恢复任务</button>' : `
+              <button class="action primary" data-action="start">开始处理</button>
+              <button class="action" data-action="edit">编辑任务</button>
+              <button class="action" data-action="snooze30">30分钟后</button>
+              <button class="action" data-action="snooze120">2小时后</button>
+              <button class="action" data-action="tomorrow">明天提醒</button>
+              <button class="action complete" data-action="complete">完成</button>
+              ${task.hasSlackUpdate ? '<button class="action primary" data-action="applySlackUpdate">采用 Slack 最新进展</button>' : ''}`}
+            ${safeUrl(task.slackUrl) ? `<a class="slack-link" href="${escapeHtml(safeUrl(task.slackUrl))}" target="_blank" rel="noopener">打开 Slack ↗</a>` : ''}
+          </div>
+        </article>`;
+    }
+
+    function bindCardActions() {
+      document.querySelectorAll('.task-card [data-action]').forEach(button => {
+        button.addEventListener('click', () => {
+          const card = button.closest('.task-card');
+          const task = [...(dashboard.tasks || []), ...(dashboard.completed || [])]
+            .find(item => item.id === card.dataset.id);
+          if (!task) return;
+          const action = button.dataset.action;
+          if (action === 'edit') return openEditModal(task);
+          if (action === 'complete' && !window.confirm('确认完成这个任务？任务会移动到“已完成”，之后可以恢复。')) return;
+          if (action === 'restore' && !window.confirm('确认把这个任务恢复到未完成列表？提醒不会自动重新创建。')) return;
+          if (action === 'applySlackUpdate' && !window.confirm('用 Slack 最新进展替换当前“下一步”？')) return;
+          const payload = { taskId: task.id };
+          if (action === 'pin') Object.assign(payload, { action: 'pin', pinned: !task.pinned });
+          if (action === 'start') payload.action = 'start';
+          if (action === 'complete') payload.action = 'complete';
+          if (action === 'snooze30') Object.assign(payload, { action: 'snooze', minutes: 30 });
+          if (action === 'snooze120') Object.assign(payload, { action: 'snooze', minutes: 120 });
+          if (action === 'tomorrow') Object.assign(payload, { action: 'snooze', until: 'tomorrow' });
+          if (action === 'applySlackUpdate') payload.action = 'applySlackUpdate';
+          if (action === 'restore') payload.action = 'restore';
+          runUpdate(payload);
+        });
+      });
+    }
+
+    function openCreateModal() {
+      modalMode = 'create';
+      editingTaskId = '';
+      document.getElementById('modalTitle').textContent = '新建任务';
+      document.getElementById('modalDescription').textContent = '自建任务和 Slack 任务会在同一个面板里管理。';
+      fillTaskForm({ priority: '中' });
+      document.getElementById('editModal').classList.add('show');
+      setTimeout(() => document.getElementById('taskTitleInput').focus(), 0);
+    }
+
+    function openEditModal(task) {
+      modalMode = 'edit';
+      editingTaskId = task.id;
+      document.getElementById('modalTitle').textContent = '编辑任务';
+      document.getElementById('modalDescription').textContent = task.sourceLabel === 'Slack 自动收集'
+        ? '可以调整任务内容；Slack 链接和去重信息会保留。'
+        : '修改后会立即同步到任务 Sheet。';
+      fillTaskForm(task);
+      document.getElementById('editModal').classList.add('show');
+      setTimeout(() => document.getElementById('taskTitleInput').focus(), 0);
+    }
+
+    function openConvertModal(item) {
+      modalMode = 'convert';
+      editingTaskId = item.id;
+      document.getElementById('modalTitle').textContent = '从 Slack 转为任务';
+      document.getElementById('modalDescription').textContent = '先把聊天内容整理成清楚的任务名称和下一步。';
+      fillTaskForm(item);
+      document.getElementById('editModal').classList.add('show');
+      setTimeout(() => document.getElementById('taskTitleInput').focus(), 0);
+    }
+
+    function openLinkModal(item) {
+      const candidates = (dashboard.tasks || []).filter(task => task.id !== item.id);
+      if (!candidates.length) return showToast('目前没有可以关联的未完成任务。', true);
+      linkingInboxId = item.id;
+      const select = document.getElementById('linkTaskSelect');
+      select.innerHTML = candidates.map(task =>
+        `<option value="${escapeHtml(task.id)}">${escapeHtml(task.title)} · ${escapeHtml(task.nextAction || '')}</option>`
+      ).join('');
+      const hendon = candidates.find(task => /hendon/i.test(task.title));
+      if (/hendon/i.test(item.title) && hendon) select.value = hendon.id;
+      document.getElementById('linkApplyUpdate').checked = true;
+      document.getElementById('linkModal').classList.add('show');
+    }
+
+    function closeLinkModal() {
+      linkingInboxId = '';
+      document.getElementById('linkModal').classList.remove('show');
+    }
+
+    function saveTaskLink() {
+      const linkedTaskId = document.getElementById('linkTaskSelect').value;
+      if (!linkingInboxId || !linkedTaskId) return showToast('请选择关联任务。', true);
+      runInboxUpdate({
+        taskId: linkingInboxId,
+        action: 'link',
+        linkedTaskId,
+        applyUpdate: document.getElementById('linkApplyUpdate').checked
+      });
+      closeLinkModal();
+    }
+
+    function closeEditModal() {
+      editingTaskId = '';
+      document.getElementById('editModal').classList.remove('show');
+    }
+
+    function fillTaskForm(task) {
+      document.getElementById('taskTitleInput').value = task.title || '';
+      setTaskTags(task.tags || (task.category === '未分类' ? '' : (task.category || '')));
+      document.getElementById('taskNewTagInput').value = '';
+      document.getElementById('taskPriorityInput').value = task.priority || '中';
+      document.getElementById('taskEstimateInput').value = task.estimate || '';
+      document.getElementById('taskWaitingInput').value = task.waitingFor || '';
+      document.getElementById('taskDeadlineInput').value = task.deadlineInput || '';
+      document.getElementById('taskCalendarInput').checked = Boolean(task.syncCalendar);
+      document.getElementById('taskCalendarReminderInput').value = task.calendarReminderAt || '';
+      document.getElementById('taskCalendarGuestsInput').value = task.calendarGuestEmails || '';
+      updateCalendarControls();
+      document.getElementById('taskSlackDmInput').checked = Boolean(task.slackDmEnabled);
+      document.getElementById('taskSlackDmRecipientsInput').value = task.slackDmRecipientNames || '';
+      document.getElementById('taskSlackDmSendAtInput').value = task.slackDmSendAt || '';
+      document.getElementById('taskSlackDmTextInput').value = task.slackDmText || '';
+      updateSlackDmControls();
+      document.getElementById('taskNextActionInput').value = task.nextAction === '还没有填写下一步' ? '' : (task.nextAction || '');
+      document.getElementById('taskCompletionInput').value = task.completion || '';
+      document.getElementById('taskMemoInput').value = task.memo || '';
+    }
+
+    function taskFormPayload() {
+      return {
+        title: document.getElementById('taskTitleInput').value.trim(),
+        category: '',
+        tags: document.getElementById('taskTagsInput').value.trim(),
+        priority: document.getElementById('taskPriorityInput').value,
+        estimate: document.getElementById('taskEstimateInput').value.trim(),
+        waitingFor: document.getElementById('taskWaitingInput').value.trim(),
+        deadline: document.getElementById('taskDeadlineInput').value,
+        syncCalendar: document.getElementById('taskCalendarInput').checked,
+        calendarReminderAt: document.getElementById('taskCalendarReminderInput').value,
+        calendarGuestEmails: document.getElementById('taskCalendarGuestsInput').value.trim(),
+        slackDmEnabled: document.getElementById('taskSlackDmInput').checked,
+        slackDmRecipientNames: document.getElementById('taskSlackDmRecipientsInput').value.trim(),
+        slackDmSendAt: document.getElementById('taskSlackDmSendAtInput').value,
+        slackDmText: document.getElementById('taskSlackDmTextInput').value.trim(),
+        nextAction: document.getElementById('taskNextActionInput').value.trim(),
+        completion: document.getElementById('taskCompletionInput').value.trim(),
+        memo: document.getElementById('taskMemoInput').value.trim()
+      };
+    }
+
+    function updateCalendarControls() {
+      const enabled = document.getElementById('taskCalendarInput').checked;
+      document.getElementById('taskCalendarReminderInput').disabled = !enabled;
+      document.getElementById('taskCalendarGuestsInput').disabled = !enabled;
+    }
+
+    function updateSlackDmControls() {
+      const enabled = document.getElementById('taskSlackDmInput').checked;
+      document.getElementById('taskSlackDmRecipientsInput').disabled = !enabled;
+      document.getElementById('taskSlackDmSendAtInput').disabled = !enabled;
+      document.getElementById('taskSlackDmTextInput').disabled = !enabled;
+    }
+
+    function saveTaskForm() {
+      const payload = taskFormPayload();
+      if (!payload.title) return showToast('请先填写任务名称。', true);
+      if (payload.syncCalendar && !payload.calendarReminderAt) return showToast('请人工填写提醒日期和时间。', true);
+      if (payload.slackDmEnabled && !payload.slackDmRecipientNames) return showToast('请填写个人 Slack 正式全名。', true);
+      if (payload.slackDmEnabled && !payload.slackDmSendAt) return showToast('请人工填写 Slack DM 发送时间。', true);
+      if (payload.slackDmEnabled && !payload.slackDmText) return showToast('请填写 Slack DM 原文。', true);
+      if (modalMode === 'create') {
+        runCreate(payload);
+      } else if (modalMode === 'convert') {
+        runInboxUpdate(Object.assign(payload, { taskId: editingTaskId, action: 'convert' }));
+      } else {
+        runUpdate(Object.assign(payload, { taskId: editingTaskId, action: 'edit' }));
+      }
+      closeEditModal();
+    }
+
+    function runInboxUpdate(payload) {
+      if (!(window.google && google.script && google.script.run)) {
+        showToast('本地预览不会整理 Slack 消息。');
+        return;
+      }
+      setBusy(true);
+      google.script.run
+        .withSuccessHandler(data => {
+          dashboard = data;
+          renderAll();
+          setBusy(false);
+          const message = payload.action === 'convert'
+            ? '已转为正式任务。'
+            : (payload.action === 'link'
+              ? '已关联现有任务，并会继续追踪这个 thread。'
+              : (payload.action === 'restore' ? '已恢复到 Slack 待整理。' : '已移动到回收站。'));
+          showToast(message);
+        })
+        .withFailureHandler(error => {
+          setBusy(false);
+          showError(error);
+        })
+        .updateSlackInboxFromDashboard(payload);
+    }
+
+    function runCreate(payload) {
+      if (!(window.google && google.script && google.script.run)) {
+        showToast('本地预览不会新增任务。');
+        return;
+      }
+      setBusy(true);
+      google.script.run
+        .withSuccessHandler(data => {
+          dashboard = data;
+          renderAll();
+          setBusy(false);
+          showToast('新任务已创建。');
+        })
+        .withFailureHandler(error => {
+          setBusy(false);
+          showError(error);
+        })
+        .createTaskFromDashboard(payload);
+    }
+
+    function runUpdate(payload) {
+      if (!(window.google && google.script && google.script.run)) {
+        showToast('本地预览不会修改任务。');
+        return;
+      }
+      setBusy(true);
+      google.script.run
+        .withSuccessHandler(data => {
+          dashboard = data;
+          renderAll();
+          setBusy(false);
+          showToast('任务已更新。');
+        })
+        .withFailureHandler(error => {
+          setBusy(false);
+          showError(error);
+        })
+        .updateTaskFromDashboard(payload);
+    }
+
+    function setBusy(isBusy) {
+      document.getElementById('refreshButton').disabled = isBusy;
+      document.body.style.cursor = isBusy ? 'progress' : '';
+    }
+
+    function showError(error) {
+      const message = error && error.message ? error.message : String(error || '发生未知错误');
+      showToast(message, true);
+    }
+
+    function showToast(message, isError) {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.className = 'toast show' + (isError ? ' error' : '');
+      window.clearTimeout(showToast.timer);
+      showToast.timer = window.setTimeout(() => { toast.className = 'toast'; }, 3200);
+    }
+
+    function safeUrl(value) {
+      return /^https:\/\//i.test(value || '') ? value : '';
+    }
+
+    function escapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function previewData() {
+      const tasks = [
+        { id:'demo-1', lane:'now', title:'【プライズ】付与時の一部付与作業自動化', category:'未分类', tags:'客户支持, PokerWeb, JOPT #03', priority:'高', nextAction:'前往 PG 团队请求测试并确认运行结果', waitingFor:'', lastUpdated:'2026/08/21', remindAt:'', deadline:'2026/08/27', deadlineInput:'2026-08-27', deadlineDays:6, deadlineState:'scheduled', deadlineLabel:'还有 6 天', syncCalendar:true, estimate:'30分钟', sourceLabel:'Slack 自动收集', slackUrl:'', pinned:true },
+        { id:'demo-2', lane:'waiting', title:'中文活动页内容确认', category:'未分类', tags:'国际・中文, 中国, JOPT #03', priority:'中', nextAction:'等待负责人确认文案或发回修改意见', waitingFor:'负责人', lastUpdated:'2026/08/20', remindAt:'', estimate:'', sourceLabel:'手动任务', slackUrl:'', pinned:false },
+        { id:'demo-3', lane:'forgotten', title:'前台工具方向汇报', category:'未分类', tags:'工具改善, PokerWeb, 戦国', priority:'低', nextAction:'整理现有前端画面并确定下一阶段范围', waitingFor:'', lastUpdated:'2026/08/10', remindAt:'', estimate:'', sourceLabel:'手动任务', slackUrl:'', pinned:false },
+        { id:'demo-4', lane:'backlog', title:'整理常用中文通知模板', category:'未分类', tags:'国际・中文, 中国, 戦国', priority:'低', nextAction:'把现有通知集中到同一张表', waitingFor:'', lastUpdated:'2026/08/21', remindAt:'', estimate:'1小时', sourceLabel:'手动任务', slackUrl:'', pinned:false }
+      ];
+      const inbox = [
+        { id:'slack-demo-1', title:'【プライズ】付与時の一部付与作業自動化', category:'客户支持', priority:'中', nextAction:'今日テスト可能ならPGチームに行ってお願いして動作確認してみようか', completion:'', waitingFor:'', memo:'Slack 状态: 未回复\n频道: cs_customer\n主题: 【プライズ】付与時の一部付与作業自動化\n摘要: 今日テスト可能ならPGチームに行ってお願いして動作確認してみようか', slackType:'个人提及', slackUrl:'', lastUpdated:'2026/08/21' }
+      ];
+      return { updatedAt:'2026/08/21 13:20', spreadsheetUrl:'#', counts:{active:4, now:1, waiting:1, forgotten:1, backlog:1, snoozed:0, inbox:1, completed:0, trash:0, archivedCompleted:0, dueSoon:0, overdue:0}, tasks, inbox, completed:[], trash:[] };
+    }
+
+    loadDashboard();
+  </script>
+</body>
+</html>
