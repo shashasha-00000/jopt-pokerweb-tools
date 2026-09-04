@@ -111,6 +111,17 @@ if (!html.includes('已完成') || !html.includes('回收站') ||
 if (!html.includes('max-height: calc(100dvh - 40px)') || !html.includes('overflow-y: auto')) {
   throw new Error('task modal must remain vertically scrollable');
 }
+if (html.includes("if (event.target.id === 'editModal') closeEditModal()") ||
+    html.includes("if (event.target.id === 'linkModal') closeLinkModal()")) {
+  throw new Error('modal must not close when the backdrop is clicked');
+}
+if (!html.includes('runInboxUpdate(Object.assign(payload, { taskId: editingTaskId, action: \'convert\' }), closeEditModal)') ||
+    (html.match(/closeEditModal\(\);/g) || []).length < 2) {
+  throw new Error('task editor must close only after a successful save');
+}
+if (!html.includes("document.getElementById('saveEdit').disabled = isBusy")) {
+  throw new Error('task editor save button must be disabled while saving');
+}
 if (html.includes('tasks.map(taskCard)')) {
   throw new Error('active task cards must not receive the array index as completed mode');
 }

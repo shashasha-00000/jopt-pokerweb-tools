@@ -518,12 +518,6 @@
     });
     document.getElementById('cancelLink').addEventListener('click', closeLinkModal);
     document.getElementById('saveLink').addEventListener('click', saveTaskLink);
-    document.getElementById('editModal').addEventListener('click', event => {
-      if (event.target.id === 'editModal') closeEditModal();
-    });
-    document.getElementById('linkModal').addEventListener('click', event => {
-      if (event.target.id === 'linkModal') closeLinkModal();
-    });
 
     function loadDashboard() {
       setBusy(true);
@@ -1117,14 +1111,13 @@
       if (modalMode === 'create') {
         runCreate(payload);
       } else if (modalMode === 'convert') {
-        runInboxUpdate(Object.assign(payload, { taskId: editingTaskId, action: 'convert' }));
+        runInboxUpdate(Object.assign(payload, { taskId: editingTaskId, action: 'convert' }), closeEditModal);
       } else {
         runUpdate(Object.assign(payload, { taskId: editingTaskId, action: 'edit' }));
       }
-      closeEditModal();
     }
 
-    function runInboxUpdate(payload) {
+    function runInboxUpdate(payload, onSuccess) {
       if (!(window.google && google.script && google.script.run)) {
         showToast('本地预览不会整理 Slack 消息。');
         return;
@@ -1140,6 +1133,7 @@
             : (payload.action === 'link'
               ? '已关联现有任务，并会继续追踪这个 thread。'
               : (payload.action === 'restore' ? '已恢复到 Slack 待整理。' : '已移动到回收站。'));
+          if (onSuccess) onSuccess();
           showToast(message);
         })
         .withFailureHandler(error => {
@@ -1160,6 +1154,7 @@
           dashboard = data;
           renderAll();
           setBusy(false);
+          closeEditModal();
           showToast('新任务已创建。');
         })
         .withFailureHandler(error => {
@@ -1180,6 +1175,7 @@
           dashboard = data;
           renderAll();
           setBusy(false);
+          closeEditModal();
           showToast('任务已更新。');
         })
         .withFailureHandler(error => {
@@ -1192,6 +1188,8 @@
     function setBusy(isBusy) {
       document.getElementById('refreshButton').disabled = isBusy;
       document.getElementById('syncSlackButton').disabled = isBusy;
+      document.getElementById('saveEdit').disabled = isBusy;
+      document.getElementById('cancelEdit').disabled = isBusy;
       document.body.style.cursor = isBusy ? 'progress' : '';
     }
 
