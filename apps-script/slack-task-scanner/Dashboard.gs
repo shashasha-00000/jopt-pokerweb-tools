@@ -16,6 +16,11 @@ function setupDashboard() {
   });
 }
 
+function syncSlackEventsFromDashboard() {
+  processSlackEventQueue();
+  return getTaskDashboardData();
+}
+
 function getTaskDashboardData() {
   var sheet = getTaskSheet_();
   ensureSheetStructure_(sheet);

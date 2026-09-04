@@ -122,9 +122,9 @@ Slack signing secretはGASへ保存しません。Cloudflare Workerのsecretと�
 4. U列へ置顶用checkbox validationを設定し、既存taskへS列の一意IDを割り当て
 5. `SLACK_USER_TOKEN` が Slack User ID `U0ANUSDNVMK` のtokenか `auth.test` で確認
 6. `scanSlackTasks` の2時間triggerを、重複しないよう1件だけ作成
-7. `processSlackEventQueue` の1分triggerを、重複しないよう1件だけ作成
+7. 既存の `processSlackEventQueue` triggerを削除し、2時間triggerを1件作成
 
-`setupTrigger()` / `setupEventTrigger()` を個別に手動実行することもできます。既に同名handlerのtriggerがあれば新規作成しません。`removeTriggers()` は両方のtriggerを削除します。
+`setupTrigger()` / `setupEventTrigger()` を個別に手動実行することもできます。`setupEventTrigger()` は旧間隔の同名triggerを削除してから2時間triggerを作り直します。両triggerはAsia/Tokyoの10:00以上19:00未満だけ自動処理し、時間外はSlack APIとCloudflare queueを取得せず終了します。手動実行と任务雷达の「立即同步 Slack」は時間制限を受けません。`removeTriggers()` は両方のtriggerを削除します。
 
 ## 7-A. Slack User Events を有効にする
 
@@ -200,7 +200,7 @@ Web Appの操作はtask IDを再確認してから対象行だけを更新しま
 ### 検索
 
 - Events API: 自分のUser Eventsとしてpublic channel / 自分が参加しているprivate channelの新message・replyを即時受信。replyでは `thread_ts` からthread全体をcursor paginationし、parentまたは過去replyのどこかに `@cs` / 自分宛mentionがあれば、最新reply自体にmentionがなくても処理。自分が参加済み、既にTask Radarで追跡中、またはCS full-scan channelの場合も処理
-- Cloudflare WorkerはSlack署名を検証してKVへ最大7日保存。GASは1分triggerで最大100件ずつ取得し、成功・対象外eventだけACKする。処理errorはACKせず次回retry
+- Cloudflare WorkerはSlack署名を検証してKVへ最大7日保存。GASはAsia/Tokyoの10:00以上19:00未満だけ2時間triggerで自動取得し、任务雷达の「立即同步 Slack」ボタンでは時刻を問わず最大100件ずつ取得する。成功・対象外eventだけACKし、処理errorはACKせず次回retry
 - 自分宛: `auth.test` で取得した自分のSlack handle（`@handle`）を検索し、取得後に原文が `<@U0ANUSDNVMK>` を含むことを再確認
 - `#cs_カスタマーチーム`（`C0924RS04CU`）: `conversations.history` で直近6時間をcursor paginationし、mentionなしのmessageも待整理へ取り込む。同じthreadはparentの `thread_ts` で帰一
 - その他のchannel: `conversations.list` でuser tokenから参照できるpublic/private channelを列挙し、各channelの直近6時間を `conversations.history` で取得。原文が `<@U0ANUSDNVMK>` または `<!subteam^S092SRF3JG0...>` を含むmessageだけを取り込む

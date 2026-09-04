@@ -375,6 +375,7 @@
         <span class="sync-time" id="syncTime">正在读取数据…</span>
         <button class="top-button" id="createTaskButton">＋ 新建任务</button>
         <button class="top-button sheet-button" id="openSheet">打开表格</button>
+        <button class="top-button" id="syncSlackButton">立即同步 Slack</button>
         <button class="top-button" id="refreshButton">刷新</button>
       </div>
     </header>
@@ -490,6 +491,7 @@
     let modalMode = 'create';
 
     document.getElementById('refreshButton').addEventListener('click', loadDashboard);
+    document.getElementById('syncSlackButton').addEventListener('click', syncSlackNow);
     document.getElementById('createTaskButton').addEventListener('click', openCreateModal);
     document.getElementById('searchInput').addEventListener('input', renderTasks);
     document.getElementById('openSheet').addEventListener('click', () => {
@@ -543,6 +545,26 @@
         setBusy(false);
         showToast('当前是本地界面预览，操作不会写入表格。');
       }
+    }
+
+    function syncSlackNow() {
+      if (!(window.google && google.script && google.script.run)) {
+        showToast('本地预览不会同步 Slack。');
+        return;
+      }
+      setBusy(true);
+      google.script.run
+        .withSuccessHandler(data => {
+          dashboard = data;
+          renderAll();
+          setBusy(false);
+          showToast('Slack 同步完成。');
+        })
+        .withFailureHandler(error => {
+          setBusy(false);
+          showError(error);
+        })
+        .syncSlackEventsFromDashboard();
     }
 
     function renderAll() {
@@ -1169,6 +1191,7 @@
 
     function setBusy(isBusy) {
       document.getElementById('refreshButton').disabled = isBusy;
+      document.getElementById('syncSlackButton').disabled = isBusy;
       document.body.style.cursor = isBusy ? 'progress' : '';
     }
 

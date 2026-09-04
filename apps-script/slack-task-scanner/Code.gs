@@ -1,7 +1,9 @@
 /**
  * Main time-triggered entry point.
  */
-function scanSlackTasks() {
+function scanSlackTasks(triggerEvent) {
+  if (skipScheduledRunOutsidePollingWindow_(triggerEvent, 'scanSlackTasks')) return;
+
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(1000)) {
     logRun_('WARN', '別の scanSlackTasks が実行中のため、本実行を終了します。');
@@ -50,7 +52,9 @@ function scanSlackTasks() {
  * Pulls Slack Events API notifications from the signed event bridge.
  * This discovers replies posted to old threads without exposing the Dashboard.
  */
-function processSlackEventQueue() {
+function processSlackEventQueue(triggerEvent) {
+  if (skipScheduledRunOutsidePollingWindow_(triggerEvent, 'processSlackEventQueue')) return;
+
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(1000)) {
     logRun_('WARN', '別の Slack 処理が実行中のため、イベント処理を終了します。');
@@ -118,6 +122,24 @@ function processSlackEventQueue() {
     logRun_('INFO', 'Slack event queue processing completed', stats);
     lock.releaseLock();
   }
+}
+
+function skipScheduledRunOutsidePollingWindow_(triggerEvent, handlerName) {
+  if (!(triggerEvent && triggerEvent.triggerUid)) return false;
+  if (isAutomaticPollingWindowOpen_(new Date())) return false;
+  logRun_('INFO', '自動実行時間外のため Slack 処理をスキップしました。', {
+    handler: handlerName,
+    timeZone: CONFIG.TIME_ZONE,
+    startHour: CONFIG.AUTOMATIC_POLLING_START_HOUR,
+    endHour: CONFIG.AUTOMATIC_POLLING_END_HOUR
+  });
+  return true;
+}
+
+function isAutomaticPollingWindowOpen_(date) {
+  var hour = Number(Utilities.formatDate(date, CONFIG.TIME_ZONE, 'H'));
+  return hour >= CONFIG.AUTOMATIC_POLLING_START_HOUR &&
+    hour < CONFIG.AUTOMATIC_POLLING_END_HOUR;
 }
 
 /**
@@ -209,18 +231,20 @@ function setupTrigger() {
 function setupEventTrigger() {
   getSlackEventBridgeConfig_();
   var handler = 'processSlackEventQueue';
-  var exists = ScriptApp.getProjectTriggers().some(function(trigger) {
-    return trigger.getHandlerFunction() === handler;
+  var removed = 0;
+  ScriptApp.getProjectTriggers().forEach(function(trigger) {
+    if (trigger.getHandlerFunction() === handler) {
+      ScriptApp.deleteTrigger(trigger);
+      removed += 1;
+    }
   });
-  if (exists) {
-    logRun_('INFO', 'processSlackEventQueue のトリガーは既に存在します。追加しません。');
-    return;
-  }
   ScriptApp.newTrigger(handler)
     .timeBased()
-    .everyMinutes(CONFIG.EVENT_TRIGGER_EVERY_MINUTES)
+    .everyHours(CONFIG.EVENT_TRIGGER_EVERY_HOURS)
     .create();
-  logRun_('INFO', 'processSlackEventQueue の1分トリガーを作成しました。');
+  logRun_('INFO', 'processSlackEventQueue の2時間トリガーを作成しました。', {
+    removedOldTriggers: removed
+  });
 }
 
 function removeTriggers() {

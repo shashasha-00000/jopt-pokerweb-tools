@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW 大会作成 Auto
 // @namespace    pw-tournament-create-auto
-// @version      0.3.1
+// @version      0.4.0
 // @description  API-first tournament create flow from fixed TSV with independent per-tournament workers.
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js
@@ -65,14 +65,16 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t【SPADIE 
   const REQUIRED_HEADERS = [
     "大会名",
     "日付",
-    "開始時間",
-    "EN金額",
-    "EN手数料",
-    "EN回数",
-    "RE金額",
-    "RE手数料",
-    "RE回数",
-    "チケット名称"
+    "開始時間"
+  ];
+
+  const ITEM_FIELD_DEFS = [
+    { suffix: "名称", key: "nome", normalize: normalizeText },
+    { suffix: "略称", key: "siglas", normalize: normalizeText },
+    { suffix: "金額", key: "valor", normalize: normalizeAmount },
+    { suffix: "手数料", key: "taxa", normalize: normalizeAmount },
+    { suffix: "回数", key: "limite", normalize: normalizeLimit },
+    { suffix: "チップ数", key: "fichas", normalize: normalizeAmount }
   ];
 
   const $ = sel => document.querySelector(sel);
@@ -137,6 +139,40 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t【SPADIE 
     return s.split(/\n|、|，|;|；|\|/).map(normalizeText).filter(Boolean);
   }
 
+  function itemGroup(prefix, cell, options = {}) {
+    const raw = {};
+    const values = {};
+    const provided = {};
+    ITEM_FIELD_DEFS.forEach(field => {
+      raw[field.key] = cell(`${prefix}${field.suffix}`);
+      provided[field.key] = raw[field.key] !== "";
+      values[field.key] = field.normalize(raw[field.key]);
+    });
+    if (!Object.values(provided).some(Boolean)) return null;
+
+    const slot = Number(options.slot || 0);
+    return {
+      label: options.label || prefix,
+      slot,
+      mode: options.mode || "insert",
+      nome: values.nome || options.defaultName || `Item ${slot}`,
+      siglas: values.siglas || options.defaultAbbr || `I${slot}`,
+      valor: values.valor,
+      taxa: values.taxa,
+      limite: values.limite,
+      fichas: values.fichas,
+      reposicionar: options.reposition || DEFAULTS.ticketReposicionar,
+      provided
+    };
+  }
+
+  function dynamicItemSlots(header) {
+    return [...new Set(header.map(h => {
+      const match = h.match(/^item(\d+)(?:名称|略称|金額|手数料|回数|チップ数)$/i);
+      return match ? Number(match[1]) : 0;
+    }).filter(slot => slot >= 3))].sort((a, b) => a - b);
+  }
+
   function parseInput(raw) {
     const lines = String(raw || "")
       .replace(/\r\n/g, "\n")
@@ -154,7 +190,9 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t【SPADIE 
     const missing = REQUIRED_HEADERS.filter(h => !(h in idx));
     if (missing.length) throw new Error(`Missing headers: ${missing.join(", ")}`);
 
-    return lines.slice(1).map((line, lineIndex) => {
+    const itemSlots = dynamicItemSlots(header);
+    const skippedRows = [];
+    const tournaments = lines.slice(1).map((line, lineIndex) => {
       const cols = line.split("\t");
       const cell = h => normalizeText(cols[idx[h]] ?? "");
       const name = cell("大会名");
@@ -162,57 +200,69 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t【SPADIE 
       const time = normalizeTime(cell("開始時間"));
       const rowNo = lineIndex + 2;
       if (!name || !date || !time) {
-        throw new Error(`Row ${rowNo}: 大会名 / 日付 / 開始時間 are required.`);
+        skippedRows.push({ rowNo, reason: "大会名 / 日付 / 開始時間不足" });
+        return null;
       }
 
-      const teAmount = normalizeAmount(cell("TE金額"));
-      const teFee = normalizeAmount(cell("TE手数料"));
-      const teLimit = normalizeLimit(cell("TE回数"));
-      const hasTicketEntry = ![teAmount, teFee, teLimit].every(isBlankOrNumericZero);
+      const items = [];
+      const entry = itemGroup("EN", cell, {
+        label: "item1/EN",
+        slot: 1,
+        mode: "edit-default",
+        defaultName: "Entry",
+        defaultAbbr: "En",
+        reposition: DEFAULTS.entryReposicionar
+      });
+      const reEntry = itemGroup("RE", cell, {
+        label: "item2/RE",
+        slot: 2,
+        mode: "edit-default",
+        defaultName: "Re Entry",
+        defaultAbbr: "Re",
+        reposition: DEFAULTS.reEntryReposicionar
+      });
+      if (entry) items.push(entry);
+      if (reEntry) items.push(reEntry);
+
+      itemSlots.forEach(slot => {
+        const item = itemGroup(`item${slot}`, cell, {
+          label: `item${slot}`,
+          slot,
+          mode: "insert"
+        });
+        if (item) items.push(item);
+      });
+
+      if (!itemSlots.includes(3)) {
+        const legacyTeValues = ["TE名称", "TE略称", "TE金額", "TE手数料", "TE回数", "TEチップ数"].map(cell);
+        const legacyTeConfigured = legacyTeValues.some((value, i) =>
+          i < 2 || i === 5 ? value !== "" : !isBlankOrNumericZero(value)
+        );
+        if (legacyTeConfigured) {
+          const legacyTe = itemGroup("TE", cell, {
+            label: "item3/TE(legacy)",
+            slot: 3,
+            mode: "insert",
+            defaultName: "Ticket Entry",
+            defaultAbbr: "TE"
+          });
+          if (legacyTe) items.push(legacyTe);
+        }
+      }
 
       return {
         rowNo,
         name,
         date,
         time,
-        entry: {
-          nome: cell("EN名称") || "Entry",
-          siglas: cell("EN略称") || "En",
-          lookupNome: "Entry",
-          lookupSiglas: "En",
-          valor: normalizeAmount(cell("EN金額")),
-          taxa: normalizeAmount(cell("EN手数料")),
-          limite: normalizeLimit(cell("EN回数")),
-          fichas: normalizeAmount(cell("ENチップ数")) || DEFAULTS.entryChips,
-          reposicionar: DEFAULTS.entryReposicionar
-        },
-        reEntry: {
-          nome: cell("RE名称") || "Re Entry",
-          siglas: cell("RE略称") || "Re",
-          lookupNome: "Re Entry",
-          lookupSiglas: "Re",
-          valor: normalizeAmount(cell("RE金額")),
-          taxa: normalizeAmount(cell("RE手数料")),
-          limite: normalizeLimit(cell("RE回数")),
-          fichas: normalizeAmount(cell("REチップ数")) || DEFAULTS.reEntryChips,
-          reposicionar: DEFAULTS.reEntryReposicionar
-        },
-        ticketEntry: hasTicketEntry
-          ? {
-              nome: cell("TE名称") || "Ticket Entry",
-              siglas: cell("TE略称") || "TE",
-              lookupNome: "Ticket Entry",
-              lookupSiglas: "TE",
-              valor: teAmount,
-              taxa: teFee,
-              limite: teLimit,
-              fichas: DEFAULTS.teChips,
-              reposicionar: DEFAULTS.ticketReposicionar
-            }
-          : null,
-        tickets: splitTickets(cols[idx["チケット名称"]] ?? "")
+        items,
+        tickets: splitTickets(cell("チケット名称"))
       };
-    });
+    }).filter(Boolean);
+
+    if (!tournaments.length) throw new Error("No creatable rows. 大会名 / 日付 / 開始時間を確認してください。");
+    tournaments.skippedRows = skippedRows;
+    return tournaments;
   }
 
   function log(line) {
@@ -236,14 +286,12 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t【SPADIE 
     localStorage.setItem(STORAGE.input, raw);
     const tournaments = parseInput(raw);
     log(`PREVIEW tournaments=${tournaments.length}`);
+    tournaments.skippedRows.forEach(row => log(`ROW_SKIP row=${row.rowNo} reason=${row.reason}`));
     tournaments.forEach((t, i) => {
       log(`${i + 1}. row=${t.rowNo} ${t.name}`);
       log(`   Start: ${t.date} ${t.time}`);
-      log(`   EN: ${t.entry.nome}/${t.entry.siglas} / ${t.entry.valor} + ${t.entry.taxa} / limit=${t.entry.limite} / chips=${t.entry.fichas}`);
-      log(`   RE: ${t.reEntry.nome}/${t.reEntry.siglas} / ${t.reEntry.valor} + ${t.reEntry.taxa} / limit=${t.reEntry.limite} / chips=${t.reEntry.fichas}`);
-      log(t.ticketEntry
-        ? `   TE: ${t.ticketEntry.nome}/${t.ticketEntry.siglas} / ${t.ticketEntry.valor} + ${t.ticketEntry.taxa} / limit=${t.ticketEntry.limite}`
-        : "   TE: (none)");
+      if (!t.items.length) log("   Items: (no changes)");
+      t.items.forEach(item => log(`   ${item.label}: ${item.nome}/${item.siglas} / ${item.valor || "(no change)"} + ${item.taxa || "(no change)"} / limit=${item.limite || "(no change)"} / chips=${item.fichas || "(no change)"}`));
       log(`   Tickets: ${t.tickets.length ? t.tickets.join(" | ") : "(none)"}`);
     });
   }
@@ -317,20 +365,25 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t【SPADIE 
     }
   }
 
-  function itemData(item) {
+  function itemData(item, existing = null) {
+    const value = (key, fallback) => {
+      if (item.provided?.[key]) return item[key];
+      if (existing && existing[key] !== "") return existing[key];
+      return fallback;
+    };
     return {
-      nome: item.nome,
-      siglas: item.siglas,
-      fichas: item.fichas,
-      limite: item.limite,
-      reposicionar: item.reposicionar,
-      direito_img: DEFAULTS.direito_img,
-      pts_ranking: DEFAULTS.pts_ranking,
-      gameid_bloqueio: DEFAULTS.gameid_bloqueio,
-      valor: item.valor,
-      taxa: item.taxa || "0",
-      rake: DEFAULTS.rake,
-      taxa_extras: DEFAULTS.taxa_extras
+      nome: value("nome", item.nome),
+      siglas: value("siglas", item.siglas),
+      fichas: value("fichas", "0"),
+      limite: value("limite", "0"),
+      reposicionar: existing?.reposicionar || item.reposicionar || "0",
+      direito_img: existing?.direito_img || DEFAULTS.direito_img,
+      pts_ranking: existing?.pts_ranking || DEFAULTS.pts_ranking,
+      gameid_bloqueio: existing?.gameid_bloqueio || DEFAULTS.gameid_bloqueio,
+      valor: value("valor", "0"),
+      taxa: value("taxa", "0"),
+      rake: existing?.rake || DEFAULTS.rake,
+      taxa_extras: existing?.taxa_extras || DEFAULTS.taxa_extras
     };
   }
 
@@ -342,33 +395,34 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t【SPADIE 
 
   function existingItems(doc) {
     return [...doc.querySelectorAll('a[href="#modal_item_editar"][data-id_item], [data-id_item][data-nome]')]
-      .map(el => ({
+      .map((el, index) => ({
+        slot: index + 1,
         id_item: el.getAttribute("data-id_item") || "",
         nome: normalizeText(el.getAttribute("data-nome") || ""),
         siglas: normalizeText(el.getAttribute("data-siglas") || ""),
         valor: normalizeText(el.getAttribute("data-valor") || ""),
+        taxa: normalizeText(el.getAttribute("data-taxa") || ""),
+        taxa_extras: normalizeText(el.getAttribute("data-taxa_extras") || ""),
+        rake: normalizeText(el.getAttribute("data-rake") || ""),
+        fichas: normalizeText(el.getAttribute("data-fichas") || ""),
+        limite: normalizeText(el.getAttribute("data-limite") || ""),
+        reposicionar: normalizeText(el.getAttribute("data-reposicionar") || ""),
+        direito_img: normalizeText(el.getAttribute("data-direito_img") || ""),
+        pts_ranking: normalizeText(el.getAttribute("data-pts_ranking") || ""),
+        gameid_bloqueio: normalizeText(el.getAttribute("data-gameid_bloqueio") || ""),
         raw: el.outerHTML
       }))
       .filter(x => x.id_item);
   }
 
-  function findExistingItem(items, item) {
-    const siglasCandidates = [...new Set([
-      normalizeText(item.lookupSiglas),
-      normalizeText(item.siglas)
-    ].filter(Boolean))];
-    const nameCandidates = [...new Set([
-      normalizeText(item.lookupNome),
-      normalizeText(item.nome)
-    ].filter(Boolean))];
-    return items.find(x => siglasCandidates.includes(x.siglas)) ||
-      items.find(x => nameCandidates.includes(x.nome)) ||
-      null;
-  }
-
   async function saveItemByHtml(id, doc, item) {
     const items = existingItems(doc);
-    const existing = findExistingItem(items, item);
+    const existing = item.mode === "edit-default"
+      ? items.find(existingItem => existingItem.slot === item.slot) || null
+      : null;
+    if (item.mode === "edit-default" && !existing) {
+      throw new Error(`${item.label}: default item ${item.slot} not found`);
+    }
     const form = existing
       ? doc.querySelector('form[action*="item_editar"]')
       : doc.querySelector('form[action*="item_criar"]');
@@ -376,7 +430,7 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t【SPADIE 
     if (!form) throw new Error(`${item.nome}: item form not found`);
 
     const fd = new FormData(form);
-    applyFormData(fd, itemData(item));
+    applyFormData(fd, itemData(item, existing));
     fd.set("id_torneio", id);
     if (existing) fd.set("id_item", existing.id_item);
 
@@ -391,7 +445,7 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t【SPADIE 
       redirect: "follow"
     });
     if (!res.ok) throw new Error(`${item.nome}: save failed status=${res.status}: ${(await res.text()).slice(0, 300)}`);
-    return { action: existing ? "EDIT" : "INSERT", id_item: existing?.id_item || "" };
+    return { action: existing ? "EDIT" : "INSERT", id_item: existing?.id_item || "", slot: item.slot };
   }
 
   function normalizeTicketText(value) {
@@ -490,12 +544,11 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t【SPADIE 
 
     context.stage = "ITEM_PAGE_FETCH";
     let doc = await fetchTournamentDoc(id);
-    const items = [t.entry, t.reEntry, t.ticketEntry].filter(Boolean);
-    if (!t.ticketEntry) log(`ITEM_SKIP ${index + 1}/${total} worker=${workerId} row=${t.rowNo} id=${id} ${t.name} Ticket Entry/TE reason=not configured`);
-    for (const item of items) {
+    if (!t.items.length) log(`ITEM_SKIP ${index + 1}/${total} worker=${workerId} row=${t.rowNo} id=${id} ${t.name} reason=no item changes`);
+    for (const item of t.items) {
       context.stage = `ITEM_${item.siglas || item.nome}`;
       const result = await saveItemByHtml(id, doc, item);
-      log(`ITEM_${result.action}_OK ${index + 1}/${total} worker=${workerId} row=${t.rowNo} id=${id} ${t.name} ${item.nome}/${item.siglas} value=${item.valor} id_item=${result.id_item || "(new)"}`);
+      log(`ITEM_${result.action}_OK ${index + 1}/${total} worker=${workerId} row=${t.rowNo} id=${id} ${t.name} slot=${result.slot} ${item.nome}/${item.siglas} value=${item.valor || "(unchanged)"} id_item=${result.id_item || "(new)"}`);
       await sleep(SPEED.afterItemMs);
       if (SPEED.refetchAfterEachItem) doc = await fetchTournamentDoc(id);
     }

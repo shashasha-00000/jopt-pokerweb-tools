@@ -16,6 +16,7 @@ function formatDate(date, zone, pattern) {
     return result;
   }, {});
   if (pattern === 'yyyy,M,d') return `${parts.year},${Number(parts.month)},${Number(parts.day)}`;
+  if (pattern === 'H') return String(Number(parts.hour));
   if (pattern === 'yyyy/MM/dd HH:mm') return `${parts.year}/${parts.month}/${parts.day} ${parts.hour}:${parts.minute}`;
   if (pattern === 'yyyy-MM-dd') return `${parts.year}-${parts.month}-${parts.day}`;
   if (pattern === 'yyyyMMddHHmm') return `${parts.year}${parts.month}${parts.day}${parts.hour}${parts.minute}`;
@@ -95,6 +96,9 @@ if (!html.includes('＋ 新建任务') || !html.includes('.createTaskFromDashboa
 }
 if (!html.includes('Slack 待整理') || !html.includes('.updateSlackInboxFromDashboard(payload)')) {
   throw new Error('Slack inbox UI is missing');
+}
+if (!html.includes('立即同步 Slack') || !html.includes('.syncSlackEventsFromDashboard()')) {
+  throw new Error('manual Slack queue sync UI is missing');
 }
 if (!html.includes('标签筛选') || !html.includes('taskExistingTagSelect') ||
     !html.includes('taskNewTagInput') || !html.includes('activeTags')) {
@@ -611,8 +615,24 @@ if (typeof context.collectTrackedSlackHits_ !== 'function') {
   throw new Error('tracked Slack thread refresh helper is missing');
 }
 if (typeof context.processSlackEventQueue !== 'function' ||
-    vm.runInContext('CONFIG.EVENT_TRIGGER_EVERY_MINUTES', context) !== 1) {
+    vm.runInContext('CONFIG.EVENT_TRIGGER_EVERY_HOURS', context) !== 2) {
   throw new Error('Slack event queue processor is missing');
+}
+if (typeof context.syncSlackEventsFromDashboard !== 'function') {
+  throw new Error('manual Slack event sync helper is missing');
+}
+if (vm.runInContext('CONFIG.AUTOMATIC_POLLING_START_HOUR', context) !== 10 ||
+    vm.runInContext('CONFIG.AUTOMATIC_POLLING_END_HOUR', context) !== 19) {
+  throw new Error('automatic polling window configuration is incorrect');
+}
+if (context.isAutomaticPollingWindowOpen_(new Date('2026-09-04T00:59:00.000Z')) ||
+    !context.isAutomaticPollingWindowOpen_(new Date('2026-09-04T01:00:00.000Z')) ||
+    !context.isAutomaticPollingWindowOpen_(new Date('2026-09-04T09:59:00.000Z')) ||
+    context.isAutomaticPollingWindowOpen_(new Date('2026-09-04T10:00:00.000Z'))) {
+  throw new Error('automatic polling window boundary is incorrect');
+}
+if (context.skipScheduledRunOutsidePollingWindow_(null, 'manual-test')) {
+  throw new Error('manual polling should not be time restricted');
 }
 
 console.log('task radar validation passed');
