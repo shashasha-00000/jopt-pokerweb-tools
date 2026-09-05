@@ -1,13 +1,12 @@
 ﻿// ==UserScript==
 // @name         PW URL Cache Manager
 // @namespace    pw-shared-url-cache-manager
-// @version      0.7.2
+// @version      0.7.3
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-url-cache-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-url-cache-manager.user.js
 // @description  PW大会URL共用Cache管理ツール。大会名リスト検索 / イベントPrefix全ページ収集 / 汚染チェック・修復 / Sheet用TSV出力・整庫置換。
 // @author       xhpc007 + ChatGPT
-// @match        https://japanopt.pokerweb.com.br/cb/*
-// @match        https://japanopt.pokerweb.com.br/*
+// @match        https://japanopt.bt.pokerweb.com.br/*
 // @grant        GM_setClipboard
 // @grant        unsafeWindow
 // @run-at       document-idle
@@ -38,8 +37,8 @@
     auditIntervalMs: 180000,
 
     listPages: [
-      { label: "CLOSED", path: "/cb/torneio/fechados" },
-      { label: "OPEN", path: "/cb/torneio/abertos" }
+      { label: "CLOSED", path: "/torneio/fechados" },
+      { label: "OPEN", path: "/torneio/abertos" }
     ]
   };
 
@@ -250,7 +249,7 @@
     if (!cleanName) return false;
 
     const id = String(data.tournamentId || "").trim();
-    const url = String(data.url || (id ? `/cb/torneio/painel/${id}` : "")).trim();
+    const url = String(data.url || (id ? `/torneio/painel/${id}` : "")).trim();
 
     if (!id || !url) return false;
 
@@ -468,19 +467,19 @@
     let url = norm(row.url || "");
 
     const joined = `${url} ${id} ${row.rawLine || ""}`;
-    const m = joined.match(/\/cb\/torneio\/painel\/(\d+)/);
+    const m = joined.match(/\/torneio\/painel\/(\d+)/);
 
     if (m) {
       id = m[1];
-      url = `/cb/torneio/painel/${id}`;
+      url = `/torneio/painel/${id}`;
     }
 
     if (!url && id && /^\d+$/.test(id)) {
-      url = `/cb/torneio/painel/${id}`;
+      url = `/torneio/painel/${id}`;
     }
 
     if (!id && url) {
-      const m2 = url.match(/\/cb\/torneio\/painel\/(\d+)/);
+      const m2 = url.match(/\/torneio\/painel\/(\d+)/);
       if (m2) id = m2[1];
     }
 
@@ -554,7 +553,7 @@
         continue;
       }
 
-      const finalUrl = `/cb/torneio/painel/${id}`;
+      const finalUrl = `/torneio/painel/${id}`;
       const key = `${name}||${id}`;
       if (seen.has(key)) {
         invalid.push({ row: r, reason: `重複: ${key}` });
@@ -571,7 +570,7 @@
           actualName,
           matchedRow: String(r.matchedRow || ""),
           savedAt: nowText(),
-          source: String(r.source || "replace-tsv-v0.7.2")
+      source: String(r.source || "replace-tsv-v0.7.3")
         }
       });
     }
@@ -892,7 +891,7 @@
   }
 
   function rowHasPanelLink(row) {
-    return String(row && row.innerHTML || "").includes("/cb/torneio/painel/");
+    return String(row && row.innerHTML || "").includes("/torneio/painel/");
   }
 
   function getRowsSignature(rows) {
@@ -1127,14 +1126,14 @@
     const rowText = norm(row.innerText || row.textContent || "");
     const rowHtml = row.innerHTML || "";
 
-    const m = String(rowHtml).match(/\/cb\/torneio\/painel\/(\d+)/);
+    const m = String(rowHtml).match(/\/torneio\/painel\/(\d+)/);
     if (!m) return null;
 
     const actualName = extractTournamentTitleFromRow(rowText);
 
     return {
       tournamentId: m[1],
-      url: `/cb/torneio/painel/${m[1]}`,
+      url: `/torneio/painel/${m[1]}`,
       actualName,
       matchedRow: rowText
     };
@@ -1257,7 +1256,7 @@
   }
 
   function extractTournamentIdFromUrl(url) {
-    const m = String(url || "").match(/\/cb\/torneio\/painel\/(\d+)/);
+    const m = String(url || "").match(/\/torneio\/painel\/(\d+)/);
     return m ? m[1] : "";
   }
 
@@ -1358,7 +1357,7 @@
         key: "",
         name: names.join(" | "),
         tournamentId: id,
-        url: `/cb/torneio/painel/${id}`,
+        url: `/torneio/painel/${id}`,
         actualName: "",
         message: "同じ TournamentId に複数 Name があります。表記ゆれならOKです。"
       });
@@ -1737,11 +1736,11 @@
         source: String(item.source || "shared-cache")
       }))
       .filter((item) => {
-        const id = item.tournamentId || String(item.url).match(/\/cb\/torneio\/painel\/(\d+)/)?.[1] || "";
+        const id = item.tournamentId || String(item.url).match(/\/torneio\/painel\/(\d+)/)?.[1] || "";
         if (!id || seen.has(id)) return false;
         seen.add(id);
         item.tournamentId = id;
-        item.url = item.url || `/cb/torneio/painel/${id}`;
+        item.url = item.url || `/torneio/painel/${id}`;
         return true;
       });
   }
@@ -2004,7 +2003,7 @@
       panel.style.gap = "8px";
       panel.style.borderRadius = "8px";
       panel.style.maxHeight = "94vh";
-      if (title) title.textContent = "PW URL Cache Manager v0.7.2";
+    if (title) title.textContent = "PW URL Cache Manager v0.7.3";
     }
 
     localStorage.setItem(CONFIG.collapsedKey, collapsed ? "1" : "0");
@@ -2045,7 +2044,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-      <div id="pw-url-cache-title" style="font-weight:bold;white-space:nowrap;">PW URL Cache Manager v0.7.2</div>
+        <div id="pw-url-cache-title" style="font-weight:bold;white-space:nowrap;">PW URL Cache Manager v0.7.3</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-url-cache-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-url-cache-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>

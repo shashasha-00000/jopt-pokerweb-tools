@@ -1,13 +1,12 @@
 ﻿// ==UserScript==
 // @name         PW Tournament CLOSE + AUDIT Background Batch
 // @namespace    xhpc007-pw-close-audit-batch-private
-// @version      1.0.2
+// @version      1.0.3
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-close-audit-batch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-close-audit-batch.user.js
 // @description  PW比赛批量 CLOSE / 監査。读取TSV、用Shared Cache / URL pool补全URL、分开执行CLOSE与監査。
 // @author       xhpc007 + ChatGPT
-// @match        https://japanopt.pokerweb.com.br/cb/*
-// @match        https://japanopt.pokerweb.com.br/*
+// @match        https://japanopt.bt.pokerweb.com.br/*
 // @grant        GM_setClipboard
 // @grant        unsafeWindow
 // @run-at       document-idle
@@ -169,11 +168,11 @@
   }
 
   function getRelativePanelUrl(id) {
-    return `/cb/torneio/painel/${id}`;
+    return `/torneio/painel/${id}`;
   }
 
   function extractIdFromUrlLike(s) {
-    const m = String(s || '').match(/\/cb\/torneio\/painel\/(\d+)/);
+    const m = String(s || '').match(/\/torneio\/painel\/(\d+)/);
     return m ? m[1] : '';
   }
 
@@ -500,19 +499,19 @@
     let url = norm(row.url || '');
 
     const joined = `${url} ${id} ${row.rawLine || ''}`;
-    const m = joined.match(/\/cb\/torneio\/painel\/(\d+)/);
+    const m = joined.match(/\/torneio\/painel\/(\d+)/);
 
     if (m) {
       id = m[1];
-      url = `/cb/torneio/painel/${id}`;
+      url = `/torneio/painel/${id}`;
     }
 
     if (!url && id && /^\d+$/.test(id)) {
-      url = `/cb/torneio/painel/${id}`;
+      url = `/torneio/painel/${id}`;
     }
 
     if (!id && url) {
-      const m2 = url.match(/\/cb\/torneio\/painel\/(\d+)/);
+      const m2 = url.match(/\/torneio\/painel\/(\d+)/);
       if (m2) id = m2[1];
     }
 
@@ -633,7 +632,7 @@
   }
 
   function rowHasPanelLink(row) {
-    return String(row.innerHTML || '').includes('/cb/torneio/painel/');
+    return String(row.innerHTML || '').includes('/torneio/painel/');
   }
 
   function extractTournamentTitleFromRow(rowText) {
@@ -661,8 +660,8 @@
     const links = [...row.querySelectorAll('a[href]')];
 
     const painelLink =
-      links.find(a => String(a.getAttribute('href') || '').includes('/cb/torneio/painel/')) ||
-      links.find(a => String(a.href || '').includes('/cb/torneio/painel/'));
+      links.find(a => String(a.getAttribute('href') || '').includes('/torneio/painel/')) ||
+      links.find(a => String(a.href || '').includes('/torneio/painel/'));
 
     const href = painelLink ? (painelLink.getAttribute('href') || painelLink.href) : rowHtml;
     const id = extractIdFromUrlLike(href);
@@ -1715,7 +1714,7 @@
     validateBackgroundTournamentName(doc, item, 'BEFORE_AUDIT', false);
 
     const postResult = await postBackgroundTournamentForm(doc, auditForm, item, 'audit');
-    if (!/\/cb\/torneio\/fechados(?:[/?#]|$)/i.test(postResult.responseUrl || '')) {
+    if (!/\/torneio\/fechados(?:[/?#]|$)/i.test(postResult.responseUrl || '')) {
       throw new Error(`AFTER_AUDIT_REDIRECT_UNEXPECTED id=${item.tournamentId} responseUrl=${postResult.responseUrl || ''}`);
     }
 
@@ -1920,8 +1919,8 @@
             appendReport('URL_POOL_CANCEL', `${unresolvedForPool.length} 件`);
           } else {
             setStatusForBackground('OPEN / CLOSED 大会一覧を開いています...');
-            closedWin = await openTournamentListWindow('/cb/torneio/fechados', 'closed');
-            openWin = await openTournamentListWindow('/cb/torneio/abertos', 'open');
+            closedWin = await openTournamentListWindow('/torneio/fechados', 'closed');
+            openWin = await openTournamentListWindow('/torneio/abertos', 'open');
 
             const pool = [];
             const poolSeen = new Set();
@@ -2288,7 +2287,7 @@
   function validateCurrentJobName(item) {
     const expected = cleanOperationalTournamentName(item?.actualName || item?.name || '');
     const actual = getCurrentTournamentName();
-    if (!expected || /^https?:|^\/cb\//i.test(expected)) {
+    if (!expected || /^https?:|^\/(?:torneio|jogadores_cb|vagas)\//i.test(expected)) {
       appendReport('NAME_CHECK_SKIP', `id=${item?.tournamentId || ''} expected name empty`);
       return;
     }
@@ -2589,7 +2588,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <div style="font-weight:700;">PW CLOSE/AUDIT Batch v1.0.1</div>
+      <div style="font-weight:700;">PW CLOSE/AUDIT Batch v1.0.3</div>
         <div style="display:flex;gap:4px;">
           <button id="pwca-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pwca-close-panel" style="font-size:11px;padding:2px 6px;cursor:pointer;">×</button>

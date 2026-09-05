@@ -204,7 +204,7 @@ function parseSheetDate_(value) {
 }
 
 function buildPokerWebTournamentUrl_(tournamentId) {
-  return `https://japanopt.pokerweb.com.br/cb/torneio/painel/${String(tournamentId || '').trim()}`;
+  return `https://japanopt.bt.pokerweb.com.br/torneio/painel/${String(tournamentId || '').trim()}`;
 }
 
 function formatReceptionMvpSheets_() {

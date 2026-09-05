@@ -22,8 +22,8 @@ URL CacheはGoogleアカウントやGoogle Driveには保存されません。Po
 1. 「Event Prefix」に対象イベントの共通部分を入力する。例：`【JOPT 2026 Grand Final】`
 2. 「Build by Event Prefix」を押す。
 3. ツールが以下のOPEN・CLOSED一覧を開き、全ページからPrefixを含む大会を収集する。
-   - `/cb/torneio/abertos`
-   - `/cb/torneio/fechados`
+   - `/torneio/abertos`
+   - `/torneio/fechados`
 4. 完了後、OK件数とNG件数を確認する。
 5. 「View Current Event」で現在のイベントだけを表示する。
 6. 「Copy Sheet TSV Current」でSheet保存用TSVをコピーする。
@@ -50,7 +50,7 @@ Name
 
 ```tsv
 Name	TournamentId	URL	Actual_Name
-正式な大会名	1234	https://japanopt.pokerweb.com.br/cb/torneio/painel/1234	PokerWeb画面に表示された大会名
+正式な大会名	1234	https://japanopt.bt.pokerweb.com.br/torneio/painel/1234	PokerWeb画面に表示された大会名
 ```
 
 `Actual_Name`は省略できます。Tournament IDまたはURLだけでは登録せず、必ず大会名も確認してください。

@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         PW Sprinter・Chip Leader 追加
-// @namespace    https://japanopt.pokerweb.com.br/
-// @version      0.2.1
+// @namespace    https://japanopt.bt.pokerweb.com.br/
+// @version      0.2.2
 // @description  Sprinter / Chip Leader の特殊賞を既存Prize末尾に追加・確認します。
-// @match        https://japanopt.pokerweb.com.br/*
+// @match        https://japanopt.bt.pokerweb.com.br/*
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-sprinter-chip-leader-award.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-sprinter-chip-leader-award.user.js
 // @grant        none
@@ -16,9 +16,9 @@
     panelId: 'pwAwardPlanPanel',
     stateKey: 'PW_AWARD_PLAN_APPEND_STATE_V1',
     urlCacheKey: 'PW_SHARED_TOURNAMENT_URL_CACHE_V1',
-    openListPath: '/cb/torneio/abertos',
-    endpointPrizeList: '/cb/torneio/abas/premiacao/faixas_premiacoes',
-    endpointPotTotal: id => `/cb/torneio/abas/premiacao/pot_total/${id}`,
+    openListPath: '/torneio/abertos',
+    endpointPrizeList: '/torneio/abas/premiacao/faixas_premiacoes',
+    endpointPotTotal: id => `/torneio/abas/premiacao/pot_total/${id}`,
     pageLength: 100,
     waitMs: 25000,
     pollMs: 300
@@ -131,7 +131,7 @@
     const rows = [];
     const seen = new Set();
     const add = row => {
-      if (!row || !String(row.innerHTML || '').includes('/cb/torneio/painel/')) return;
+      if (!row || !String(row.innerHTML || '').includes('/torneio/painel/')) return;
       const key = row.outerHTML || row.innerText || Math.random();
       if (seen.has(key)) return;
       seen.add(key);
@@ -249,7 +249,7 @@
 
   function extractTournament(row) {
     const html = row.innerHTML || '';
-    const match = html.match(/\/cb\/torneio\/painel\/(\d+)/);
+    const match = html.match(/\/torneio\/painel\/(\d+)/);
     if (!match) return null;
     const rowText = norm(row.innerText || row.textContent || '');
     const actualName = extractTournamentTitleFromRow(rowText);
@@ -258,7 +258,7 @@
     const shortName = withoutPrefix.replace(/^[#\uff03]\s*0*\d+\s*/, '').trim();
     return {
       tournamentId: match[1],
-      url: `/cb/torneio/painel/${match[1]}`,
+      url: `/torneio/painel/${match[1]}`,
       actualName,
       name: shortName,
       no,
@@ -844,7 +844,7 @@
     const id = tournamentIdFromInput(input?.value || '');
     if (!id) return alert('PokerWeb ID または URLを入力してください。');
     item.tournamentId = id;
-    item.url = `/cb/torneio/painel/${id}`;
+    item.url = `/torneio/painel/${id}`;
     item.tournamentName = item.tournamentName || `PokerWeb #${id}`;
     try {
       const doc = await fetchDoc(item.url);

@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         PW Existing Tournament Patch
 // @namespace    pw-existing-item-fee-patch
-// @version      0.2.7
+// @version      0.2.8
 // @description  Patch existing tournament item fees, EN/RE chips, and/or tournament names from TSV. Uses pasted URL/TournamentId, Shared Cache, then OPEN/CLOSED URL pool.
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-item-fee-patch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-item-fee-patch.user.js
 // @author       xhpc007 + ChatGPT
-// @match        https://japanopt.pokerweb.com.br/*
+// @match        https://japanopt.bt.pokerweb.com.br/*
 // @grant        GM_setClipboard
 // @run-at       document-idle
 // ==/UserScript==
@@ -183,11 +183,11 @@
   }
 
   function getTournamentUrl(id) {
-    return `${location.origin}/cb/torneio/painel/${id}`;
+    return `${location.origin}/torneio/painel/${id}`;
   }
 
   function extractTournamentIdFromUrl(url) {
-    const m = String(url || "").match(/\/cb\/torneio\/painel\/(\d+)/);
+    const m = String(url || "").match(/\/torneio\/painel\/(\d+)/);
     return m ? m[1] : "";
   }
 
@@ -518,7 +518,7 @@
   }
 
   function rowHasPanelLink(row) {
-    return String(row.innerHTML || "").includes("/cb/torneio/painel/");
+    return String(row.innerHTML || "").includes("/torneio/painel/");
   }
 
   function extractTournamentTitleFromRow(rowText) {
@@ -543,11 +543,11 @@
 
     const links = Array.from(row.querySelectorAll("a[href]"));
     const panelLink =
-      links.find(a => String(a.getAttribute("href") || "").includes("/cb/torneio/painel/")) ||
-      links.find(a => String(a.href || "").includes("/cb/torneio/painel/"));
+      links.find(a => String(a.getAttribute("href") || "").includes("/torneio/painel/")) ||
+      links.find(a => String(a.href || "").includes("/torneio/painel/"));
 
     const href = panelLink ? (panelLink.getAttribute("href") || panelLink.href) : row.innerHTML;
-    const m = String(href || "").match(/\/cb\/torneio\/painel\/(\d+)/);
+    const m = String(href || "").match(/\/torneio\/painel\/(\d+)/);
     if (!m) return null;
 
     return {
@@ -758,8 +758,8 @@
 
     const links = Array.from(row.querySelectorAll("a[href]"));
     const panelLink =
-      links.find(a => String(a.getAttribute("href") || "").includes("/cb/torneio/painel/")) ||
-      links.find(a => String(a.href || "").includes("/cb/torneio/painel/"));
+      links.find(a => String(a.getAttribute("href") || "").includes("/torneio/painel/")) ||
+      links.find(a => String(a.href || "").includes("/torneio/painel/"));
 
     const href = panelLink ? (panelLink.getAttribute("href") || panelLink.href) : row.innerHTML;
     const id = extractTournamentIdFromUrl(href);
@@ -881,8 +881,8 @@
       clearReport();
       logLine(`[${nowText()}] URL POOL SEARCH`);
       setStatus("OPEN / CLOSED大会一覧を開いています...");
-      closedWin = await openTournamentListWindow("/cb/torneio/fechados", "closed");
-      openWin = await openTournamentListWindow("/cb/torneio/abertos", "open");
+      closedWin = await openTournamentListWindow("/torneio/fechados", "closed");
+      openWin = await openTournamentListWindow("/torneio/abertos", "open");
 
       const pool = [];
       const poolSeen = new Set();
@@ -974,7 +974,7 @@
   }
 
   async function fetchTournamentDoc(id) {
-    const res = await fetch(`/cb/torneio/painel/${id}`, {
+    const res = await fetch(`/torneio/painel/${id}`, {
       credentials: "same-origin",
       cache: "no-store"
     });
@@ -1086,7 +1086,7 @@
     setIfPresentOrDefault(fd, "rake", normalizeAmount(existing.rake), "0");
     setIfPresentOrDefault(fd, "taxa_extras", existing.taxa_extras, "");
 
-    const action = form.getAttribute("action") || "/cb/torneio/abas/configuracao/item_editar";
+    const action = form.getAttribute("action") || "/torneio/abas/configuracao/item_editar";
     const res = await fetch(action, {
       method: "POST",
       body: fd,
@@ -1124,7 +1124,7 @@
 
   function readTournamentRenameContext(doc, id) {
     let sourceDoc = doc;
-    let form = sourceDoc.querySelector('form[action*="/cb/torneio/alterar_nome"]');
+    let form = sourceDoc.querySelector('form[action*="/torneio/alterar_nome"]');
     let codbloq = norm(
       form?.querySelector('[name="codbloq"]')?.value ||
       sourceDoc.querySelector('[name="codbloq"]')?.value ||
@@ -1135,7 +1135,7 @@
     const currentPageId = extractTournamentIdFromUrl(location.href);
     if (!codbloq && currentPageId === String(id)) {
       sourceDoc = document;
-      form = sourceDoc.querySelector('form[action*="/cb/torneio/alterar_nome"]');
+      form = sourceDoc.querySelector('form[action*="/torneio/alterar_nome"]');
       codbloq = norm(
         form?.querySelector('[name="codbloq"]')?.value ||
         sourceDoc.querySelector('[name="codbloq"]')?.value ||
@@ -1153,7 +1153,7 @@
       form,
       codbloq,
       painel,
-      action: form?.getAttribute("action") || "/cb/torneio/alterar_nome"
+      action: form?.getAttribute("action") || "/torneio/alterar_nome"
     };
   }
 

@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         PW 共通パネル移動・最小化
-// @namespace    https://japanopt.pokerweb.com.br/
-// @version      0.2.1
+// @namespace    https://japanopt.bt.pokerweb.com.br/
+// @version      0.2.2
 // @description  PokerWeb用Tampermonkeyツールの通常パネルをドラッグ移動し、選択中のパネルを最前面に表示します。
-// @match        https://japanopt.pokerweb.com.br/*
+// @match        https://japanopt.bt.pokerweb.com.br/*
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-panel-drag-helper.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-panel-drag-helper.user.js
 // @grant        none

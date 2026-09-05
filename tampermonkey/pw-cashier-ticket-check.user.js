@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         PW キャッシャーチケット Check
 // @namespace    pw-cashier-ticket-check
-// @version      0.1.0
+// @version      0.1.1
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-cashier-ticket-check.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-cashier-ticket-check.user.js
 // @description  Quick read-only Main Event ticket check from the PokerWeb tournament cashier page.
 // @author       xhpc007 + Codex
-// @match        https://japanopt.pokerweb.com.br/cb/*
+// @match        https://japanopt.bt.pokerweb.com.br/*
 // @grant        GM_setClipboard
 // @run-at       document-idle
 // ==/UserScript==
@@ -21,8 +21,8 @@
     keywordsKey: "PWCTQ_KEYWORDS",
     collapsedKey: "PWCTQ_COLLAPSED",
     defaultKeywords: "Main Event",
-    playerSearchUrl: "/cb/jogadores/search",
-    cashierUrl: "/cb/torneio/abas/caixa/dados_caixa",
+    playerSearchUrl: "/jogadores_cb/search",
+    cashierUrl: "/torneio/abas/caixa/dados_caixa",
     delayMs: 180
   };
 
@@ -58,7 +58,7 @@
   }
 
   function getCurrentTournamentId() {
-    const match = location.pathname.match(/\/cb\/torneio\/painel\/(\d+)/);
+    const match = location.pathname.match(/\/torneio\/painel\/(\d+)/);
     return match ? match[1] : "";
   }
 

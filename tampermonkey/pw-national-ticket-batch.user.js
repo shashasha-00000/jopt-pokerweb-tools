@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         PW ナショナルチケット Batch
 // @namespace    pw-national-ticket-batch-safe
-// @version      1.3.4
+// @version      1.3.7
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
 // @description  任意のPokerWeb管理画面からGameID・チケット名TSVを厳密検証し、ナショナルチケットを安全に一件ずつ付与する正式版
 // @author       xhpc007 + Codex
-// @match        https://japanopt.pokerweb.com.br/cb/*
+// @match        https://japanopt.bt.pokerweb.com.br/*
 // @match        https://formanager.pokerweb.com.br/cb/*
 // @grant        GM_setClipboard
 // @run-at       document-idle
@@ -15,15 +15,17 @@
 (() => {
   'use strict';
 
+  const IS_BT_SITE = location.hostname === 'japanopt.bt.pokerweb.com.br';
+
   const APP = {
     inputKey: 'PW_NATIONAL_TICKET_BATCH_V10_INPUT',
     previewKey: 'PW_NATIONAL_TICKET_BATCH_V10_PREVIEW',
     logKey: 'PW_NATIONAL_TICKET_BATCH_V10_LOG',
     ledgerKey: 'PW_NATIONAL_TICKET_BATCH_V10_LEDGER',
     ticketListUrlKey: 'PW_NATIONAL_TICKET_BATCH_TICKET_LIST_URL',
-    emitUrl: '/cb/vagas/emitir_ticket',
-    ticketHistoryUrl: '/cb/vagas/historico_ticket',
-    playerSearchUrl: '/cb/jogadores/search',
+    emitUrl: IS_BT_SITE ? '/vagas/emitir_ticket' : '/cb/vagas/emitir_ticket',
+    ticketHistoryUrl: IS_BT_SITE ? '/vagas/historico_ticket' : '/cb/vagas/historico_ticket',
+    playerSearchUrl: IS_BT_SITE ? '/jogadores_cb/search' : '/cb/jogadores/search',
     defaultStoreName: 'JOPT - Japan Open Poker Tour',
     groupPathPattern: /\/painel_grupo_tickets\/(\d+)/,
     ticketListTextPattern: /ナショナル\s*チケット|national\s*ticket/i,
@@ -173,6 +175,10 @@
       ...options
     });
     const text = await response.text();
+    const finalUrl = new URL(response.url || url, location.origin);
+    if (finalUrl.pathname.startsWith('/usuarios/login')) {
+      throw new Error(`${url}: ログイン画面へ転送されました。新しいPokerWebで再ログインしてください。`);
+    }
     if (!response.ok) {
       throw new Error(`${url} HTTP ${response.status}: ${norm(text).slice(0, 180)}`);
     }
@@ -614,7 +620,7 @@
       if (!rowText.includes(searchGameId)) continue;
 
       const relMatch = rowHtml.match(/rel=["'][^"']*?(\d+)[^"']*?["']/);
-      const painelMatch = rowHtml.match(/jogadores\/painel\/(\d+)/);
+      const painelMatch = rowHtml.match(/jogadores(?:_cb)?\/painel\/(\d+)/);
       const leadingMatch = rowText.match(/^\s*(\d+)\s*-/);
       const internalId = relMatch?.[1] || painelMatch?.[1] || leadingMatch?.[1] || '';
       if (internalId) candidates.push({ internalId, rowText });
@@ -1196,7 +1202,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <strong>PW ナショナルチケット一括付与 正式版 v1.3.4</strong>
+        <strong>PW ナショナルチケット一括付与 正式版 v1.3.7</strong>
         <div><button id="pwnt-min">Min</button> <button id="pwnt-close">x</button></div>
       </div>
       <div id="pwnt-body" style="overflow:auto;margin-top:8px;">

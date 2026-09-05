@@ -25,7 +25,7 @@ PW URL Cache Managerの「Copy Sheet TSV Current」または「Copy Sheet TSV Al
 
 入力例：
 
-    【入力例】#01 NLH<TAB>1234<TAB>https://japanopt.pokerweb.com.br/cb/torneio/painel/1234<TAB><TAB>1000<TAB>1000<TAB><TAB>50000<TAB>50000
+    【入力例】#01 NLH<TAB>1234<TAB>https://japanopt.bt.pokerweb.com.br/torneio/painel/1234<TAB><TAB>1000<TAB>1000<TAB><TAB>50000<TAB>50000
 
 - 「大会名」は必須です。
 - TournamentIdまたはURLは任意ですが、同名大会、Day違い、店舗違いがある場合は必ず指定します。

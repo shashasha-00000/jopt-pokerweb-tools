@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         JOPT PW Reception Test
 // @namespace    jopt-pw-reception
-// @version      0.2.8
+// @version      0.2.9
 // @description  Test reception QR flow for PokerWeb tournament cashier. Never submits final form.
-// @match        https://japanopt.pokerweb.com.br/*
+// @match        https://japanopt.bt.pokerweb.com.br/*
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==
@@ -26,7 +26,7 @@
       displayName: "test10086",
       amountDue: 9000,
       tournamentId: "4905",
-      tournamentUrl: "https://japanopt.pokerweb.com.br/cb/torneio/painel/4905",
+      tournamentUrl: "https://japanopt.bt.pokerweb.com.br/torneio/painel/4905",
       gameId: "33221075",
       quantities: {
         EN: 1,
@@ -96,7 +96,7 @@
   }
 
   function getCurrentTournamentId() {
-    const match = location.pathname.match(/\/cb\/torneio\/painel\/(\d+)/);
+    const match = location.pathname.match(/\/torneio\/painel\/(\d+)/);
     return match ? match[1] : "";
   }
 
@@ -238,7 +238,7 @@
 
   async function findInternalPlayerId(gameId) {
     const formattedGameId = formatGameId(gameId);
-    const html = await postForm("/cb/jogadores/search", {
+    const html = await postForm("/jogadores_cb/search", {
       query: gameId,
       identifier: "string"
     });
@@ -292,7 +292,7 @@
   }
 
   async function loadCashier(internalPlayerId, tournamentId) {
-    const html = await postForm("/cb/torneio/abas/caixa/dados_caixa", {
+    const html = await postForm("/torneio/abas/caixa/dados_caixa", {
       id_jogador: internalPlayerId,
       id_torneio: tournamentId,
       premiacao_origem: "0"

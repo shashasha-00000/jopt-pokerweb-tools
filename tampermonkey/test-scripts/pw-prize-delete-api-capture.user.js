@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         PW Prize Delete API Capture Test
-// @namespace    https://japanopt.pokerweb.com.br/
-// @version      0.1.0
+// @namespace    https://japanopt.bt.pokerweb.com.br/
+// @version      0.1.1
 // @description  TEST ONLY: capture prize delete/save payloads across reloads.
-// @match        https://japanopt.pokerweb.com.br/cb/torneio/painel/*
+// @match        https://japanopt.bt.pokerweb.com.br/torneio/painel/*
 // @grant        none
 // ==/UserScript==
 
@@ -83,7 +83,7 @@
     return {
       href: location.href,
       title: document.title,
-      tournamentId: location.pathname.match(/\/cb\/torneio\/painel\/(\d+)/)?.[1] || ''
+      tournamentId: location.pathname.match(/\/torneio\/painel\/(\d+)/)?.[1] || ''
     };
   }
 

@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         PW Prize Plan 書込・確認
-// @namespace    https://japanopt.pokerweb.com.br/
-// @version      2.0.1
+// @namespace    https://japanopt.bt.pokerweb.com.br/
+// @version      2.0.2
 // @description  大会Prize表からPLANを作成し、PokerWebへの書込または読取確認を行います。
-// @match        https://japanopt.pokerweb.com.br/*
+// @match        https://japanopt.bt.pokerweb.com.br/*
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-batch-manual.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-batch-manual.user.js
 // @grant        none
@@ -17,10 +17,10 @@
     panelId: 'pw-prize-plan-panel',
     stateKey: 'PW_PRIZE_PLAN_STATE_V2',
     urlCacheKey: 'PW_SHARED_TOURNAMENT_URL_CACHE_V1',
-    endpointPrizeList: '/cb/torneio/abas/premiacao/faixas_premiacoes',
-    endpointPotTotal: id => `/cb/torneio/abas/premiacao/pot_total/${encodeURIComponent(id)}`,
+    endpointPrizeList: '/torneio/abas/premiacao/faixas_premiacoes',
+    endpointPotTotal: id => `/torneio/abas/premiacao/pot_total/${encodeURIComponent(id)}`,
     listPages: [
-      { label: 'OPEN', path: '/cb/torneio/abertos' }
+      { label: 'OPEN', path: '/torneio/abertos' }
     ],
     pageLength: 100,
     waitMs: 25000,
@@ -430,7 +430,7 @@
     const rows = [];
     const seen = new Set();
     const add = row => {
-      if (!row || !String(row.innerHTML || '').includes('/cb/torneio/painel/')) return;
+      if (!row || !String(row.innerHTML || '').includes('/torneio/painel/')) return;
       const key = row.outerHTML || row.innerText || Math.random();
       if (seen.has(key)) return;
       seen.add(key);
@@ -536,7 +536,7 @@
 
   function extractTournament(row) {
     const html = row.innerHTML || '';
-    const match = html.match(/\/cb\/torneio\/painel\/(\d+)/);
+    const match = html.match(/\/torneio\/painel\/(\d+)/);
     if (!match) return null;
     const rowText = norm(row.innerText || row.textContent || '');
     const actualName = extractTournamentTitleFromRow(rowText);
@@ -544,7 +544,7 @@
     const no = tournamentNoFromName(afterPrefix);
     return {
       tournamentId: match[1],
-      url: `/cb/torneio/painel/${match[1]}`,
+      url: `/torneio/painel/${match[1]}`,
       actualName,
       name: afterPrefix.replace(/^[#＃]\s*0*\d+\s*/, '').trim(),
       no,
@@ -816,7 +816,7 @@
         inputName: tournamentName || `PLAN列${col + 1}`,
         tournamentName,
         tournamentId,
-        url: tournamentId ? `/cb/torneio/painel/${tournamentId}` : '',
+        url: tournamentId ? `/torneio/painel/${tournamentId}` : '',
         urlCandidates: [],
         urlConfirmRequired: !tournamentId,
         prizeSource: norm(cell(prizeSourceField?.row, col)) || 'PLAN横表',
@@ -1318,7 +1318,7 @@
       if (entry || select.value) {
         item.tournamentName = entry?.actualName || item.tournamentName || `人工入力 ${select.value}`;
         item.tournamentId = entry?.tournamentId || select.value;
-        item.url = entry?.url || `/cb/torneio/painel/${select.value}`;
+        item.url = entry?.url || `/torneio/painel/${select.value}`;
         item.urlConfirmRequired = false;
       }
     }
@@ -1370,7 +1370,7 @@
       String(e.url || '').includes(`/painel/${id}`)
     );
     item.tournamentId = id;
-    item.url = `/cb/torneio/painel/${id}`;
+    item.url = `/torneio/painel/${id}`;
     item.tournamentName = entry?.actualName || `人工入力 ${id}`;
     item.urlCandidates = entry ? [entry] : item.urlCandidates;
     item.urlConfirmRequired = false;

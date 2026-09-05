@@ -1,11 +1,10 @@
 // ==UserScript==
 // @name         PW Background Create API POC
 // @namespace    pw-background-create-api-poc
-// @version      0.1.0
+// @version      0.1.1
 // @description  Test-only API-first tournament create flow. Not listed in scripts.json.
 // @author       xhpc007 + ChatGPT
-// @match        https://japanopt.pokerweb.com.br/cb/*
-// @match        https://japanopt.pokerweb.com.br/*
+// @match        https://japanopt.bt.pokerweb.com.br/*
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==
@@ -198,7 +197,7 @@ test7777\t2026/07/02\t13:00\t80000\t1000\t1\t80000\t0\t3\t-74998\t0\t0\t【SPADI
     fd.set("ddTrnNovo[vaga_ind]", DEFAULTS.vaga_ind);
     fd.set("ddTrnNovo[datasGeradas]", DEFAULTS.datasGeradas);
 
-    const res = await fetch("/cb/torneio/cadastrar", {
+    const res = await fetch("/torneio/cadastrar", {
       method: "POST",
       body: fd,
       credentials: "same-origin",
@@ -217,7 +216,7 @@ test7777\t2026/07/02\t13:00\t80000\t1000\t1\t80000\t0\t3\t-74998\t0\t0\t【SPADI
   }
 
   async function fetchTournamentDoc(id) {
-    const res = await fetch(`/cb/torneio/painel/${id}`, {
+    const res = await fetch(`/torneio/painel/${id}`, {
       credentials: "same-origin",
       cache: "no-store"
     });
@@ -233,7 +232,7 @@ test7777\t2026/07/02\t13:00\t80000\t1000\t1\t80000\t0\t3\t-74998\t0\t0\t【SPADI
     body.set("campo", "vendas_moeda_virtual");
     body.set("id_torneio", id);
     body.set("status", "1");
-    const res = await fetch("/cb/torneio/abas/configuracao/alterar_campos", {
+    const res = await fetch("/torneio/abas/configuracao/alterar_campos", {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
@@ -304,8 +303,8 @@ test7777\t2026/07/02\t13:00\t80000\t1000\t1\t80000\t0\t3\t-74998\t0\t0\t【SPADI
     if (existing) fd.set("id_item", existing.id_item);
 
     const action = form.getAttribute("action") || (existing
-      ? "/cb/torneio/abas/configuracao/item_editar"
-      : "/cb/torneio/abas/configuracao/item_criar");
+      ? "/torneio/abas/configuracao/item_editar"
+      : "/torneio/abas/configuracao/item_criar");
 
     const res = await fetch(action, {
       method: "POST",
@@ -390,7 +389,7 @@ test7777\t2026/07/02\t13:00\t80000\t1000\t1\t80000\t0\t3\t-74998\t0\t0\t【SPADI
     fd.set("codbloq", codbloq);
     fd.set("id_torneio", id);
 
-    const res = await fetch(form.getAttribute("action") || "/cb/torneio/abas/configuracao/vincular_grupos_vagas", {
+    const res = await fetch(form.getAttribute("action") || "/torneio/abas/configuracao/vincular_grupos_vagas", {
       method: "POST",
       body: fd,
       credentials: "same-origin",
@@ -408,7 +407,7 @@ test7777\t2026/07/02\t13:00\t80000\t1000\t1\t80000\t0\t3\t-74998\t0\t0\t【SPADI
 
     log("START");
     const id = await createTournament(t);
-    log(`CREATE_OK id=${id} url=${location.origin}/cb/torneio/painel/${id}`);
+    log(`CREATE_OK id=${id} url=${location.origin}/torneio/painel/${id}`);
     await sleep(300);
 
     await enableVirtualCurrency(id);
@@ -430,7 +429,7 @@ test7777\t2026/07/02\t13:00\t80000\t1000\t1\t80000\t0\t3\t-74998\t0\t0\t【SPADI
       doc = await fetchTournamentDoc(id);
     }
 
-    log(`DONE ${location.origin}/cb/torneio/painel/${id}`);
+    log(`DONE ${location.origin}/torneio/painel/${id}`);
   }
 
   function addPanel() {

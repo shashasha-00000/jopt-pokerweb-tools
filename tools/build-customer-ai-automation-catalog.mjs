@@ -326,8 +326,8 @@ URL CacheはGoogleアカウントやGoogle Driveには保存されません。Po
 1. 「Event Prefix」に対象イベントの共通部分を入力する。例：\`【JOPT 2026 Grand Final】\`
 2. 「Build by Event Prefix」を押す。
 3. ツールが以下のOPEN・CLOSED一覧を開き、全ページからPrefixを含む大会を収集する。
-   - \`/cb/torneio/abertos\`
-   - \`/cb/torneio/fechados\`
+   - \`/torneio/abertos\`
+   - \`/torneio/fechados\`
 4. 完了後、OK件数とNG件数を確認する。
 5. 「View Current Event」で現在のイベントだけを表示する。
 6. 「Copy Sheet TSV Current」でSheet保存用TSVをコピーする。
@@ -354,7 +354,7 @@ Name
 
 \`\`\`tsv
 Name\tTournamentId\tURL\tActual_Name
-正式な大会名\t1234\thttps://japanopt.pokerweb.com.br/cb/torneio/painel/1234\tPokerWeb画面に表示された大会名
+正式な大会名\t1234\thttps://japanopt.bt.pokerweb.com.br/torneio/painel/1234\tPokerWeb画面に表示された大会名
 \`\`\`
 
 \`Actual_Name\`は省略できます。Tournament IDまたはURLだけでは登録せず、必ず大会名も確認してください。
@@ -628,7 +628,7 @@ PW URL Cache Managerの「Copy Sheet TSV Current」または「Copy Sheet TSV Al
 
 入力例：
 
-    【入力例】#01 NLH<TAB>1234<TAB>https://japanopt.pokerweb.com.br/cb/torneio/painel/1234<TAB><TAB>1000<TAB>1000<TAB><TAB>50000<TAB>50000
+    【入力例】#01 NLH<TAB>1234<TAB>https://japanopt.bt.pokerweb.com.br/torneio/painel/1234<TAB><TAB>1000<TAB>1000<TAB><TAB>50000<TAB>50000
 
 - 「大会名」は必須です。
 - TournamentIdまたはURLは任意ですが、同名大会、Day違い、店舗違いがある場合は必ず指定します。
@@ -828,7 +828,7 @@ PokerWebを操作するブラウザと同じブラウザ・同じProfileへイ�
 推奨形式：
 
     Name<TAB>TournamentId<TAB>URL<TAB>Actual_Name
-    正式な大会名<TAB>1234<TAB>https://japanopt.pokerweb.com.br/cb/torneio/painel/1234<TAB>PokerWeb上の大会名
+    正式な大会名<TAB>1234<TAB>https://japanopt.bt.pokerweb.com.br/torneio/painel/1234<TAB>PokerWeb上の大会名
 
 - Nameまたは大会名が必要です。
 - TournamentIdとURLは片方だけでも使用できますが、両方ある場合は同じIDでなければなりません。
@@ -1197,7 +1197,7 @@ PDF_FETCH_BATCH_SIZEは旧ブラウザ生成用であり、現在のGS直接生�
 3. 「使用するリソース」にある「PW 領収書 Manual Check」のURLを同じブラウザで開きます。GSのようにコードをコピーして貼り付ける必要はありません。
 4. Tampermonkeyのインストール画面が開いたら、スクリプト名が「PW 領収書 Manual Check」であることを確認し、「インストール」を押します。すでに入っている場合は更新画面から上書きします。
 5. Tampermonkeyの管理画面で「PW 領収書 Manual Check」が有効になっていることを確認します。
-6. 同じブラウザプロフィールでPokerWebへログインし、https://japanopt.pokerweb.com.br/ 配下の画面を開いて再読み込みします。
+6. 同じブラウザプロフィールでPokerWebへログインし、https://japanopt.bt.pokerweb.com.br/ 配下の画面を開いて再読み込みします。
 7. 画面右下に「PW 領収書抜き出し 人工確認版 v1.6.17」というパネルが表示されれば導入完了です。最小化されている場合は「Open」を押します。
 8. パネルが出ない場合は、別のブラウザや別プロフィールへインストールしていないか、Tampermonkey本体とスクリプトの両方が有効か、開いているURLがPokerWebかを確認してから再読み込みします。
 

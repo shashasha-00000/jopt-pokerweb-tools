@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         PW Batch Entry Helper
 // @namespace    pw-batch-entry-helper
-// @version      0.1.0
+// @version      0.1.1
 // @description  Paste a TSV queue and fill PokerWeb Cashier entries one by one. Never submits the final form.
-// @match        https://japanopt.pokerweb.com.br/*
+// @match        https://japanopt.bt.pokerweb.com.br/*
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==
@@ -70,7 +70,7 @@
   }
 
   function currentTournamentId() {
-    const match = location.pathname.match(/\/cb\/torneio\/painel\/(\d+)/);
+    const match = location.pathname.match(/\/torneio\/painel\/(\d+)/);
     return match ? match[1] : "";
   }
 
@@ -298,7 +298,7 @@
         lineNumber: lineIndex + 1,
         tournamentId,
         tournamentName: norm(raw.tournament_name) || `Tournament ${tournamentId}`,
-        tournamentUrl: `https://japanopt.pokerweb.com.br/cb/torneio/painel/${tournamentId}`,
+        tournamentUrl: `https://japanopt.bt.pokerweb.com.br/torneio/painel/${tournamentId}`,
         gameId,
         entryMode,
         quantities: { EN: entryMode === "EN" ? 1 : 0, RE: entryMode === "RE" ? 1 : 0, TE: 0 },
@@ -434,7 +434,7 @@
   }
 
   async function findInternalPlayerId(gameId) {
-    const html = await postForm("/cb/jogadores/search", { query: gameId, identifier: "string" });
+    const html = await postForm("/jogadores_cb/search", { query: gameId, identifier: "string" });
     const doc = parseHtml(html);
     const formatted = formatGameId(gameId);
     const found = [];
@@ -464,7 +464,7 @@
   }
 
   async function loadCashier(internalPlayerId, tournamentId) {
-    const html = await postForm("/cb/torneio/abas/caixa/dados_caixa", {
+    const html = await postForm("/torneio/abas/caixa/dados_caixa", {
       id_jogador: internalPlayerId,
       id_torneio: tournamentId,
       premiacao_origem: "0"

@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         PW Prize Coin API Capture Test
-// @namespace    https://japanopt.pokerweb.com.br/
-// @version      0.1.0
+// @namespace    https://japanopt.bt.pokerweb.com.br/
+// @version      0.1.1
 // @description  TEST ONLY: capture cashier prize coin payloads and responses.
-// @match        https://japanopt.pokerweb.com.br/cb/torneio/painel/*
+// @match        https://japanopt.bt.pokerweb.com.br/torneio/painel/*
 // @grant        none
 // ==/UserScript==
 
@@ -13,7 +13,7 @@
   const KEY = 'PW_PRIZE_COIN_API_CAPTURE_LOG_V1';
   const BLOCK_KEY = 'PW_PRIZE_COIN_API_CAPTURE_BLOCK_V1';
   const PANEL_ID = 'pw-prize-coin-api-capture';
-  const TARGET_RE = /\/cb\/torneio\/abas\/caixa\/(envio_moedas|dados_caixa|informacoes)\b/i;
+  const TARGET_RE = /\/torneio\/abas\/caixa\/(envio_moedas|dados_caixa|informacoes)\b/i;
 
   function norm(value) {
     return String(value ?? '').replace(/\s+/g, ' ').trim();
@@ -43,7 +43,7 @@
     return {
       href: location.href,
       title: document.title,
-      tournamentId: location.pathname.match(/\/cb\/torneio\/painel\/(\d+)/)?.[1] || ''
+      tournamentId: location.pathname.match(/\/torneio\/painel\/(\d+)/)?.[1] || ''
     };
   }
 

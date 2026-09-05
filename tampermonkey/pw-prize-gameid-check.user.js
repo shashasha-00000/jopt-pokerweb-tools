@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         PW・シーズン プライズGameID照合
-// @namespace    https://japanopt.pokerweb.com.br/
-// @version      0.1.0
+// @namespace    https://japanopt.bt.pokerweb.com.br/
+// @version      0.1.1
 // @description  読み取り専用：PWプライズ行のGameIDをシーズンDBと照合します。
-// @match        https://japanopt.pokerweb.com.br/*
+// @match        https://japanopt.bt.pokerweb.com.br/*
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-gameid-check.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-gameid-check.user.js
 // @grant        GM_setClipboard
@@ -135,7 +135,7 @@
   }
 
   function getCurrentTournamentId() {
-    const match = String(location.href || '').match(/\/cb\/torneio\/painel\/(\d+)/);
+    const match = String(location.href || '').match(/\/torneio\/painel\/(\d+)/);
     return match ? match[1] : '';
   }
 
@@ -156,7 +156,7 @@
   }
 
   async function fetchRegistroInformacoes(tournamentId) {
-    return postForm('/cb/torneio/abas/registros/informacoes', {
+    return postForm('/torneio/abas/registros/informacoes', {
       id_torneio: String(tournamentId)
     });
   }

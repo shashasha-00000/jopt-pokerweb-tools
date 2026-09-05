@@ -1,12 +1,12 @@
 ﻿// ==UserScript==
 // @name         PW Ticket Link Semi Auto
 // @namespace    pw-ticket-link-semi-auto
-// @version      1.2.2
+// @version      1.2.3
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
 // @description  幅広Ticketルール表の無関係列を無視し、対応外大会はSKIP報告。確認済み大会だけを独立workerで逐次Ticket Linkし、tn_ optionのみPOST。
 // @author       xhpc007 + ChatGPT
-// @match        https://japanopt.pokerweb.com.br/*
+// @match        https://japanopt.bt.pokerweb.com.br/*
 // @grant        GM_setClipboard
 // @run-at       document-idle
 // ==/UserScript==
@@ -126,7 +126,7 @@
   }
 
   function log(...args) {
-    console.log("[PW-TICKET-LINK-v1.2.2]", ...args);
+    console.log("[PW-TICKET-LINK-v1.2.3]", ...args);
     const el = document.querySelector("#pw-ticket-link-status");
     if (el) el.textContent = args.map(String).join(" ");
   }
@@ -239,11 +239,11 @@
   }
 
   function getTournamentUrl(tournamentId) {
-    return `/cb/torneio/painel/${tournamentId}`;
+    return `/torneio/painel/${tournamentId}`;
   }
 
   function extractTournamentIdFromUrl(url) {
-    const m = String(url || "").match(/\/cb\/torneio\/painel\/(\d+)/);
+    const m = String(url || "").match(/\/torneio\/painel\/(\d+)/);
     return m ? m[1] : "";
   }
 
@@ -254,7 +254,7 @@
   }
 
   function isPainelPage() {
-    return /\/cb\/torneio\/painel\/\d+/.test(location.href);
+    return /\/torneio\/painel\/\d+/.test(location.href);
   }
 
   function getCurrentTournamentIdFromUrl() {
@@ -1254,7 +1254,7 @@
   // ============================================================
 
   function rowHasPanelLink(row) {
-    return String(row.innerHTML || "").includes("/cb/torneio/painel/");
+    return String(row.innerHTML || "").includes("/torneio/painel/");
   }
 
   function extractTournamentTitleFromRow(rowText) {
@@ -1281,11 +1281,11 @@
 
     const links = Array.from(row.querySelectorAll("a[href]"));
     const panelLink =
-      links.find(a => String(a.getAttribute("href") || "").includes("/cb/torneio/painel/")) ||
-      links.find(a => String(a.href || "").includes("/cb/torneio/painel/"));
+      links.find(a => String(a.getAttribute("href") || "").includes("/torneio/painel/")) ||
+      links.find(a => String(a.href || "").includes("/torneio/painel/"));
 
     const href = panelLink ? (panelLink.getAttribute("href") || panelLink.href) : rowHtml;
-    const m = String(href).match(/\/cb\/torneio\/painel\/(\d+)/);
+    const m = String(href).match(/\/torneio\/painel\/(\d+)/);
     if (!m) return null;
 
     return {
@@ -1302,11 +1302,11 @@
     const actualName = extractTournamentTitleFromRow(rowText);
     const links = Array.from(row.querySelectorAll("a[href]"));
     const panelLink =
-      links.find(a => String(a.getAttribute("href") || "").includes("/cb/torneio/painel/")) ||
-      links.find(a => String(a.href || "").includes("/cb/torneio/painel/"));
+      links.find(a => String(a.getAttribute("href") || "").includes("/torneio/painel/")) ||
+      links.find(a => String(a.href || "").includes("/torneio/painel/"));
 
     const href = panelLink ? (panelLink.getAttribute("href") || panelLink.href) : rowHtml;
-    const m = String(href).match(/\/cb\/torneio\/painel\/(\d+)/);
+    const m = String(href).match(/\/torneio\/painel\/(\d+)/);
     if (!m) return null;
 
     return {
@@ -1694,10 +1694,10 @@
 
     try {
       log("CLOSED大会一覧を開いています...");
-      closedWin = await openTournamentListWindow("/cb/torneio/fechados", "closed");
+      closedWin = await openTournamentListWindow("/torneio/fechados", "closed");
 
       log("OPEN大会一覧を開いています...");
-      openWin = await openTournamentListWindow("/cb/torneio/abertos", "open");
+      openWin = await openTournamentListWindow("/torneio/abertos", "open");
 
       const poolSeen = new Set();
       for (const prefix of prefixes) {
@@ -2199,7 +2199,7 @@
       console.log(k, "=", v);
     }
 
-    const action = form.getAttribute("action") || "/cb/torneio/abas/configuracao/vincular_grupos_vagas";
+    const action = form.getAttribute("action") || "/torneio/abas/configuracao/vincular_grupos_vagas";
     const res = await fetch(action, {
       method: "POST",
       body: fd,
@@ -2228,7 +2228,7 @@
       console.log(k, "=", v);
     }
 
-    const res = await fetch(form.action || "/cb/torneio/abas/configuracao/vincular_grupos_vagas", {
+    const res = await fetch(form.action || "/torneio/abas/configuracao/vincular_grupos_vagas", {
       method: "POST",
       body: fd,
       credentials: "same-origin",
@@ -2745,7 +2745,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <div style="font-weight:bold;">PW Ticket Link Semi Auto v1.2.2</div>
+      <div style="font-weight:bold;">PW Ticket Link Semi Auto v1.2.3</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-ticket-link-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-ticket-link-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>
@@ -2833,7 +2833,7 @@ Satellite	s01"
           比赛名[TAB]URL。Candidatesが1行だけならURLのみでも可。页面核对后覆盖Candidate并修正Shared Cache。
         </div>
         <textarea id="pw-ticket-link-force-url"
-          placeholder="例：&#10;【SPADIE Season 41st】#01 NLH Main Event Day 1A&#9;https://japanopt.pokerweb.com.br/cb/torneio/painel/12345"
+          placeholder="例：&#10;【SPADIE Season 41st】#01 NLH Main Event Day 1A&#9;https://japanopt.bt.pokerweb.com.br/torneio/painel/12345"
           style="width:100%;height:58px;background:#111;color:#fff;border:1px solid #b87920;padding:8px;font-family:Consolas,monospace;font-size:12px;"></textarea>
         <button id="pw-ticket-link-force-url-button" style="width:100%;padding:7px;cursor:pointer;background:#ffcf70;border:1px solid #b87920;margin-top:4px;">强制设置URL并修正库</button>
 

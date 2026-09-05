@@ -1,18 +1,18 @@
 ﻿// ==UserScript==
 // @name         PW 領収書 Full Auto
-// @version      7.0.0
+// @version      7.0.1
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-full-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-full-auto.user.js
 // @description  申請管理から申請キー単位で読み、システム設定のreceiverUrlへ送信する正式版
 // @description  イベント設定シートには依存しない、複数Event同時処理対応版
-// @match        https://japanopt.pokerweb.com.br/*
+// @match        https://japanopt.bt.pokerweb.com.br/*
 // @grant        GM_registerMenuCommand
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setClipboard
 // @connect      docs.google.com
 // @connect      script.google.com
 // @connect      script.googleusercontent.com
-// @connect      japanopt.pokerweb.com.br
+// @connect      japanopt.bt.pokerweb.com.br
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -423,7 +423,7 @@
   async function searchInternalId(gameId) {
     const searchGameId = rawToSearchGameId(gameId);
 
-    const html = await pwPost("/cb/jogadores/search", {
+    const html = await pwPost("/jogadores_cb/search", {
       query: gameId,
       identifier: "string"
     });
@@ -470,7 +470,7 @@
   }
 
   async function requestPlayerTournamentHtml(internalId, dateRange) {
-    const pageUrl = `/cb/jogadores/painel/${internalId}`;
+    const pageUrl = `/jogadores_cb/painel/${internalId}`;
 
     const getRes = await fetch(pageUrl, {
       method: "GET",
@@ -550,7 +550,7 @@ function extractEventRowsFromHtml(html, namePrefix) {
 }
 
 function extractTournamentIdFromUrl(url) {
-  const m = String(url || "").match(/\/cb\/torneio\/painel\/(\d+)/);
+  const m = String(url || "").match(/\/torneio\/painel\/(\d+)/);
   return m ? m[1] : "";
 }
 
@@ -560,7 +560,7 @@ function normalizeCacheUrl(id, url) {
 
   if (!finalId) return "";
 
-  return `/cb/torneio/painel/${finalId}`;
+  return `/torneio/painel/${finalId}`;
 }
 
 function getEventPrefixFromTournamentName(name) {
@@ -815,13 +815,13 @@ discoveredRows.push({
   }
 
   function requestRegistroInformacoes(tournamentId) {
-    return pwPost("/cb/torneio/abas/registros/informacoes", {
+    return pwPost("/torneio/abas/registros/informacoes", {
       id_torneio: String(tournamentId)
     });
   }
 
   function requestDadosCaixa(idJogador, idTorneio) {
-    return pwPost("/cb/torneio/abas/caixa/dados_caixa", {
+    return pwPost("/torneio/abas/caixa/dados_caixa", {
       id_jogador: String(idJogador),
       id_torneio: String(idTorneio),
       premiacao_origem: "0"
@@ -829,7 +829,7 @@ discoveredRows.push({
   }
 
   function requestInformacoes(idVenda, idJogador, idTorneio) {
-    return pwPost("/cb/torneio/abas/caixa/informacoes", {
+    return pwPost("/torneio/abas/caixa/informacoes", {
       id_venda: String(idVenda),
       id_jogador: String(idJogador),
       id_torneio: String(idTorneio)

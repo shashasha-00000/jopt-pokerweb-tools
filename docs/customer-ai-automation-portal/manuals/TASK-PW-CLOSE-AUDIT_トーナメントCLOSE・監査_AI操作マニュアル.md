@@ -18,7 +18,7 @@ PokerWebを操作するブラウザと同じブラウザ・同じProfileへイ�
 推奨形式：
 
     Name<TAB>TournamentId<TAB>URL<TAB>Actual_Name
-    正式な大会名<TAB>1234<TAB>https://japanopt.pokerweb.com.br/cb/torneio/painel/1234<TAB>PokerWeb上の大会名
+    正式な大会名<TAB>1234<TAB>https://japanopt.bt.pokerweb.com.br/torneio/painel/1234<TAB>PokerWeb上の大会名
 
 - Nameまたは大会名が必要です。
 - TournamentIdとURLは片方だけでも使用できますが、両方ある場合は同じIDでなければなりません。

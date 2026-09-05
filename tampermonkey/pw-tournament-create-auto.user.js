@@ -1,13 +1,12 @@
 // ==UserScript==
 // @name         PW 大会作成 Auto
 // @namespace    pw-tournament-create-auto
-// @version      0.4.0
+// @version      0.4.1
 // @description  API-first tournament create flow from fixed TSV with independent per-tournament workers.
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js
 // @author       xhpc007 + ChatGPT
-// @match        https://japanopt.pokerweb.com.br/cb/*
-// @match        https://japanopt.pokerweb.com.br/*
+// @match        https://japanopt.bt.pokerweb.com.br/*
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==
@@ -309,7 +308,7 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t【SPADIE 
     fd.set("ddTrnNovo[vaga_ind]", DEFAULTS.vaga_ind);
     fd.set("ddTrnNovo[datasGeradas]", DEFAULTS.datasGeradas);
 
-    const res = await fetch("/cb/torneio/cadastrar", {
+    const res = await fetch("/torneio/cadastrar", {
       method: "POST",
       body: fd,
       credentials: "same-origin",
@@ -328,7 +327,7 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t【SPADIE 
   }
 
   async function fetchTournamentDoc(id) {
-    const res = await fetch(`/cb/torneio/painel/${id}`, {
+    const res = await fetch(`/torneio/painel/${id}`, {
       credentials: "same-origin",
       cache: "no-store"
     });
@@ -344,7 +343,7 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t【SPADIE 
     body.set("campo", setting.campo);
     body.set("id_torneio", id);
     body.set("status", setting.status);
-    const res = await fetch("/cb/torneio/abas/configuracao/alterar_campos", {
+    const res = await fetch("/torneio/abas/configuracao/alterar_campos", {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
@@ -435,8 +434,8 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t【SPADIE 
     if (existing) fd.set("id_item", existing.id_item);
 
     const action = form.getAttribute("action") || (existing
-      ? "/cb/torneio/abas/configuracao/item_editar"
-      : "/cb/torneio/abas/configuracao/item_criar");
+      ? "/torneio/abas/configuracao/item_editar"
+      : "/torneio/abas/configuracao/item_criar");
 
     const res = await fetch(action, {
       method: "POST",
@@ -518,7 +517,7 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t【SPADIE 
     fd.set("codbloq", codbloq);
     fd.set("id_torneio", id);
 
-    const res = await fetch(form.getAttribute("action") || "/cb/torneio/abas/configuracao/vincular_grupos_vagas", {
+    const res = await fetch(form.getAttribute("action") || "/torneio/abas/configuracao/vincular_grupos_vagas", {
       method: "POST",
       body: fd,
       credentials: "same-origin",
@@ -534,7 +533,7 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t【SPADIE 
     log(`START_TOURNAMENT ${index + 1}/${total} worker=${workerId} row=${t.rowNo} ${t.name}`);
     const id = await createTournament(t);
     context.id = id;
-    log(`CREATE_OK ${index + 1}/${total} worker=${workerId} row=${t.rowNo} ${t.name} id=${id} url=${location.origin}/cb/torneio/painel/${id}`);
+    log(`CREATE_OK ${index + 1}/${total} worker=${workerId} row=${t.rowNo} ${t.name} id=${id} url=${location.origin}/torneio/painel/${id}`);
     await sleep(SPEED.afterCreateMs);
 
     context.stage = "GENERAL_SETTINGS";
@@ -576,7 +575,7 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t【SPADIE 
       }
 
       context.stage = "DONE";
-      log(`DONE_TOURNAMENT ${index + 1}/${total} worker=${workerId} row=${t.rowNo} id=${context.id} tickets=${context.linkedTickets}/${t.tickets.length} ${location.origin}/cb/torneio/painel/${context.id}`);
+      log(`DONE_TOURNAMENT ${index + 1}/${total} worker=${workerId} row=${t.rowNo} id=${context.id} tickets=${context.linkedTickets}/${t.tickets.length} ${location.origin}/torneio/painel/${context.id}`);
     } catch (e) {
       context.failed = true;
       context.error = e?.message || String(e || "UNKNOWN_ERROR");

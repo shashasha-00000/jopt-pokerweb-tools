@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         PW Prize Coin Batch
-// @namespace    https://japanopt.pokerweb.com.br/
-// @version      0.4.0
+// @namespace    https://japanopt.bt.pokerweb.com.br/
+// @version      0.4.1
 // @description  TSVを唯一の支払基準として、複数大会の未払いPrizeを照合しPW Coinを一件ずつ付与します。
-// @match        https://japanopt.pokerweb.com.br/*
+// @match        https://japanopt.bt.pokerweb.com.br/*
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-coin-batch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-coin-batch.user.js
 // @grant        none
@@ -19,11 +19,11 @@
     inputKey: 'PW_PRIZE_COIN_BATCH_INPUT_V1',
     scopeKey: 'PW_PRIZE_COIN_BATCH_SCOPE_V1',
     urlCacheKey: 'PW_SHARED_TOURNAMENT_URL_CACHE_V1',
-    recordInfoUrl: '/cb/torneio/abas/registros/informacoes',
-    cashierDataUrl: '/cb/torneio/abas/caixa/dados_caixa',
-    sendCoinUrl: '/cb/torneio/abas/caixa/envio_moedas',
+    recordInfoUrl: '/torneio/abas/registros/informacoes',
+    cashierDataUrl: '/torneio/abas/caixa/dados_caixa',
+    sendCoinUrl: '/torneio/abas/caixa/envio_moedas',
     listPages: [
-      { label: 'OPEN', path: '/cb/torneio/abertos' },
+      { label: 'OPEN', path: '/torneio/abertos' },
     ],
     waitMs: 25000,
     pollMs: 250,
@@ -283,13 +283,13 @@
     if (!entry || typeof entry !== 'object') return null;
     const tournamentId = String(entry.tournamentId || '').replace(/\D/g, '');
     const urlValue = entry.url || entry.painelUrl || '';
-    const urlMatch = String(urlValue).match(/\/cb\/torneio\/painel\/(\d+)/);
+    const urlMatch = String(urlValue).match(/\/torneio\/painel\/(\d+)/);
     const id = tournamentId || (urlMatch && urlMatch[1]) || '';
     const actualName = strictTournamentName(entry.actualName || entry.name || '');
     if (!id || !actualName) return null;
     return {
       tournamentId: id,
-      url: `/cb/torneio/painel/${id}`,
+      url: `/torneio/painel/${id}`,
       actualName,
       cName: cNameFromActual(actualName),
       matchedRow: norm(entry.matchedRow || ''),
@@ -424,7 +424,7 @@
       const node = dataTableNode(dt);
       const root = node || win.document;
       return [...root.querySelectorAll('tbody tr')]
-        .filter(row => String(row.innerHTML || '').includes('/cb/torneio/painel/'));
+        .filter(row => String(row.innerHTML || '').includes('/torneio/painel/'));
     } catch (_) {}
     return [];
   }
@@ -451,14 +451,14 @@
 
   function extractTournamentFromRow(row, source) {
     const html = row.innerHTML || '';
-    const match = html.match(/\/cb\/torneio\/painel\/(\d+)/);
+    const match = html.match(/\/torneio\/painel\/(\d+)/);
     if (!match) return null;
     const matchedRow = norm(row.innerText || row.textContent || '');
     const actualName = extractTournamentTitleFromRow(matchedRow);
     if (!actualName) return null;
     return {
       tournamentId: match[1],
-      url: `/cb/torneio/painel/${match[1]}`,
+      url: `/torneio/painel/${match[1]}`,
       actualName,
       cName: cNameFromActual(actualName),
       matchedRow,
@@ -1466,7 +1466,7 @@
     document.querySelector('#pwpcb-stop').addEventListener('click', stopRun);
     document.querySelector('#pwpcb-copy').addEventListener('click', copyResults);
     document.querySelector('#pwpcb-manual-open').addEventListener('click', () => {
-      window.open('/cb/torneio/abertos', '_blank', 'noopener');
+      window.open('/torneio/abertos', '_blank', 'noopener');
     });
     document.querySelector('#pwpcb-manual-input').addEventListener('keydown', event => {
       if (event.key !== 'Enter') return;

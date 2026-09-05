@@ -1,13 +1,12 @@
 // ==UserScript==
 // @name         PW 大会 Double Check
 // @namespace    pw-tournament-double-check
-// @version      2.0.6
+// @version      2.0.7
 // @description  3つの入力（大会名 / Portal Tournament / 受付Portal Ticket Link）から、Start・EN・RE・TE・Chips・Ticket Link・Settings・USDTを一括DC
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-double-check.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-double-check.user.js
 // @author       xhpc007 + ChatGPT
-// @match        https://japanopt.pokerweb.com.br/cb/*
-// @match        https://japanopt.pokerweb.com.br/*
+// @match        https://japanopt.bt.pokerweb.com.br/*
 // @grant        GM_setClipboard
 // @run-at       document-idle
 // ==/UserScript==
@@ -161,11 +160,11 @@
   }
 
   function getTournamentUrl(tournamentId) {
-    return `/cb/torneio/painel/${String(tournamentId || "").trim()}`;
+    return `/torneio/painel/${String(tournamentId || "").trim()}`;
   }
 
   function extractTournamentIdFromUrl(url) {
-    const m = String(url || "").match(/\/cb\/torneio\/painel\/(\d+)/);
+    const m = String(url || "").match(/\/torneio\/painel\/(\d+)/);
     return m ? m[1] : "";
   }
 
@@ -714,7 +713,7 @@
   function isRealPage(w, id) {
     const s = popupSnapshot(w);
     return (
-      s.href.includes(`/cb/torneio/painel/${id}`) &&
+      s.href.includes(`/torneio/painel/${id}`) &&
       s.href !== "about:blank" &&
       s.body.length > 80
     );
@@ -732,7 +731,7 @@
     const url = String(d.URL || "");
     const body = String(d.body?.textContent || "");
     return (
-      url.includes(`/cb/torneio/painel/${id}`) &&
+      url.includes(`/torneio/painel/${id}`) &&
       body.length > 80 &&
       !/login|entrar|senha/i.test(String(d.title || ""))
     );

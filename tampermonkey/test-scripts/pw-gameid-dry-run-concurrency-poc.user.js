@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         PW GameID DRY RUN Concurrency POC
 // @namespace    pw-gameid-dry-run-concurrency-poc
-// @version      0.1.1
+// @version      0.1.2
 // @description  発券せず、GameIDプレイヤー検索だけを制限並列で検証する独立テスト
-// @match        https://japanopt.pokerweb.com.br/cb/*
+// @match        https://japanopt.bt.pokerweb.com.br/*
 // @match        https://formanager.pokerweb.com.br/cb/*
 // @grant        GM_setClipboard
 // @run-at       document-idle
@@ -12,7 +12,8 @@
 (() => {
   'use strict';
 
-  const SEARCH_URL = '/cb/jogadores/search';
+  const IS_BT_SITE = location.hostname === 'japanopt.bt.pokerweb.com.br';
+  const SEARCH_URL = IS_BT_SITE ? '/jogadores_cb/search' : '/cb/jogadores/search';
   let running = false;
 
   function norm(value) {

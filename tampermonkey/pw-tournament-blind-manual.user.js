@@ -1,12 +1,11 @@
 // ==UserScript==
 // @name         PW ブラインド設定 Manual（現行可・改善予定）
 // @namespace    pw-tournament-blind-manual
-// @version      1.0.0
-// @description  PokerWeb blind backend direct success version. Current rules are hardcoded; usable but planned for safer template/preview upgrade.
+// @version      1.2.1
+// @description  PokerWeb blind backend direct tool with external saved settings UI and four internal blind structures.
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-blind-manual.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-blind-manual.user.js
-// @match        https://japanopt.pokerweb.com.br/cb/*
-// @match        https://japanopt.pokerweb.com.br/*
+// @match        https://japanopt.bt.pokerweb.com.br/*
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==
@@ -20,99 +19,83 @@
   // 上部设定区：以后主要改这里
   // ============================================================
 
-  const BREAK_YOUTUBE_URL = 'https://youtu.be/ID8o2U2OlV8';
+  const SETTINGS_STORAGE_KEY = 'PW_BLIND_MANUAL_SETTINGS_V1';
+  const DEFAULT_SETTINGS = {
+    tournamentName: '',
+    breakYoutubeUrl: '',
+    storeDurationTsv: `店舗名\tDuration
+GoodGame Poker Live SHINJUKU\t30min`
+  };
 
-  const STORE_RULES = [
-    {
-      store: 'GoodGame Poker Live SHINJUKU',
-      ruleKey: '20',
-      action: 'apply'
-    },
-    {
-      store: 'GoodGame Poker Live NAGOYA',
-      ruleKey: '40',
-      action: 'apply'
-    },
-    {
-      store: 'イケブクロギルド',
-      ruleKey: '30',
-      action: 'skip'
-    }
+  // 每次大会前必须与正式规则表核对；如有微调，应先修改下列盲注或 Break 定义。
+  const BASE_BLIND_LEVELS = [
+    { sb: '100',  bb: '200',  ante: '200' },
+    { sb: '200',  bb: '300',  ante: '300' },
+    { sb: '200',  bb: '400',  ante: '400' },
+    { sb: '300',  bb: '500',  ante: '500' },
+    { sb: '300',  bb: '600',  ante: '600' },
+    { sb: '400',  bb: '800',  ante: '800' },
+    { sb: '500',  bb: '1000', ante: '1000' },
+    { sb: '600',  bb: '1200', ante: '1200' },
+    { sb: '1000', bb: '1500', ante: '1500' },
+    { sb: '1000', bb: '2000', ante: '2000' },
+    { sb: '1500', bb: '2500', ante: '2500' },
+    { sb: '1500', bb: '3000', ante: '3000' },
+    { sb: '2000', bb: '4000', ante: '4000' },
+    { sb: '2500', bb: '5000', ante: '5000' },
+    { sb: '3000', bb: '6000', ante: '6000' }
   ];
 
-  const BLIND_RULES = {
-    '20': [
-      { label: 'L1',  type: 'level', minutes: '20', sb: '100',  bb: '200',  ante: '200' },
-      { label: 'L2',  type: 'level', minutes: '20', sb: '200',  bb: '300',  ante: '300' },
-      { label: 'L3',  type: 'level', minutes: '20', sb: '200',  bb: '400',  ante: '400' },
-      { label: 'L4',  type: 'level', minutes: '20', sb: '300',  bb: '500',  ante: '500' },
-      { label: 'L5',  type: 'level', minutes: '20', sb: '300',  bb: '600',  ante: '600' },
-      { label: 'L6',  type: 'level', minutes: '20', sb: '400',  bb: '800',  ante: '800' },
-      { label: 'B1',  type: 'break', minutes: '10', youtube: BREAK_YOUTUBE_URL },
-
-      { label: 'L7',  type: 'level', minutes: '20', sb: '500',  bb: '1000', ante: '1000' },
-      { label: 'L8',  type: 'level', minutes: '20', sb: '600',  bb: '1200', ante: '1200' },
-      { label: 'L9',  type: 'level', minutes: '20', sb: '1000', bb: '1500', ante: '1500' },
-      { label: 'L10', type: 'level', minutes: '20', sb: '1000', bb: '2000', ante: '2000' },
-      { label: 'L11', type: 'level', minutes: '20', sb: '1500', bb: '2500', ante: '2500' },
-      { label: 'L12', type: 'level', minutes: '20', sb: '1500', bb: '3000', ante: '3000' },
-      { label: 'B2',  type: 'break', minutes: '10', youtube: BREAK_YOUTUBE_URL },
-
-      { label: 'L13', type: 'level', minutes: '20', sb: '2000', bb: '4000', ante: '4000' },
-      { label: 'L14', type: 'level', minutes: '20', sb: '2500', bb: '5000', ante: '5000' },
-      { label: 'L15', type: 'level', minutes: '20', sb: '3000', bb: '6000', ante: '6000' }
-    ],
-
-    '30': [
-      { label: 'L1',  type: 'level', minutes: '30', sb: '100',  bb: '200',  ante: '200' },
-      { label: 'L2',  type: 'level', minutes: '30', sb: '200',  bb: '300',  ante: '300' },
-      { label: 'L3',  type: 'level', minutes: '30', sb: '200',  bb: '400',  ante: '400' },
-      { label: 'L4',  type: 'level', minutes: '30', sb: '300',  bb: '500',  ante: '500' },
-      { label: 'B1',  type: 'break', minutes: '10', youtube: BREAK_YOUTUBE_URL },
-
-      { label: 'L5',  type: 'level', minutes: '30', sb: '300',  bb: '600',  ante: '600' },
-      { label: 'L6',  type: 'level', minutes: '30', sb: '400',  bb: '800',  ante: '800' },
-      { label: 'L7',  type: 'level', minutes: '30', sb: '500',  bb: '1000', ante: '1000' },
-      { label: 'L8',  type: 'level', minutes: '30', sb: '600',  bb: '1200', ante: '1200' },
-      { label: 'B2',  type: 'break', minutes: '10', youtube: BREAK_YOUTUBE_URL },
-
-      { label: 'L9',  type: 'level', minutes: '30', sb: '1000', bb: '1500', ante: '1500' },
-      { label: 'L10', type: 'level', minutes: '30', sb: '1000', bb: '2000', ante: '2000' },
-      { label: 'L11', type: 'level', minutes: '30', sb: '1500', bb: '2500', ante: '2500' },
-      { label: 'L12', type: 'level', minutes: '30', sb: '1500', bb: '3000', ante: '3000' },
-      { label: 'B3',  type: 'break', minutes: '10', youtube: BREAK_YOUTUBE_URL },
-
-      { label: 'L13', type: 'level', minutes: '30', sb: '2000', bb: '4000', ante: '4000' },
-      { label: 'L14', type: 'level', minutes: '30', sb: '2500', bb: '5000', ante: '5000' },
-      { label: 'L15', type: 'level', minutes: '30', sb: '3000', bb: '6000', ante: '6000' }
-    ],
-
-    '40': [
-      { label: 'L1',  type: 'level', minutes: '40', sb: '100',  bb: '200',  ante: '200' },
-      { label: 'L2',  type: 'level', minutes: '40', sb: '200',  bb: '300',  ante: '300' },
-      { label: 'L3',  type: 'level', minutes: '40', sb: '200',  bb: '400',  ante: '400' },
-      { label: 'B1',  type: 'break', minutes: '10', youtube: BREAK_YOUTUBE_URL },
-
-      { label: 'L4',  type: 'level', minutes: '40', sb: '300',  bb: '500',  ante: '500' },
-      { label: 'L5',  type: 'level', minutes: '40', sb: '300',  bb: '600',  ante: '600' },
-      { label: 'L6',  type: 'level', minutes: '40', sb: '400',  bb: '800',  ante: '800' },
-      { label: 'B2',  type: 'break', minutes: '10', youtube: BREAK_YOUTUBE_URL },
-
-      { label: 'L7',  type: 'level', minutes: '40', sb: '500',  bb: '1000', ante: '1000' },
-      { label: 'L8',  type: 'level', minutes: '40', sb: '600',  bb: '1200', ante: '1200' },
-      { label: 'L9',  type: 'level', minutes: '40', sb: '1000', bb: '1500', ante: '1500' },
-      { label: 'B3',  type: 'break', minutes: '10', youtube: BREAK_YOUTUBE_URL },
-
-      { label: 'L10', type: 'level', minutes: '40', sb: '1000', bb: '2000', ante: '2000' },
-      { label: 'L11', type: 'level', minutes: '40', sb: '1500', bb: '2500', ante: '2500' },
-      { label: 'L12', type: 'level', minutes: '40', sb: '1500', bb: '3000', ante: '3000' },
-      { label: 'B4',  type: 'break', minutes: '10', youtube: BREAK_YOUTUBE_URL },
-
-      { label: 'L13', type: 'level', minutes: '40', sb: '2000', bb: '4000', ante: '4000' },
-      { label: 'L14', type: 'level', minutes: '40', sb: '2500', bb: '5000', ante: '5000' },
-      { label: 'L15', type: 'level', minutes: '40', sb: '3000', bb: '6000', ante: '6000' }
-    ]
+  const STRUCTURE_SETTINGS = {
+    '20': { breakAfterLevels: [6, 12], breakMinutes: '10' },
+    '25': { breakAfterLevels: [5, 10], breakMinutes: '10' },
+    '30': { breakAfterLevels: [4, 8, 12], breakMinutes: '10' },
+    '40': { breakAfterLevels: [3, 6, 9, 12], breakMinutes: '10' }
   };
+
+  function buildBlindRule(duration) {
+    const setting = STRUCTURE_SETTINGS[duration];
+    if (!setting) throw new Error(`未対応の Duration: ${duration}min`);
+
+    const breakAfter = new Set(setting.breakAfterLevels);
+    const rule = [];
+    let breakNo = 0;
+
+    BASE_BLIND_LEVELS.forEach((blind, index) => {
+      const levelNo = index + 1;
+      rule.push({
+        label: `L${levelNo}`,
+        type: 'level',
+        minutes: duration,
+        ...blind
+      });
+
+      if (breakAfter.has(levelNo)) {
+        breakNo += 1;
+        rule.push({
+          label: `B${breakNo}`,
+          type: 'break',
+          minutes: setting.breakMinutes
+        });
+      }
+    });
+
+    return rule;
+  }
+
+  const BLIND_RULES = Object.fromEntries(
+    Object.keys(STRUCTURE_SETTINGS).map(duration => [duration, buildBlindRule(duration)])
+  );
+
+  function getRuntimeBlindRule(duration, breakYoutubeUrl) {
+    const rule = BLIND_RULES[duration];
+    if (!rule) throw new Error(`找不到盲注规则：${duration}`);
+
+    return rule.map(spec => ({
+      ...spec,
+      youtube: spec.type === 'break' ? breakYoutubeUrl : undefined
+    }));
+  }
 
   // ============================================================
   // 工具函数
@@ -134,23 +117,177 @@
     return String(s || '').replace(/\s+/g, ' ').trim();
   }
 
+  function escapeHtml(s) {
+    return String(s ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function parseStoreDurationTsv(tsv) {
+    const lines = String(tsv || '')
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(Boolean);
+
+    if (lines.length < 2) {
+      throw new Error('店舗 Duration 表が空です。ヘッダーと1店舗以上を設定してください。');
+    }
+
+    const headers = lines[0].split('\t').map(normalizeText);
+    const storeIndex = headers.indexOf('店舗名');
+    const durationIndex = headers.indexOf('Duration');
+
+    if (storeIndex < 0 || durationIndex < 0) {
+      throw new Error('店舗 Duration 表のヘッダーは「店舗名<TAB>Duration」にしてください。');
+    }
+
+    const seenStores = new Set();
+
+    return lines.slice(1).map((line, index) => {
+      const cells = line.split('\t').map(normalizeText);
+      const store = cells[storeIndex] || '';
+      const durationText = cells[durationIndex] || '';
+      const durationMatch = durationText.match(/^(20|25|30|40)\s*(?:min)?$/i);
+      const rowNo = index + 2;
+
+      if (!store) {
+        throw new Error(`店舗 Duration 表 ${rowNo}行目：店舗名が空です。`);
+      }
+
+      if (!durationMatch) {
+        throw new Error(`店舗 Duration 表 ${rowNo}行目：Duration は 20min / 25min / 30min / 40min のいずれかにしてください。`);
+      }
+
+      if (seenStores.has(store)) {
+        throw new Error(`店舗 Duration 表 ${rowNo}行目：店舗名が重複しています（${store}）。`);
+      }
+
+      seenStores.add(store);
+
+      return {
+        store,
+        ruleKey: durationMatch[1]
+      };
+    });
+  }
+
+  function readSavedSettings() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) || 'null');
+      if (!saved || typeof saved !== 'object') return { ...DEFAULT_SETTINGS };
+
+      return {
+        tournamentName: String(saved.tournamentName || ''),
+        breakYoutubeUrl: String(saved.breakYoutubeUrl || ''),
+        storeDurationTsv: String(saved.storeDurationTsv || DEFAULT_SETTINGS.storeDurationTsv)
+      };
+    } catch (e) {
+      console.warn('[盲注设置成功版] 設定の読み込みに失敗。初期値を使用します。', e);
+      return { ...DEFAULT_SETTINGS };
+    }
+  }
+
+  function getPanelSettings() {
+    const tournamentNameEl = document.querySelector('#pw-blind-tournament-name');
+    const breakYoutubeUrlEl = document.querySelector('#pw-blind-break-url');
+    const storeDurationTsvEl = document.querySelector('#pw-blind-store-duration');
+
+    if (!tournamentNameEl || !breakYoutubeUrlEl || !storeDurationTsvEl) {
+      return readSavedSettings();
+    }
+
+    return {
+      tournamentName: tournamentNameEl.value,
+      breakYoutubeUrl: breakYoutubeUrlEl.value,
+      storeDurationTsv: storeDurationTsvEl.value
+    };
+  }
+
+  function validateRuntimeSettings(rawSettings) {
+    const tournamentName = normalizeText(rawSettings.tournamentName);
+    const breakYoutubeUrl = String(rawSettings.breakYoutubeUrl || '').trim();
+    const storeDurationTsv = String(rawSettings.storeDurationTsv || '').trim();
+
+    if (!tournamentName) {
+      throw new Error('总大会名が空です。実行前に必ず入力してください。');
+    }
+
+    if (breakYoutubeUrl) {
+      let parsedUrl;
+      try {
+        parsedUrl = new URL(breakYoutubeUrl);
+      } catch (_) {
+        throw new Error('Break Link が正しい URL ではありません。空欄、または http/https URL を入力してください。');
+      }
+
+      if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+        throw new Error('Break Link は空欄、または http/https URL にしてください。');
+      }
+    }
+
+    return {
+      tournamentName,
+      breakYoutubeUrl,
+      storeDurationTsv,
+      storeRules: parseStoreDurationTsv(storeDurationTsv)
+    };
+  }
+
+  function loadRuntimeSettings() {
+    return validateRuntimeSettings(getPanelSettings());
+  }
+
+  function savePanelSettings() {
+    try {
+      const settings = loadRuntimeSettings();
+      const saved = {
+        tournamentName: settings.tournamentName,
+        breakYoutubeUrl: settings.breakYoutubeUrl,
+        storeDurationTsv: settings.storeDurationTsv
+      };
+
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(saved));
+
+      document.querySelector('#pw-blind-tournament-name').value = saved.tournamentName;
+      document.querySelector('#pw-blind-break-url').value = saved.breakYoutubeUrl;
+      document.querySelector('#pw-blind-store-duration').value = saved.storeDurationTsv;
+
+      log(`設定を保存しました：${settings.tournamentName} / ${settings.storeRules.length}店舗`);
+    } catch (e) {
+      console.error('[盲注设置成功版] save settings error:', e);
+      warn(`設定保存失敗：${e.message || e}`);
+      alert(`設定保存失敗：${e.message || e}`);
+    }
+  }
+
   function getTournamentIdFromUrl() {
     const m = location.href.match(/\/painel\/(\d+)/);
     return m ? m[1] : '';
   }
 
   function isPainelPage() {
-    return /\/cb\/torneio\/painel\/\d+/.test(location.href);
+    return /\/torneio\/painel\/\d+/.test(location.href);
   }
 
   function getPageText() {
     return normalizeText(document.body.innerText || document.body.textContent || '');
   }
 
-  function detectStoreRule() {
+  function assertTournamentMatch(tournamentName) {
     const combined = `${normalizeText(document.title || '')} ${getPageText()}`;
 
-    for (const config of STORE_RULES) {
+    if (!combined.includes(tournamentName)) {
+      throw new Error(`总大会名不一致。页面中找不到：${tournamentName}`);
+    }
+  }
+
+  function detectStoreRule(storeRules) {
+    const combined = `${normalizeText(document.title || '')} ${getPageText()}`;
+
+    for (const config of storeRules) {
       if (combined.includes(config.store)) {
         return config;
       }
@@ -326,7 +463,7 @@
     };
   }
 
-  function printPreview(rows, summary, config) {
+  function printPreview(rows, summary, config, settings) {
     console.log(`[盲注设置成功版] ===== 当前页面行 =====`);
     console.table(rows.map((r, i) => ({
       row: i + 1,
@@ -377,7 +514,6 @@
 
     console.log('[盲注设置成功版] summary:', {
       store: config.store,
-      action: config.action,
       ruleKey: config.ruleKey,
       existingLevelCount: summary.existingLevelCount,
       existingBreakCount: summary.existingBreakCount,
@@ -385,7 +521,7 @@
       targetBreakCount: summary.targetBreakCount,
       newCount: summary.newCount,
       omitCount: summary.omitCount,
-      breakYoutube: BREAK_YOUTUBE_URL
+      breakLink: settings.breakYoutubeUrl
     });
   }
 
@@ -458,7 +594,7 @@
     params.set('id_torneio', idTorneio);
     params.set('_', String(Date.now()));
 
-    const url = `/cb/torneio/abas/blinds/ordenar_nivel?${params.toString()}`;
+    const url = `/torneio/abas/blinds/ordenar_nivel?${params.toString()}`;
 
     console.log('[盲注设置成功版] ordenar_nivel URL:', url);
 
@@ -484,7 +620,7 @@
     const actionFromForm = form.action || '';
     const action = actionFromForm.includes('/abas/blinds/niveis_editar')
       ? actionFromForm
-      : `/cb/torneio/abas/blinds/niveis_editar/${idTorneio}`;
+      : `/torneio/abas/blinds/niveis_editar/${idTorneio}`;
 
     const res = await fetch(action, {
       method: 'POST',
@@ -504,27 +640,16 @@
       throw new Error(`当前不是比赛详情页：${location.href}`);
     }
 
-    const config = detectStoreRule();
+    const settings = loadRuntimeSettings();
+    assertTournamentMatch(settings.tournamentName);
+
+    const config = detectStoreRule(settings.storeRules);
 
     if (!config) {
-      throw new Error('无法识别店名。当前支持 GoodGame Poker Live SHINJUKU / GoodGame Poker Live NAGOYA / イケブクロギルド');
+      throw new Error(`无法识别店名。当前配置：${settings.storeRules.map(x => x.store).join(' / ')}`);
     }
 
-    if (config.action === 'skip') {
-      return {
-        skipped: true,
-        config,
-        form: null,
-        rows: [],
-        summary: null
-      };
-    }
-
-    const rule = BLIND_RULES[config.ruleKey];
-
-    if (!rule) {
-      throw new Error(`找不到盲注规则：${config.ruleKey}`);
-    }
+    const rule = getRuntimeBlindRule(config.ruleKey, settings.breakYoutubeUrl);
 
     const form = findBlindForm();
 
@@ -535,10 +660,10 @@
     const rows = parseBlindRows(form);
     const summary = buildBackendPlan(rows, rule);
 
-    printPreview(rows, summary, config);
+    printPreview(rows, summary, config, settings);
 
     return {
-      skipped: false,
+      settings,
       config,
       form,
       rows,
@@ -549,12 +674,6 @@
   async function previewOnly() {
     try {
       const result = loadPlan();
-
-      if (result.skipped) {
-        log(`识别到 ${result.config.store} → ${result.config.ruleKey}分钟，设定为跳过`);
-        console.log('[盲注设置成功版] skipped:', result.config);
-        return;
-      }
 
       log(`预览完成：${result.config.store} → ${result.config.ruleKey}分钟 / 新增 ${result.summary.newCount} 行，省略 ${result.summary.omitCount} 行`);
 
@@ -568,19 +687,14 @@
     try {
       const result = loadPlan();
 
-      if (result.skipped) {
-        alert(`识别到 ${result.config.store}。\n这场是 ${result.config.ruleKey} 分钟结构，当前脚本设定为跳过，不提交。`);
-        log(`跳过：${result.config.store}`);
-        return;
-      }
-
       const { config, form, summary } = result;
 
       const ok = confirm(
         `确认后台直送盲注结构？\n\n` +
+        `总大会名：${result.settings.tournamentName}\n` +
         `店名：${config.store}\n` +
         `规则：${config.ruleKey}分钟\n` +
-        `Break YouTube：${BREAK_YOUTUBE_URL}\n` +
+        `Break Link：${result.settings.breakYoutubeUrl || '（空）'}\n` +
         `目标 Level：${summary.targetLevelCount}\n` +
         `目标 Break：${summary.targetBreakCount}\n` +
         `现有 Level：${summary.existingLevelCount}\n` +
@@ -631,6 +745,7 @@
 
   function addPanel() {
     if (document.querySelector('#pw-blind-success-panel')) return;
+    const initialSettings = readSavedSettings();
 
     const panel = document.createElement('div');
     panel.id = 'pw-blind-success-panel';
@@ -647,11 +762,49 @@
       box-shadow: 0 2px 12px rgba(0,0,0,.35);
       font-size: 13px;
       font-family: Arial, sans-serif;
-      width: 360px;
+      width: 430px;
+      max-width: calc(100vw - 32px);
+      max-height: calc(100vh - 32px);
+      overflow-y: auto;
+      box-sizing: border-box;
     `;
 
     panel.innerHTML = `
-      <div style="font-weight:bold;margin-bottom:8px;">盲注设置成功版</div>
+      <div style="font-weight:bold;margin-bottom:10px;">PW ブラインド設定</div>
+
+      <label for="pw-blind-tournament-name"
+        style="display:block;margin-bottom:4px;font-weight:bold;">
+        总大会名 <span style="color:#ff9f9f;">（必填）</span>
+      </label>
+      <input id="pw-blind-tournament-name" type="text" autocomplete="off"
+        value="${escapeHtml(initialSettings.tournamentName)}"
+        placeholder="例：【JOPT 2026 Tokyo #02】"
+        style="width:100%;box-sizing:border-box;margin-bottom:9px;padding:7px;">
+
+      <label for="pw-blind-break-url"
+        style="display:block;margin-bottom:4px;font-weight:bold;">
+        全大会统一 Break Link <span style="color:#bbb;">（可空）</span>
+      </label>
+      <input id="pw-blind-break-url" type="text" autocomplete="off"
+        value="${escapeHtml(initialSettings.breakYoutubeUrl)}"
+        placeholder="空欄可 / https://..."
+        style="width:100%;box-sizing:border-box;margin-bottom:9px;padding:7px;">
+
+      <label for="pw-blind-store-duration"
+        style="display:block;margin-bottom:4px;font-weight:bold;">
+        店舗名 / Duration（TSV）
+      </label>
+      <textarea id="pw-blind-store-duration" rows="5" spellcheck="false"
+        style="width:100%;box-sizing:border-box;margin-bottom:6px;padding:7px;resize:vertical;font-family:Consolas,monospace;font-size:12px;">${escapeHtml(initialSettings.storeDurationTsv)}</textarea>
+      <div style="margin-bottom:9px;font-size:11px;color:#bbb;line-height:1.35;">
+        表头：店舗名&lt;TAB&gt;Duration<br>
+        Duration：20min / 25min / 30min / 40min
+      </div>
+
+      <button id="pw-blind-save-settings"
+        style="width:100%;margin-bottom:9px;padding:7px;cursor:pointer;background:#b9e6c1;border:1px solid #719b78;">
+        設定を保存
+      </button>
 
       <button id="pw-blind-success-preview"
         style="width:100%;margin-bottom:6px;padding:6px;cursor:pointer;">
@@ -663,13 +816,10 @@
         APPLY Backend Direct
       </button>
 
-      <div style="margin-top:8px;font-size:11px;color:#ccc;line-height:1.35;">
-        SHINJUKU → 20分<br>
-        NAGOYA → 40分<br>
-        イケブクロギルド → skip<br>
-        Break YouTube:<br>
-        ${BREAK_YOUTUBE_URL}<br>
-        手动打开ブラインド页面后使用
+      <div style="margin-top:8px;font-size:11px;color:#ccc;line-height:1.4;">
+        四种 Blind 结构保存在脚本内部。<br>
+        每次大会前请对照正式规则表确认。<br>
+        手动打开ブラインド页面后再 Preview / Apply。
       </div>
 
       <div id="pw-blind-success-status"
@@ -680,6 +830,7 @@
 
     document.body.appendChild(panel);
 
+    document.querySelector('#pw-blind-save-settings').onclick = () => savePanelSettings();
     document.querySelector('#pw-blind-success-preview').onclick = () => previewOnly();
     document.querySelector('#pw-blind-success-apply').onclick = () => applyDirectBackend();
   }
@@ -691,9 +842,13 @@
       previewOnly,
       applyDirectBackend,
       loadPlan,
-      STORE_RULES,
+      loadRuntimeSettings,
+      readSavedSettings,
+      savePanelSettings,
+      parseStoreDurationTsv,
+      DEFAULT_SETTINGS,
       BLIND_RULES,
-      BREAK_YOUTUBE_URL
+      STRUCTURE_SETTINGS
     };
 
     log('ready');

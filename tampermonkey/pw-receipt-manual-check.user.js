@@ -1,12 +1,12 @@
 ﻿// ==UserScript==
 // @name         PW 領収書 Manual Check
 // @namespace    pw-receipt-manual-check
-// @version      1.6.18
+// @version      1.6.19
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js
 // @description  Manual receipt check. Per-application Game ID, keyword, and date-range TSV with strict URL Cache verification and payment TSV output.
 // @author       xhpc007 + ChatGPT
-// @match        https://japanopt.pokerweb.com.br/*
+// @match        https://japanopt.bt.pokerweb.com.br/*
 // @grant        GM_setClipboard
 // @run-at       document-idle
 // ==/UserScript==
@@ -197,11 +197,11 @@
   }
 
   function getTournamentUrl(tournamentId) {
-    return `/cb/torneio/painel/${tournamentId}`;
+    return `/torneio/painel/${tournamentId}`;
   }
 
   function extractTournamentIdFromUrl(url) {
-    const m = String(url || "").match(/\/cb\/torneio\/painel\/(\d+)/);
+    const m = String(url || "").match(/\/torneio\/painel\/(\d+)/);
     return m ? m[1] : "";
   }
 
@@ -604,7 +604,7 @@
   async function searchInternalId(gameId) {
     const searchGameId = rawToSearchGameId(gameId);
 
-    const html = await postForm("/cb/jogadores/search", {
+    const html = await postForm("/jogadores_cb/search", {
       query: gameId,
       identifier: "string"
     });
@@ -651,7 +651,7 @@
   }
 
   async function requestPlayerTournamentHtml(internalId, dateRange) {
-    const pageUrl = `/cb/jogadores/painel/${internalId}`;
+    const pageUrl = `/jogadores_cb/painel/${internalId}`;
 
     const getRes = await fetch(pageUrl, { method: "GET", credentials: "same-origin" });
     if (!getRes.ok) throw new Error(`player page GET HTTP ${getRes.status}`);
@@ -701,7 +701,7 @@
         const rowText = norm(tr.innerText || tr.textContent || "");
         const tournamentIds = new Set();
 
-        for (const m of String(tr.innerHTML || "").matchAll(/\/cb\/torneio\/painel\/(\d+)/g)) {
+        for (const m of String(tr.innerHTML || "").matchAll(/\/torneio\/painel\/(\d+)/g)) {
           tournamentIds.add(m[1]);
         }
 
@@ -845,7 +845,7 @@
   }
 
   function rowHasPanelLink(row) {
-    return String(row.innerHTML || "").includes("/cb/torneio/painel/");
+    return String(row.innerHTML || "").includes("/torneio/painel/");
   }
 
   function extractTournamentTitleFromRow(rowText) {
@@ -871,11 +871,11 @@
 
     const links = Array.from(row.querySelectorAll("a[href]"));
     const panelLink =
-      links.find(a => String(a.getAttribute("href") || "").includes("/cb/torneio/painel/")) ||
-      links.find(a => String(a.href || "").includes("/cb/torneio/painel/"));
+      links.find(a => String(a.getAttribute("href") || "").includes("/torneio/painel/")) ||
+      links.find(a => String(a.href || "").includes("/torneio/painel/"));
 
     const href = panelLink ? (panelLink.getAttribute("href") || panelLink.href) : rowHtml;
-    const m = String(href).match(/\/cb\/torneio\/painel\/(\d+)/);
+    const m = String(href).match(/\/torneio\/painel\/(\d+)/);
     if (!m) return null;
 
     return {
@@ -1099,7 +1099,7 @@
   function extractTournamentFromListRow(row) {
     const rowText = norm(row?.innerText || row?.textContent || "");
     const rowHtml = row?.innerHTML || "";
-    const m = String(rowHtml).match(/\/cb\/torneio\/painel\/(\d+)/);
+    const m = String(rowHtml).match(/\/torneio\/painel\/(\d+)/);
     if (!m) return null;
 
     return {
@@ -1330,7 +1330,7 @@
     const finalUrl = normalizeCacheUrl(id, value);
 
     if (!id || !finalUrl || extractTournamentIdFromUrl(finalUrl) !== id) {
-      alert("TournamentId / URL が不正です。例: 4773 または /cb/torneio/painel/4773");
+      alert("TournamentId / URL が不正です。例: 4773 または /torneio/painel/4773");
       return;
     }
 
@@ -1536,8 +1536,8 @@
     try {
       setStatus("OPEN / CLOSED大会一覧を開いています...");
       await Promise.all([
-        openTournamentListWindow("/cb/torneio/fechados", "closed").then(win => { closedWin = win; }),
-        openTournamentListWindow("/cb/torneio/abertos", "open").then(win => { openWin = win; })
+        openTournamentListWindow("/torneio/fechados", "closed").then(win => { closedWin = win; }),
+        openTournamentListWindow("/torneio/abertos", "open").then(win => { openWin = win; })
       ]);
 
       const targetGroups = new Map();
@@ -1651,11 +1651,11 @@
   }
 
   async function fetchRegistroInformacoes(tournamentId) {
-    return await postForm("/cb/torneio/abas/registros/informacoes", { id_torneio: String(tournamentId) });
+    return await postForm("/torneio/abas/registros/informacoes", { id_torneio: String(tournamentId) });
   }
 
   async function fetchDadosCaixa(idJogador, idTorneio) {
-    return await postForm("/cb/torneio/abas/caixa/dados_caixa", {
+    return await postForm("/torneio/abas/caixa/dados_caixa", {
       id_jogador: String(idJogador),
       id_torneio: String(idTorneio),
       premiacao_origem: "0"
@@ -1663,7 +1663,7 @@
   }
 
   async function fetchInformacoes(idVenda, idJogador, idTorneio) {
-    return await postForm("/cb/torneio/abas/caixa/informacoes", {
+    return await postForm("/torneio/abas/caixa/informacoes", {
       id_venda: String(idVenda),
       id_jogador: String(idJogador),
       id_torneio: String(idTorneio)
@@ -2555,7 +2555,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.6.17</div>
+      <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.6.19</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-manual-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-manual-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>
