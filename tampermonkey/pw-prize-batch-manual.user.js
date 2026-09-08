@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW Prize Plan 書込・確認
 // @namespace    https://japanopt.bt.pokerweb.com.br/
-// @version      2.0.3
+// @version      2.0.4
 // @description  大会Prize表からPLANを作成し、PokerWebへの書込または読取確認を行います。
 // @match        https://japanopt.bt.pokerweb.com.br/*
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-batch-manual.user.js
@@ -14,7 +14,7 @@
 
   const APP = {
     name: 'PW-PRIZE-PLAN',
-    version: '2.0.3',
+    version: '2.0.4',
     panelId: 'pw-prize-plan-panel',
     stateKey: 'PW_PRIZE_PLAN_STATE_V3',
     urlCacheKey: 'PW_SHARED_TOURNAMENT_URL_CACHE_V1',
@@ -1039,6 +1039,24 @@
     return { title: norm(title), rows: rows.sort((a, b) => a.rank - b.rank), total: rows.reduce((sum, r) => sum + r.amount, 0) };
   }
 
+  function readCurrentPotTotal(doc) {
+    const fields = [...doc.querySelectorAll('input,select,textarea')];
+    const field = fields.find(el => norm(el.getAttribute('name') || '').toLowerCase() === 'potmanual') ||
+      fields.find(el => norm(el.id || '').toLowerCase() === 'potmanual') ||
+      fields.find(el => /pot[_-]?manual/i.test(`${el.getAttribute('name') || ''} ${el.id || ''}`));
+
+    if (!field) return { found: false, raw: '', value: null };
+
+    const raw = String(field.value ?? field.getAttribute('value') ?? '').trim();
+    if (!raw) return { found: true, raw: '', value: null };
+
+    const negative = /^\s*-/.test(raw);
+    const digits = raw.replace(/\D/g, '');
+    if (!digits) return { found: true, raw, value: null };
+    const value = Number(`${negative ? '-' : ''}${digits}`);
+    return { found: true, raw, value: Number.isSafeInteger(value) ? value : null };
+  }
+
   async function fetchDoc(url) {
     const absolute = url.startsWith('http') ? url : new URL(url, location.origin).href;
     const res = await fetch(absolute, { credentials: 'include', cache: 'no-store' });
@@ -1079,10 +1097,29 @@
       try {
         const doc = await fetchDoc(item.url);
         const actual = readPrizeFromDoc(doc);
+        let actualPotTotal = readCurrentPotTotal(doc);
+        let potReadError = '';
+        if (!actualPotTotal.found && item.tournamentId) {
+          try {
+            const potDoc = await fetchDoc(APP.endpointPotTotal(item.tournamentId));
+            actualPotTotal = readCurrentPotTotal(potDoc);
+          } catch (e) {
+            potReadError = e.message || String(e);
+          }
+        }
         const diff = compareRows(item.rows, actual.rows);
-        const totalOk = Number(item.total || 0) === Number(actual.total || 0);
+        const totalOk = actualPotTotal.value != null && Number(item.total || 0) === actualPotTotal.value;
         item.checkStatus = !diff.length && totalOk ? 'OK' : '不一致';
-        if (diff.length || !totalOk) item.checkNote = [!totalOk ? `Total不一致 ${yen(actual.total)} != ${yen(item.total)}` : '', diff.slice(0, 3).join(' / ')].filter(Boolean).join(' / ');
+        const totalNote = totalOk
+          ? ''
+          : !actualPotTotal.found
+            ? `PokerWeb Total欄未検出${potReadError ? ` (${potReadError})` : ''}`
+            : !actualPotTotal.raw
+              ? `PokerWeb Total未入力 != ${yen(item.total)}`
+              : actualPotTotal.value == null
+                ? `PokerWeb Total解析不可: ${actualPotTotal.raw}`
+                : `PokerWeb Total不一致 ${yen(actualPotTotal.value)} != ${yen(item.total)}`;
+        if (diff.length || !totalOk) item.checkNote = [totalNote, diff.slice(0, 3).join(' / ')].filter(Boolean).join(' / ');
         else item.checkNote = 'Plan一致';
       } catch (e) {
         item.checkStatus = '未検出';
