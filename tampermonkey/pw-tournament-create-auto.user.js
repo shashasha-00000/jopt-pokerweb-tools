@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PW 大会作成 Auto
 // @namespace    pw-tournament-create-auto
-// @version      0.4.2
-// @description  API-first tournament create flow from fixed TSV with independent per-tournament workers.
+// @version      0.4.3
+// @description  API-first tournament create flow from fixed TSV with one sequential tournament worker.
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js
 // @author       xhpc007 + ChatGPT
@@ -23,7 +23,7 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t【SPADIE 
   };
 
   const SPEED = {
-    maxConcurrentTournaments: 10,
+    maxConcurrentTournaments: 1,
     afterCreateMs: 120,
     afterUsdtMs: 30,
     afterItemMs: 30,

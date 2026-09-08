@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW Ticket Link Semi Auto
 // @namespace    pw-ticket-link-semi-auto
-// @version      1.3.0
+// @version      1.3.1
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
 // @description  Ticketルール表から計画を作成し、確認済み大会へLinkした後にPokerWeb実状態を再取得してAudit TSVを出力する。
@@ -29,7 +29,7 @@
     auditPlanKey: "PW_TICKET_LINK_MANUAL_V10_AUDIT_PLAN_V1",
     auditResultKey: "PW_TICKET_LINK_MANUAL_V10_AUDIT_RESULT_V1",
 
-    maxConcurrentTournaments: 10,
+    maxConcurrentTournaments: 1,
     searchWaitTimeoutMs: 10000,
     searchPollMs: 350,
     afterSearchMs: 250,
@@ -128,13 +128,13 @@
   }
 
   function log(...args) {
-    console.log("[PW-TICKET-LINK-v1.3.0]", ...args);
+    console.log("[PW-TICKET-LINK-v1.3.1]", ...args);
     const el = document.querySelector("#pw-ticket-link-status");
     if (el) el.textContent = args.map(String).join(" ");
   }
 
   function warn(...args) {
-    console.warn("[PW-TICKET-LINK-v1.3.0]", ...args);
+    console.warn("[PW-TICKET-LINK-v1.3.1]", ...args);
     const el = document.querySelector("#pw-ticket-link-status");
     if (el) el.textContent = "⚠ " + args.map(String).join(" ");
   }
@@ -2951,7 +2951,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-      <div style="font-weight:bold;">PW Ticket Link Semi Auto v1.3.0</div>
+      <div style="font-weight:bold;">PW Ticket Link Semi Auto v1.3.1</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-ticket-link-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-ticket-link-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>
