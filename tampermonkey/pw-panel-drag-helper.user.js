@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW 共通パネル移動・最小化
 // @namespace    https://japanopt.bt.pokerweb.com.br/
-// @version      0.2.2
+// @version      0.2.3
 // @description  PokerWeb用Tampermonkeyツールの通常パネルをドラッグ移動し、選択中のパネルを最前面に表示します。
 // @match        https://japanopt.bt.pokerweb.com.br/*
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-panel-drag-helper.user.js
@@ -32,7 +32,15 @@
     'pw-blind-success-panel',
     'pw-close-audit-batch-panel',
     'pw-bg-poc-panel',
-    'pw-dc-v20-panel'
+    'pw-dc-v20-panel',
+    'pw-item-update-panel',
+    'pw-full-auto-v5-panel',
+    'pw-create-v11-panel',
+    'pw-batch-entry-panel',
+    'jopt-rcp-panel',
+    'pwgid-panel',
+    'pw-prize-delete-api-capture',
+    'pw-prize-coin-api-capture'
   ]);
   const attachedPanels = new WeakSet();
   const stackedPanels = new WeakSet();

@@ -1,10 +1,10 @@
 ﻿// ==UserScript==
 // @name         PW Ticket Link Semi Auto
 // @namespace    pw-ticket-link-semi-auto
-// @version      1.2.3
+// @version      1.3.0
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
-// @description  幅広Ticketルール表の無関係列を無視し、対応外大会はSKIP報告。確認済み大会だけを独立workerで逐次Ticket Linkし、tn_ optionのみPOST。
+// @description  Ticketルール表から計画を作成し、確認済み大会へLinkした後にPokerWeb実状態を再取得してAudit TSVを出力する。
 // @author       xhpc007 + ChatGPT
 // @match        https://japanopt.bt.pokerweb.com.br/*
 // @grant        GM_setClipboard
@@ -26,6 +26,8 @@
     candidateKey: "PW_TICKET_LINK_MANUAL_V10_CANDIDATES",
     reportKey: "PW_TICKET_LINK_MANUAL_V10_REPORT",
     flowKey: "PW_TICKET_LINK_MANUAL_V10_FLOW",
+    auditPlanKey: "PW_TICKET_LINK_MANUAL_V10_AUDIT_PLAN_V1",
+    auditResultKey: "PW_TICKET_LINK_MANUAL_V10_AUDIT_RESULT_V1",
 
     maxConcurrentTournaments: 10,
     searchWaitTimeoutMs: 10000,
@@ -126,13 +128,13 @@
   }
 
   function log(...args) {
-    console.log("[PW-TICKET-LINK-v1.2.3]", ...args);
+    console.log("[PW-TICKET-LINK-v1.3.0]", ...args);
     const el = document.querySelector("#pw-ticket-link-status");
     if (el) el.textContent = args.map(String).join(" ");
   }
 
   function warn(...args) {
-    console.warn("[PW-TICKET-LINK-v1.0]", ...args);
+    console.warn("[PW-TICKET-LINK-v1.3.0]", ...args);
     const el = document.querySelector("#pw-ticket-link-status");
     if (el) el.textContent = "⚠ " + args.map(String).join(" ");
   }
@@ -2283,6 +2285,187 @@
   }
 
   // ============================================================
+  // Ticket Link Audit
+  // ============================================================
+
+  const AUDIT_HEADERS = [
+    "大会名",
+    "Key",
+    "TournamentId",
+    "URL",
+    "予定Ticket数",
+    "確認Ticket数",
+    "予定Ticket一覧",
+    "確認Ticket一覧",
+    "Missing",
+    "ExistingExtra",
+    "判定",
+    "確認日時",
+    "Error"
+  ];
+
+  function cleanTicketAuditRowText(text) {
+    return norm(text)
+      .replace(/仮想通貨を使用した販売を許可する/g, "")
+      .replace(/\b(on|off)\b/gi, "")
+      .replace(/\s+/g, " ");
+  }
+
+  function extractActualLinkedTickets(doc) {
+    const boxes = [...doc.querySelectorAll('input[id^="imp_ticket_"][type="checkbox"]')];
+    if (!boxes.length) {
+      throw new Error("TICKET_AUDIT_CANNOT_READ: input[id^=imp_ticket_] が見つかりません");
+    }
+
+    const rows = [];
+    for (const box of boxes) {
+      const row = box.closest("tr") || box.parentElement?.parentElement || box.parentElement;
+      const rowText = cleanTicketAuditRowText(row?.innerText || row?.textContent || "");
+      const rowKey = compact(rowText);
+
+      if (
+        /^(en|re|te|ti|dr|0)$/.test(rowKey) ||
+        /^(enentry|reentry|teticketentry|titicketentry|drdrink|drink)$/.test(rowKey) ||
+        /ticketentry/i.test(rowText) ||
+        /配席|seat|seating/i.test(rowText) ||
+        (/\b(en|re|te|ti|dr)\b/i.test(rowText) && /\b(entry|drink)\b/i.test(rowText)) ||
+        !/JOPT|Voucher|Invitation|Invitaion|PASS|Ticket|チケット|券|招待/i.test(rowText)
+      ) {
+        continue;
+      }
+
+      if (box.checked) rows.push(rowText || box.id);
+    }
+    return uniqueArray(rows);
+  }
+
+  function ticketAuditTextMatches(expected, actual) {
+    const e = compactTicketText(stripNationalPrefix(expected));
+    const a = compactTicketText(stripNationalPrefix(actual));
+    if (!e || !a) return false;
+    return e === a || a.includes(e) || e.includes(a);
+  }
+
+  function compareTicketAudit(expected, actual) {
+    const missing = expected.filter(ticket => !actual.some(row => ticketAuditTextMatches(ticket, row)));
+    const extras = actual.filter(row => !expected.some(ticket => ticketAuditTextMatches(ticket, row)));
+    return {
+      missing,
+      extras,
+      matchedCount: expected.length - missing.length,
+      status: missing.length ? "MISSING" : (extras.length ? "OK_WITH_EXISTING_EXTRA" : "OK")
+    };
+  }
+
+  function auditPlanFromRows(rows) {
+    return {
+      version: 1,
+      savedAt: nowText(),
+      mode: getCurrentMode(),
+      rows: rows.map(row => ({
+        name: cleanTournamentName(row["大会名"]),
+        key: norm(row["Key"]),
+        tournamentId: norm(row["TournamentId"]),
+        url: norm(row["URL"]),
+        tickets: parseTicketListFromCandidate(row)
+      }))
+    };
+  }
+
+  function saveAuditPlan(rows) {
+    const plan = auditPlanFromRows(rows);
+    localStorage.setItem(CONFIG.auditPlanKey, JSON.stringify(plan));
+    return plan;
+  }
+
+  function loadAuditPlan() {
+    try {
+      const plan = JSON.parse(localStorage.getItem(CONFIG.auditPlanKey) || "null");
+      if (!plan || !Array.isArray(plan.rows)) return null;
+      return plan;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function setAuditResult(text) {
+    const box = document.querySelector("#pw-ticket-link-audit");
+    if (box) box.value = text;
+    localStorage.setItem(CONFIG.auditResultKey, text);
+  }
+
+  async function runTicketAuditPlan(plan, options = {}) {
+    if (!plan?.rows?.length) throw new Error("AUDIT_PLAN_EMPTY: 先にTicket Link実行計画を作成してください");
+    const auditRows = [];
+
+    for (let i = 0; i < plan.rows.length; i++) {
+      if (stopRequested) break;
+      const item = plan.rows[i];
+      log(`Ticket Audit ${i + 1}/${plan.rows.length}: ${item.name}`);
+      const result = {
+        "大会名": item.name,
+        "Key": item.key,
+        "TournamentId": item.tournamentId,
+        "URL": item.url,
+        "予定Ticket数": item.tickets.length,
+        "確認Ticket数": "",
+        "予定Ticket一覧": item.tickets.join(" | "),
+        "確認Ticket一覧": "",
+        "Missing": "",
+        "ExistingExtra": "",
+        "判定": "ERROR",
+        "確認日時": nowText(),
+        "Error": ""
+      };
+
+      try {
+        const doc = await fetchTicketLinkPage(item.url || getTournamentUrl(item.tournamentId));
+        verifyFetchedPageMatchesExpected(doc, item.name);
+        const actual = extractActualLinkedTickets(doc);
+        const compared = compareTicketAudit(item.tickets, actual);
+        result["確認Ticket数"] = compared.matchedCount;
+        result["確認Ticket一覧"] = actual.join(" | ");
+        result["Missing"] = compared.missing.join(" | ");
+        result["ExistingExtra"] = compared.extras.join(" | ");
+        result["判定"] = compared.status;
+      } catch (e) {
+        result["Error"] = e?.message || String(e);
+      }
+      auditRows.push(result);
+    }
+
+    const text = toTsv(auditRows, AUDIT_HEADERS);
+    setAuditResult(text);
+    const counts = auditRows.reduce((acc, row) => {
+      const key = row["判定"] || "ERROR";
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    appendReportLine(`[${nowText()}] TICKET_AUDIT_DONE plan_saved_at=${plan.savedAt || "-"} total=${auditRows.length} OK=${counts.OK || 0} OK_WITH_EXISTING_EXTRA=${counts.OK_WITH_EXISTING_EXTRA || 0} MISSING=${counts.MISSING || 0} ERROR=${counts.ERROR || 0}`);
+    if (!options.silentAlert) {
+      alert(`Ticket Link再確認完了\n\nOK: ${counts.OK || 0}\nEXTRA参考: ${counts.OK_WITH_EXISTING_EXTRA || 0}\nMISSING: ${counts.MISSING || 0}\nERROR: ${counts.ERROR || 0}`);
+    }
+    return { rows: auditRows, counts };
+  }
+
+  async function auditLastTicketPlan() {
+    if (running) return alert("処理中です");
+    const plan = loadAuditPlan();
+    if (!plan?.rows?.length) return alert("保存済みTicket Link実行計画がありません。先にLinkを実行してください。");
+    if (!confirm(`最後に実行した計画を読取専用で再確認します。\n\n保存日時: ${plan.savedAt || "-"}\n大会数: ${plan.rows.length}\nPOST: 0\n\n続行しますか？`)) return;
+    running = true;
+    stopRequested = false;
+    try {
+      await runTicketAuditPlan(plan);
+    } catch (e) {
+      alert("Ticket Audit ERROR: " + (e?.message || String(e)));
+    } finally {
+      running = false;
+      stopRequested = false;
+    }
+  }
+
+  // ============================================================
   // Execute Flow
   // ============================================================
 
@@ -2540,10 +2723,22 @@
         `RESULT ${context.index + 1}. status=${context.failed ? "ERROR" : context.skipped ? "SKIP" : context.stopped ? "STOPPED" : context.stage === "DONE" ? "OK" : "QUEUED"} worker=${context.workerId || "-"} id=${context.row["TournamentId"]} stage=${context.stage} tickets=${context.linkedTickets}/${context.tickets.length} task_elapsed_ms=${context.elapsedMs} task_elapsed=${formatDurationMs(context.elapsedMs)} ${context.row["大会名"]}${context.error ? ` error=${context.error}` : ""}`
       ));
 
+      let auditSummary = null;
+      if (!stopRequested) {
+        try {
+          appendReportLine(`[${nowText()}] TICKET_AUDIT_START POST=0`);
+          auditSummary = await runTicketAuditPlan(loadAuditPlan(), { silentAlert: true });
+        } catch (e) {
+          appendReportLine(`[${nowText()}] TICKET_AUDIT_FATAL ${e?.message || e}`);
+        }
+      }
+
       log(stopRequested ? "停止完了" : "全部完成");
       alert(stopRequested
         ? "Ticket Link停止完了。進行中だった処理の結果はReportを確認してください。"
-        : `Ticket Link 全部完成。\n\nOK: ${successful.length}\nSKIP: ${skipped.length}\nERROR: ${failed.length}\nReportを確認してください。`
+        : `Ticket Link 全部完成。\n\n実行OK: ${successful.length}\nSKIP: ${skipped.length}\n実行ERROR: ${failed.length}` +
+          (auditSummary ? `\n\nAudit OK: ${auditSummary.counts.OK || 0}\nAudit EXTRA参考: ${auditSummary.counts.OK_WITH_EXISTING_EXTRA || 0}\nAudit MISSING: ${auditSummary.counts.MISSING || 0}\nAudit ERROR: ${auditSummary.counts.ERROR || 0}` : "\n\nAuditを完了できませんでした。") +
+          "\n\nReportとAudit TSVを確認してください。"
       );
     } finally {
       clearFlowState();
@@ -2621,6 +2816,7 @@
     ].join("\n");
 
     setReportText(startReport);
+    saveAuditPlan(rows);
     runExecuteWorkers(rows, ticketTotal, maxConcurrency).catch(e => {
       console.error("[PW-TICKET-LINK] worker pool error", e);
       appendReportLine(`[${nowText()}] FATAL_ERROR ${e.message || e}`);
@@ -2656,6 +2852,13 @@
     alert("Reportをコピーしました。");
   }
 
+  function copyAuditResult() {
+    const text = document.querySelector("#pw-ticket-link-audit")?.value || localStorage.getItem(CONFIG.auditResultKey) || "";
+    if (!norm(text)) return alert("Audit TSVがありません。");
+    copyText(text);
+    alert("Ticket Audit TSVをコピーしました。");
+  }
+
   function copySharedCache() {
     const text = cacheToTsv();
     copyText(text);
@@ -2664,13 +2867,13 @@
 
   function clearInputs() {
     const ok = confirm(
-      "入力欄・Candidates・Reportをクリアしますか？\n\n" +
-      "保存済み入力内容も削除します。"
+      "入力欄・Candidates・Report・Auditをクリアしますか？\n\n" +
+      "保存済み入力内容と最後のAudit計画も削除します。"
     );
 
     if (!ok) return;
 
-    ["#pw-ticket-link-tournaments", "#pw-ticket-link-simple-tickets", "#pw-ticket-link-rules", "#pw-ticket-link-overrides", "#pw-ticket-link-force-url", "#pw-ticket-link-candidates", "#pw-ticket-link-report"].forEach(sel => {
+    ["#pw-ticket-link-tournaments", "#pw-ticket-link-simple-tickets", "#pw-ticket-link-rules", "#pw-ticket-link-overrides", "#pw-ticket-link-force-url", "#pw-ticket-link-candidates", "#pw-ticket-link-report", "#pw-ticket-link-audit"].forEach(sel => {
       const el = document.querySelector(sel);
       if (el) el.value = "";
     });
@@ -2682,6 +2885,8 @@
     localStorage.removeItem(CONFIG.forceUrlInputKey);
     localStorage.removeItem(CONFIG.candidateKey);
     localStorage.removeItem(CONFIG.reportKey);
+    localStorage.removeItem(CONFIG.auditPlanKey);
+    localStorage.removeItem(CONFIG.auditResultKey);
 
     log("入力欄をクリアしました");
   }
@@ -2720,6 +2925,7 @@
     const savedForceUrl = localStorage.getItem(CONFIG.forceUrlInputKey) || "";
     const savedCandidates = localStorage.getItem(CONFIG.candidateKey) || CANDIDATE_HEADERS.join("\t");
     const savedReport = localStorage.getItem(CONFIG.reportKey) || "";
+    const savedAudit = localStorage.getItem(CONFIG.auditResultKey) || "";
 
     const panel = document.createElement("div");
     panel.id = "pw-ticket-link-panel";
@@ -2745,7 +2951,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-      <div style="font-weight:bold;">PW Ticket Link Semi Auto v1.2.3</div>
+      <div style="font-weight:bold;">PW Ticket Link Semi Auto v1.3.0</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-ticket-link-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-ticket-link-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>
@@ -2820,6 +3026,7 @@ Satellite	s01"
 
         <div style="display:flex;gap:6px;margin-top:6px;">
           <button id="pw-ticket-link-stop" style="flex:1;padding:7px;cursor:pointer;background:#f3cccc;border:1px solid #c88;">Stop / Clear State</button>
+          <button id="pw-ticket-link-audit-last" style="flex:1;padding:7px;cursor:pointer;background:#d9ecff;border:1px solid #88a;">Ticket Link再確認（書込なし）</button>
           <button id="pw-ticket-link-copy-candidates" style="flex:1;padding:7px;cursor:pointer;background:#eee;border:1px solid #aaa;">Copy Candidates</button>
           <button id="pw-ticket-link-copy-cache" style="flex:1;padding:7px;cursor:pointer;background:#eee;border:1px solid #aaa;">Copy Shared URL Cache</button>
         </div>
@@ -2847,6 +3054,13 @@ Satellite	s01"
           <button id="pw-ticket-link-clear" style="flex:1;padding:7px;cursor:pointer;background:#eee;border:1px solid #aaa;">Clear Inputs</button>
         </div>
 
+        <div style="font-size:12px;font-weight:bold;margin-top:6px;">Ticket Audit TSV</div>
+        <div style="font-size:11px;color:#ccc;line-height:1.35;">予定Ticketの存在を再GETで確認。計画外の既存Linkは参考表示で、NGにはしません。</div>
+        <textarea id="pw-ticket-link-audit"
+          readonly
+          style="width:100%;height:145px;background:#111;color:#bff0c2;border:1px solid #555;padding:8px;font-family:Consolas,monospace;font-size:12px;"></textarea>
+        <button id="pw-ticket-link-copy-audit" style="width:100%;padding:7px;cursor:pointer;background:#eee;border:1px solid #aaa;margin-top:4px;">Copy Ticket Audit TSV</button>
+
         <div id="pw-ticket-link-status" style="font-size:11px;color:#9fe;line-height:1.35;white-space:pre-wrap;margin-top:6px;">ready</div>
       </div>
     `;
@@ -2860,6 +3074,7 @@ Satellite	s01"
     document.querySelector("#pw-ticket-link-force-url").value = savedForceUrl;
     document.querySelector("#pw-ticket-link-candidates").value = savedCandidates;
     document.querySelector("#pw-ticket-link-report").value = savedReport;
+    document.querySelector("#pw-ticket-link-audit").value = savedAudit;
 
     document.querySelectorAll('input[name="pw-ticket-link-mode"]').forEach(el => {
       el.onchange = () => updateModeUI();
@@ -2870,9 +3085,11 @@ Satellite	s01"
     document.querySelector("#pw-ticket-link-force-url-button").onclick = () => forceSetTournamentUrls();
     document.querySelector("#pw-ticket-link-execute").onclick = () => startExecuteLink();
     document.querySelector("#pw-ticket-link-stop").onclick = () => stopRun();
+    document.querySelector("#pw-ticket-link-audit-last").onclick = () => auditLastTicketPlan();
     document.querySelector("#pw-ticket-link-copy-candidates").onclick = () => copyCandidates();
     document.querySelector("#pw-ticket-link-copy-cache").onclick = () => copySharedCache();
     document.querySelector("#pw-ticket-link-copy-report").onclick = () => copyReport();
+    document.querySelector("#pw-ticket-link-copy-audit").onclick = () => copyAuditResult();
     document.querySelector("#pw-ticket-link-clear").onclick = () => clearInputs();
 
     document.querySelector("#pw-ticket-link-minimize").onclick = () => {
@@ -2902,6 +3119,7 @@ Satellite	s01"
       resolveUrlForCandidates,
       forceSetTournamentUrls,
       startExecuteLink,
+      auditLastTicketPlan,
       stopRun,
       loadSharedCache,
       saveSharedCache,

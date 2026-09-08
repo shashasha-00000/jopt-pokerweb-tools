@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW 大会作成 Auto
 // @namespace    pw-tournament-create-auto
-// @version      0.4.1
+// @version      0.4.2
 // @description  API-first tournament create flow from fixed TSV with independent per-tournament workers.
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js
@@ -650,6 +650,7 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t【SPADIE 
       contexts.forEach(result => log(
         `RESULT ${result.index + 1}. status=${result.failed ? "ERROR" : "OK"} worker=${result.workerId} row=${result.t.rowNo} id=${result.id || ""} stage=${result.stage} tickets=${result.linkedTickets}/${result.t.tickets.length} ${result.t.name}${result.error ? ` error=${result.error}` : ""}`
       ));
+      alert(`CREATE finished.\n\nTotal: ${contexts.length}\nOK: ${successful.length}\nFailed: ${failed.length}`);
     } finally {
       running = false;
       if (runButton && runButton.isConnected) runButton.disabled = false;

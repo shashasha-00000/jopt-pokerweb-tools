@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW Prize Plan 書込・確認
 // @namespace    https://japanopt.bt.pokerweb.com.br/
-// @version      2.0.2
+// @version      2.0.3
 // @description  大会Prize表からPLANを作成し、PokerWebへの書込または読取確認を行います。
 // @match        https://japanopt.bt.pokerweb.com.br/*
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-batch-manual.user.js
@@ -14,8 +14,9 @@
 
   const APP = {
     name: 'PW-PRIZE-PLAN',
+    version: '2.0.3',
     panelId: 'pw-prize-plan-panel',
-    stateKey: 'PW_PRIZE_PLAN_STATE_V2',
+    stateKey: 'PW_PRIZE_PLAN_STATE_V3',
     urlCacheKey: 'PW_SHARED_TOURNAMENT_URL_CACHE_V1',
     endpointPrizeList: '/torneio/abas/premiacao/faixas_premiacoes',
     endpointPotTotal: id => `/torneio/abas/premiacao/pot_total/${encodeURIComponent(id)}`,
@@ -42,6 +43,7 @@
   function compact(value) {
     return norm(value)
       .replace(/[\/／\-‐‑‒–—―]/g, '')
+      .replace(/[【】\[\]（）()「」『』]/g, '')
       .replace(/\s+/g, '')
       .replace(/監査(?:済み|待ち)/g, '')
       .toLowerCase();
@@ -157,10 +159,24 @@
     const alias = aliasKey(title);
     if (alias) return alias;
     return compact(stripVersion(title)
-      .replace(/^[#＃]\s*\d{1,3}\s+/, '')
+      .replace(/^[#＃]\s*\d{1,3}[A-Z]?\s+/i, '')
+      .replace(/^(?:[（(]\s*)?S\s*\d{1,3}(?:\s*[）)])?\s+/i, '')
       .replace(/1\s*人分/g, '')
       .replace(/\b(player|team|nlh|plo|fl|hold'?em|sponsored|by)\b/gi, ' ')
       .replace(/\bPPC\b/gi, 'Poker Players Championship'));
+  }
+
+  function runFamilyKey(title) {
+    const text = norm(stripVersion(title))
+      .replace(/^【[^】]+】\s*/, '')
+      .replace(/^[#＃]\s*\d{1,3}[A-Z]?\s+/i, '')
+      .replace(/^(?:[（(]\s*)?S\s*\d{1,3}(?:\s*[）)])?\s+/i, '')
+      .trim();
+    const family = text
+      .replace(/(?:\s+(?:I{1,3}|IV|V|VI{0,3}|IX|X|\d{1,2})|\s*[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳])\s*$/i, '')
+      .trim();
+    if (!family || family === text) return '';
+    return baseKey(family);
   }
 
   function aliasKey(title) {
@@ -172,12 +188,20 @@
 
   function tournamentNoFromName(name) {
     const text = norm(name).replace(/^【[^】]+】\s*/, '');
-    const m = text.match(/^[#＃]\s*0*(\d{1,3})(?:\b|\s)/);
+    const m = text.match(/^[#＃]\s*0*(\d{1,3})(?:[A-Z])?(?=\s|\b|$)/i);
     return m ? String(Number(m[1])) : '';
   }
 
+  function tournamentCodeFromName(name) {
+    const text = norm(name).replace(/^【[^】]+】\s*/, '');
+    const numbered = text.match(/^[#＃]\s*0*(\d{1,3})([A-Z])?(?=\s|\b|$)/i);
+    if (numbered) return `${Number(numbered[1])}${String(numbered[2] || '').toUpperCase()}`;
+    const satellite = text.match(/^(?:[（(]\s*)?S\s*0*(\d{1,3})(?:\s*[）)])?(?=\s|\b|$)/i);
+    return satellite ? `S${Number(satellite[1])}` : '';
+  }
+
   function prizeGroupKey(title) {
-    const no = tournamentNoFromName(title);
+    const no = tournamentCodeFromName(title) || tournamentNoFromName(title);
     const key = baseKey(title);
     return no ? `no:${no}:${key}` : `name:${key}`;
   }
@@ -186,13 +210,12 @@
     if (!inputKey || !pwKey) return false;
     if (inputKey === pwKey) return true;
     if (inputKey === 'pokerplayerschampionship' || /\bPPC\b/i.test(norm(inputName))) {
-      return pwKey.includes('pokerplayerschampionship');
+      return pwKey === 'pokerplayerschampionship';
     }
     if (inputKey === '10gamemixchampionship' || /^10\s*-\s*Game\s*CS\b/i.test(norm(inputName))) {
-      return pwKey.includes('10gamemixchampionship');
+      return pwKey === '10gamemixchampionship';
     }
-    if (inputKey.length < 5 || pwKey.length < 5) return false;
-    return pwKey.includes(inputKey);
+    return false;
   }
 
   function dayNumber(name) {
@@ -546,8 +569,9 @@
       tournamentId: match[1],
       url: `/torneio/painel/${match[1]}`,
       actualName,
-      name: afterPrefix.replace(/^[#＃]\s*0*\d+\s*/, '').trim(),
+      name: afterPrefix.replace(/^[#＃]\s*0*\d+[A-Z]?\s*/i, '').trim(),
       no,
+      code: tournamentCodeFromName(afterPrefix),
       noDisplay: no ? String(Number(no)).padStart(2, '0') : '',
       day: dayNumber(actualName),
       matchedRow: rowText
@@ -595,27 +619,34 @@
     const wins = [];
     try {
       for (const page of APP.listPages) {
-        setStatus(`${page.label} URLスキャン中...`);
-        const win = await openListWindow(page);
-        wins.push(win);
-        const dt = await searchTable(win, prefix);
-        const info = dt?.page?.info?.();
-        const pages = info?.pages || 1;
-        for (let p = 0; p < pages; p++) {
-          await goTablePage(win, dt, p);
-          const rows = rowsForRead(win, true);
-          for (const row of rows) {
-            const entry = extractTournament(row);
-            if (!entry) continue;
-            const hay = `${entry.actualName} ${entry.matchedRow || ''}`;
-            if (!hay.includes(prefix) && !compact(hay).includes(compact(prefix))) continue;
-            if (seen.has(entry.url)) continue;
-            seen.add(entry.url);
-            entry.sourceLabel = page.label;
-            entry.pageNo = p + 1;
-            found.push(entry);
-            cacheUrl(entry, `prize-plan-${page.label}-p${p + 1}`);
+        try {
+          setStatus(`${page.label} URLスキャン中...`);
+          const win = await openListWindow(page);
+          wins.push(win);
+          const searchPrefix = norm(norm(prefix).replace(/[【】\[\]]/g, ' '));
+          const dt = await searchTable(win, searchPrefix || prefix);
+          const info = dt?.page?.info?.();
+          const pages = info?.pages || 1;
+          for (let p = 0; p < pages; p++) {
+            await goTablePage(win, dt, p);
+            const rows = rowsForRead(win, true);
+            for (const row of rows) {
+              const entry = extractTournament(row);
+              if (!entry) continue;
+              const hay = `${entry.actualName} ${entry.matchedRow || ''}`;
+              if (!hay.includes(prefix) && !compact(hay).includes(compact(prefix))) continue;
+              if (seen.has(entry.url)) continue;
+              seen.add(entry.url);
+              entry.sourceLabel = page.label;
+              entry.pageNo = p + 1;
+              found.push(entry);
+              cacheUrl(entry, `prize-plan-${page.label}-p${p + 1}`);
+            }
           }
+          debug('URL_SCAN_OK', { page: page.label, totalFound: found.length });
+        } catch (e) {
+          debug('URL_SCAN_FAILED', { page: page.label, error: e?.message || String(e) });
+          setStatus(`${page.label} URLスキャン失敗。次の一覧を続行します...`);
         }
       }
     } finally {
@@ -645,19 +676,52 @@
 
   function matchTournament(group, entries) {
     const no = tournamentNoFromName(group.inputName);
+    const code = tournamentCodeFromName(group.inputName);
+    const inputKey = baseKey(group.inputName);
+    const familyKey = !code ? runFamilyKey(group.inputName) : '';
     let candidates = [];
-    if (no) {
-      candidates = entries.filter(e => String(Number(e.no || 0)) === String(Number(no)) && !isDayOne(e.actualName));
+    if (code) {
+      const hasSpecificSuffix = /[A-Z]$/i.test(code) || /^S/i.test(code);
+      candidates = entries.filter(e => {
+        const entryCode = e.code || tournamentCodeFromName(e.actualName);
+        if (hasSpecificSuffix) return entryCode === code;
+        return String(Number(e.no || 0)) === String(Number(no));
+      });
+    } else if (no) {
+      candidates = entries.filter(e => String(Number(e.no || 0)) === String(Number(no)));
+    } else if (familyKey) {
+      candidates = entries.filter(e => {
+        const entryFamilyKey = runFamilyKey(e.name);
+        const entryKey = baseKey(e.name);
+        return entryFamilyKey === familyKey || entryKey === familyKey;
+      });
     } else {
-      const key = baseKey(group.inputName);
-      candidates = entries.filter(e => !isDayOne(e.actualName) && strictNameMatch(key, baseKey(e.name), group.inputName));
+      candidates = entries.filter(e => strictNameMatch(inputKey, baseKey(e.name), group.inputName));
     }
     if (/main|millions/i.test(group.inputName)) {
-      const maxDay = Math.max(0, ...candidates.map(c => c.day || 0).filter(d => d > 1));
-      if (maxDay) candidates = candidates.filter(c => c.day === maxDay);
+      const day2Plus = candidates.filter(c => (c.day || 0) > 1);
+      const maxDay = Math.max(0, ...day2Plus.map(c => c.day || 0));
+      candidates = maxDay ? day2Plus.filter(c => c.day === maxDay) : candidates.filter(c => !isDayOne(c.actualName));
     }
-    if (candidates.length === 1) return { entry: candidates[0], needsConfirm: false, candidates };
-    return { entry: null, needsConfirm: true, candidates };
+    const fallbackCandidates = (() => {
+      if (candidates.length) return candidates;
+      if (no) return entries.filter(e => String(Number(e.no || 0)) === String(Number(no)));
+      const fuzzy = entries.filter(e => {
+        const pwKey = baseKey(e.name);
+        return inputKey && pwKey && (pwKey.includes(inputKey) || inputKey.includes(pwKey));
+      });
+      return fuzzy.length ? fuzzy : entries.slice(0, 80);
+    })();
+    const unique = candidates.length === 1 ? candidates[0] : null;
+    const safeAuto = unique && unique.sourceLabel !== 'CACHE' && !isDayOne(unique.actualName);
+    return {
+      entry: safeAuto ? unique : null,
+      needsConfirm: !safeAuto,
+      candidates,
+      displayCandidates: fallbackCandidates,
+      cacheOnly: !!unique && unique.sourceLabel === 'CACHE',
+      dayOneOnly: !!unique && isDayOne(unique.actualName)
+    };
   }
 
   function tournamentIdFromInput(value) {
@@ -705,7 +769,7 @@
       const inputNo = tournamentNoFromName(group.inputName);
       const inputKey = baseKey(group.inputName);
       const matches = matchTournament(group, urlEntries || []);
-      const candidates = matches.candidates?.length ? matches.candidates : (urlEntries || []).slice(0, 80);
+      const candidates = matches.displayCandidates?.length ? matches.displayCandidates : (urlEntries || []).slice(0, 80);
       for (const entry of candidates) {
         const noOk = inputNo ? String(Number(entry.no || 0)) === String(Number(inputNo)) : '';
         const pwKey = baseKey(entry.name);
@@ -727,7 +791,7 @@
           selected ? '採用' : '候補'
         ]);
       }
-      if (!matches.candidates?.length) {
+      if (!matches.displayCandidates?.length) {
         rows.push([group.inputName, inputNo, inputKey, '', '', '', inputNo ? '同番号なし' : '候補なし', '未検出']);
       }
     }
@@ -855,7 +919,11 @@
         total = expanded.total;
         if (expanded.note) notes.push(expanded.note);
       }
-      if (tChoice.needsConfirm) notes.push(tChoice.candidates.length ? 'PokerWeb候補複数' : 'URL未検出');
+      if (tChoice.needsConfirm) {
+        if (tChoice.cacheOnly) notes.push('CACHE候補・実画面未確認');
+        else if (tChoice.dayOneOnly) notes.push('Day1候補・人工確認必要');
+        else notes.push(tChoice.displayCandidates.length ? 'PokerWeb候補要確認' : 'URL未検出');
+      }
       const item = {
         id: group.id,
         stage: 'PLAN',
@@ -863,7 +931,7 @@
         tournamentName: tChoice.entry?.actualName || '',
         tournamentId: tChoice.entry?.tournamentId || '',
         url: tChoice.entry?.url || '',
-        urlCandidates: tChoice.candidates,
+        urlCandidates: tChoice.displayCandidates,
         urlConfirmRequired: tChoice.needsConfirm,
         prizeSource: variant?.sourceTitle || '',
         status: variant ? statusLabel(variant.status, variant.statusRaw) : '',
@@ -884,6 +952,17 @@
       items.push(item);
     }
     return { prefix, items, urlEntries, createdAt: nowText() };
+  }
+
+  function addPlanMatrixCandidates(plan, entries, prefix = '') {
+    for (const item of plan?.items || []) {
+      if (item.tournamentId) continue;
+      const choice = matchTournament({ inputName: item.tournamentName || item.inputName }, entries);
+      item.urlCandidates = prefix ? choice.displayCandidates : choice.candidates;
+      item.planNote = [item.planNote, item.urlCandidates.length ? '大会ID候補あり' : '大会ID候補なし'].filter(Boolean).join(' / ');
+    }
+    plan.urlEntries = entries;
+    return plan;
   }
 
   function planReady(plan) {
@@ -1290,8 +1369,8 @@
         <div class="pwpp-title">${escapeHtml(item.inputName)} ${item.manual ? '<span class="warn">人工修正</span>' : ''}</div>
         <label>PokerWeb大会</label>
         <select data-action="url" data-id="${escapeHtml(item.id)}">
-          <option value="">候補なし</option>
-          ${urlCandidates.map(c => `<option value="${escapeHtml(c.tournamentId)}" ${String(c.tournamentId) === String(item.tournamentId) ? 'selected' : ''}>${escapeHtml(c.actualName)} / ${c.tournamentId}</option>`).join('')}
+          <option value="">${urlCandidates.length ? `候補を選択してください（${urlCandidates.length}件）` : '候補なし'}</option>
+          ${urlCandidates.map(c => `<option value="${escapeHtml(c.tournamentId)}" ${String(c.tournamentId) === String(item.tournamentId) ? 'selected' : ''}>${escapeHtml(c.actualName)} / ${c.tournamentId}${c.sourceLabel ? ` / ${escapeHtml(c.sourceLabel)}` : ''}</option>`).join('')}
         </select>
         ${showManualUrl ? `<div style="display:flex;gap:6px;margin-top:6px;">
           <input data-manual-url="${escapeHtml(item.id)}" placeholder="PokerWeb ID または URL" value="">
@@ -1389,6 +1468,11 @@
       const raw = document.querySelector('#pwPrizeRaw')?.value || '';
       const planMatrix = parsePlanMatrix(raw);
       if (planMatrix) {
+        const missingIds = planMatrix.items.filter(item => !item.tournamentId);
+        if (missingIds.length) {
+          const entries = prefix ? await scanEventUrls(prefix) : [];
+          addPlanMatrixCandidates(planMatrix, entries, prefix);
+        }
         saveState({ plan: planMatrix, debugPrizeGroups: [] });
         renderPlan(planMatrix);
         const text = matrixLog(planMatrix, 'PLAN');
@@ -1441,7 +1525,7 @@
     panel.id = APP.panelId;
     panel.innerHTML = `
       <div class="head">
-        <strong>PW Prize Plan 書込・確認</strong>
+        <strong>PW Prize Plan 書込・確認 v${escapeHtml(APP.version)}</strong>
         <button id="pwPrizeMin" style="background:#374151;color:white;">Min</button>
       </div>
       <div class="body">

@@ -1,10 +1,10 @@
 // ==UserScript==
-// @name         PW 大会 Double Check
+// @name         PW Tournament DC 表照合
 // @namespace    pw-tournament-double-check
-// @version      2.0.7
-// @description  3つの入力（大会名 / Portal Tournament / 受付Portal Ticket Link）から、Start・EN・RE・TE・Chips・Ticket Link・Settings・USDTを一括DC
+// @version      3.0.0
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-double-check.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-double-check.user.js
+// @description  大会管理表を基準にPokerWeb OPEN大会の名称・開始時刻・Chips・Fee・上限・Settingsを読取専用で照合し、TSVを出力する。
 // @author       xhpc007 + ChatGPT
 // @match        https://japanopt.bt.pokerweb.com.br/*
 // @grant        GM_setClipboard
@@ -14,35 +14,38 @@
 (function () {
   "use strict";
 
-  const CONFIG = {
-    storagePrefix: "PW_DC_V20_",
-    popupBaseName: "PW_DC_V20_POPUP",
-    sharedUrlCacheKey: "PW_SHARED_TOURNAMENT_URL_CACHE_V1",
-    pageTimeoutMs: 30000,
+  const APP = {
+    version: "3.0.0",
+    openListPath: "/torneio/abertos",
+    pageLength: 100,
+    waitMs: 25000,
     pollMs: 300,
-    betweenPagesMs: 350,
-    fetchPageMode: true,
-    closePopupAfterEach: true,
-
-    // 受付PortalのTicket Link表で、1はリンク済み、空白は未リンク。
-    trueValues: new Set(["1", "true", "yes", "はい", "○", "on"]),
-
-    // USDTは全大会ONを正解とする。
-    expectedUsdt: true,
-
-    // 1 Ticket の固定価値
-    ticketUnitValue: 10000,
-
-    // 深夜扱い：Portalの運用日から翌日にする時刻
-    nextDayBeforeHour: 6
+    betweenPagesMs: 180,
+    nextDayBeforeHour: 6,
+    storagePrefix: "PW_TOURNAMENT_DC_TABLE_V3_",
+    sharedUrlCacheKey: "PW_SHARED_TOURNAMENT_URL_CACHE_V1"
   };
 
-  const GENERAL_SETTING_CHECKS = [
+  const SETTINGS = [
     { key: "Sale_Ticket_View", campo: "config_imprimirutilizados", expected: true, label: "販売チケットを見る" },
     { key: "Ticket_Print_Direct", campo: "config_imprimirdireto", expected: true, label: "チケット印刷" },
     { key: "Default_No_Seat", campo: "config_sentarjog", expected: false, label: "配置しない default" },
     { key: "Ticket_Image_Rights", campo: "ticket_direitoimg", expected: true, label: "画像の権利 statement" },
     { key: "USDT", campo: "vendas_moeda_virtual", expected: true, label: "USDT" }
+  ];
+
+  const OUTPUT_HEADERS = [
+    "Overall", "表行", "Match", "Candidates", "TournamentId", "URL",
+    "表_大会名", "PW_大会名", "大会名_Check",
+    "表_赛事日", "表_Start", "換算後_期待Start", "PW_Start", "Start_Check",
+    "表_Chips", "期待_Chips", "PW_Chips", "Chips_Check",
+    "表_Entry", "PW_Entry", "Entry_Check",
+    "表_ReEntry", "PW_ReEntry", "ReEntry_Check",
+    "表_Entry上限", "PW_Entry上限", "Entry上限_Check",
+    "表_ReEntry上限", "PW_ReEntry上限", "ReEntry上限_Check",
+    "Settings_Check",
+    "Sale_Ticket_View", "Ticket_Print_Direct", "Default_No_Seat", "Ticket_Image_Rights", "USDT",
+    "Source_Check", "Notes", "Error", "CheckedAt"
   ];
 
   let running = false;
@@ -53,1651 +56,766 @@
   function norm(value) {
     return String(value ?? "")
       .replace(/\u3000/g, " ")
-      .replace(/\s+/g, " ")
+      .replace(/\u00a0/g, " ")
+      .replace(/[ \t\r\n]+/g, " ")
       .trim();
   }
 
-  function compact(value) {
+  function canonical(value) {
     return norm(value)
-      .toLowerCase()
-      .replace(/[【】［］\[\]()（）]/g, "")
-      .replace(/[・･]/g, "")
-      .replace(/\s+/g, "");
+      .normalize("NFKC")
+      .replace(/[＃]/g, "#")
+      .replace(/[／]/g, "/")
+      .replace(/\s+/g, "")
+      .toLowerCase();
   }
 
-  function esc(value) {
-    return String(value ?? "")
-      .replace(/\t/g, " ")
-      .replace(/\r?\n/g, " ")
-      .trim();
+  function cleanTournamentName(value) {
+    return norm(value)
+      .replace(/\s*-\s*PokerWeb\s*$/i, "")
+      .replace(/\s*監査(?:済み|待ち)\s*$/g, "");
   }
 
-  function moneyToNumber(value) {
-    const s = String(value ?? "")
-      .replace(/[￥¥,\s]/g, "")
-      .replace(/[^\d+\-.]/g, "");
-
-    if (!s || s === "-" || s === "+") return null;
-
-    // "9000+1000" のような形式にも対応
-    if (/^-?\d+(?:\.\d+)?(?:[+-]\d+(?:\.\d+)?)+$/.test(s)) {
-      const nums = s.match(/[+-]?\d+(?:\.\d+)?/g) || [];
-      const total = nums.reduce((sum, n) => sum + Number(n), 0);
-      return Number.isFinite(total) ? total : null;
-    }
-
-    const n = Number(s);
-    return Number.isFinite(n) ? n : null;
+  function nowText() {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Tokyo",
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      hourCycle: "h23"
+    }).formatToParts(new Date());
+    const v = Object.fromEntries(parts.map(part => [part.type, part.value]));
+    return `${v.year}-${v.month}-${v.day} ${v.hour}:${v.minute}:${v.second}`;
   }
 
-  function parseMoneyExpression(value) {
-    const raw = norm(value);
-    if (!raw || raw === "-" || raw === "Invitation") {
-      return { raw, value: null, isSimple: false };
-    }
-
-    // 20,000*3 は1人あたり20,000として比較候補を保持
-    const multi = raw.match(/([\d,]+)\s*[×x*]\s*(\d+)/i);
-    if (multi) {
-      return {
-        raw,
-        value: Number(multi[1].replace(/,/g, "")),
-        multiplier: Number(multi[2]),
-        total: Number(multi[1].replace(/,/g, "")) * Number(multi[2]),
-        isSimple: false
-      };
-    }
-
-    return {
-      raw,
-      value: moneyToNumber(raw),
-      multiplier: 1,
-      total: moneyToNumber(raw),
-      isSimple: true
-    };
-  }
-
-  function toTsv(rows, headers) {
-    return [
-      headers.join("\t"),
-      ...rows.map(row => headers.map(h => esc(row[h])).join("\t"))
-    ].join("\n");
+  function setStatus(text) {
+    const el = document.querySelector("#pw-dc-v3-status");
+    if (el) el.textContent = text;
+    console.log("[PW-TOURNAMENT-DC-v3]", text);
   }
 
   function copyText(text) {
     try {
       if (typeof GM_setClipboard === "function") {
         GM_setClipboard(text);
-        return true;
+        return;
       }
     } catch (_) {}
-
-    try {
-      navigator.clipboard.writeText(text);
-      return true;
-    } catch (_) {}
-
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand("copy");
-    ta.remove();
-    return true;
-  }
-
-  function log(message) {
-    console.log("[PW-DC-V20]", message);
-    const el = document.querySelector("#pw-dc-v20-status");
-    if (el) el.textContent = message;
-  }
-
-  function cleanTournamentName(name) {
-    return norm(name)
-      .replace(/\s*-\s*PokerWeb\s*$/i, "")
-      .replace(/\s*監査(?:済み|待ち)\s*$/g, "")
-      .trim();
-  }
-
-  function getTournamentUrl(tournamentId) {
-    return `/torneio/painel/${String(tournamentId || "").trim()}`;
-  }
-
-  function extractTournamentIdFromUrl(url) {
-    const m = String(url || "").match(/\/torneio\/painel\/(\d+)/);
-    return m ? m[1] : "";
-  }
-
-  function normalizeCacheUrl(id, url) {
-    const urlId = extractTournamentIdFromUrl(url);
-    const finalId = String(id || urlId || "").trim();
-    return finalId ? getTournamentUrl(finalId) : "";
-  }
-
-  function loadSharedUrlCache() {
-    try {
-      const manager = window.PWUrlCacheManagerV06 || window.PWUrlCacheManagerV05;
-      if (manager && typeof manager.loadCache === "function") {
-        return manager.loadCache();
-      }
-
-      const raw = localStorage.getItem(CONFIG.sharedUrlCacheKey);
-      if (!raw) return {};
-
-      const parsed = JSON.parse(raw);
-      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
-    } catch (e) {
-      console.warn("[PW-DC-V20] shared URL cache parse failed", e);
-      return {};
-    }
-  }
-
-  function isSameTournamentExactSafe(inputName, actualName) {
-    const a = cleanTournamentName(inputName);
-    const b = cleanTournamentName(actualName);
-    if (!a || !b) return false;
-    return compact(a) === compact(b);
-  }
-
-  function validateUrlCacheItem(item) {
-    if (!item || typeof item !== "object") {
-      return { ok: false, reason: "CACHE_ROW_NOT_OBJECT" };
-    }
-
-    const name = cleanTournamentName(item.name || item.Name || "");
-    const actualName = cleanTournamentName(item.actualName || item.Actual_Name || item.name || item.Name || "");
-    const id = norm(item.tournamentId || item.TournamentId || "");
-    const url = norm(item.url || item.URL || "");
-    const urlId = extractTournamentIdFromUrl(url);
-
-    if (!name) return { ok: false, reason: "CACHE_NAME_EMPTY" };
-    if (!id && !urlId) return { ok: false, reason: "CACHE_ID_EMPTY" };
-    if (id && urlId && id !== urlId) return { ok: false, reason: `CACHE_ID_MISMATCH id=${id} urlId=${urlId}` };
-
-    const finalId = id || urlId;
-    const finalUrl = normalizeCacheUrl(finalId, url);
-    if (!finalId || !finalUrl) return { ok: false, reason: "CACHE_URL_EMPTY" };
-
-    return {
-      ok: true,
-      name,
-      actualName,
-      tournamentId: finalId,
-      url: finalUrl,
-      source: item.source || item.Source || "shared-url-cache"
-    };
-  }
-
-  function findSharedUrlByName(name, preferredTournamentId = "") {
-    const cleanName = cleanTournamentName(name);
-    const preferredId = norm(preferredTournamentId);
-    const matches = [];
-    const cache = loadSharedUrlCache();
-
-    for (const item of Object.values(cache)) {
-      const checked = validateUrlCacheItem(item);
-      if (!checked.ok) continue;
-
-      if (
-        isSameTournamentExactSafe(cleanName, checked.name) ||
-        isSameTournamentExactSafe(cleanName, checked.actualName)
-      ) {
-        matches.push(checked);
-      }
-    }
-
-    const seen = new Set();
-    const unique = matches.filter(item => {
-      const key = item.tournamentId || item.url;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
+    navigator.clipboard.writeText(text).catch(() => {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
     });
-
-    if (preferredId) {
-      const sameId = unique.filter(item => item.tournamentId === preferredId);
-      if (sameId.length === 1) {
-        return { status: "OK", row: sameId[0], reason: "" };
-      }
-    }
-
-    if (unique.length === 1) {
-      return { status: "OK", row: unique[0], reason: "" };
-    }
-
-    if (unique.length > 1) {
-      return {
-        status: "AMBIGUOUS",
-        row: null,
-        reason: unique.map(item => item.tournamentId).join(",")
-      };
-    }
-
-    return { status: "NOT_FOUND", row: null, reason: "" };
   }
 
-  function resolveTournamentUrl(tournamentId, expectedName = "") {
-    const fallbackId = norm(tournamentId);
-    const cacheMatch = expectedName ? findSharedUrlByName(expectedName, fallbackId) : null;
-
-    if (cacheMatch?.status === "OK" && cacheMatch.row) {
-      return {
-        tournamentId: cacheMatch.row.tournamentId,
-        url: cacheMatch.row.url,
-        source: "URL_MANAGER",
-        status: cacheMatch.row.tournamentId === fallbackId ? "OK" : "ID_OVERRIDE"
-      };
-    }
-
-    return {
-      tournamentId: fallbackId,
-      url: getTournamentUrl(fallbackId),
-      source: cacheMatch?.status ? `FALLBACK_${cacheMatch.status}` : "FALLBACK",
-      status: cacheMatch?.reason || "OK"
-    };
+  function escTsv(value) {
+    return String(value ?? "").replace(/\r?\n/g, " ").replace(/\t/g, " ").trim();
   }
 
-  function parseTsv(raw) {
+  function toTsv(rows) {
+    return [
+      OUTPUT_HEADERS.join("\t"),
+      ...rows.map(row => OUTPUT_HEADERS.map(header => escTsv(row[header])).join("\t"))
+    ].join("\n");
+  }
+
+  function splitTsv(raw) {
     return String(raw || "")
-      .replace(/\r/g, "")
+      .replace(/\r\n/g, "\n")
+      .replace(/\r/g, "\n")
       .split("\n")
-      .map(line => line.split("\t"));
+      .map(line => line.replace(/\uFEFF/g, "").split("\t"));
+  }
+
+  function findCell(row, names) {
+    const wanted = names.map(canonical);
+    return row.findIndex(cell => wanted.includes(canonical(cell)));
   }
 
   function normalizeDate(value) {
-    const m = String(value || "").match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+    const s = norm(value);
+    let m = s.match(/(20\d{2})[\/.-](\d{1,2})[\/.-](\d{1,2})/);
+    if (!m) m = s.match(/(20\d{2})年\s*(\d{1,2})月\s*(\d{1,2})日/);
     if (!m) return "";
     return `${m[1]}/${String(Number(m[2])).padStart(2, "0")}/${String(Number(m[3])).padStart(2, "0")}`;
   }
 
-  function normalizeShortDate(value, defaultYear = "") {
-    const s = norm(value);
-    let m = s.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
-    if (m) return `${m[1]}/${String(Number(m[2])).padStart(2, "0")}/${String(Number(m[3])).padStart(2, "0")}`;
+  function addCalendarDays(dateText, days) {
+    const m = String(dateText).match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
+    if (!m) return "";
+    const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + days));
+    return `${d.getUTCFullYear()}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${String(d.getUTCDate()).padStart(2, "0")}`;
+  }
 
-    m = s.match(/(\d{1,2})[\/\-](\d{1,2})/);
-    if (m && defaultYear) {
-      return `${defaultYear}/${String(Number(m[1])).padStart(2, "0")}/${String(Number(m[2])).padStart(2, "0")}`;
+  function normalizeTime(value) {
+    const m = norm(value).match(/(\d{1,2}):(\d{2})/);
+    if (!m) return "";
+    const hour = Number(m[1]);
+    const minute = Number(m[2]);
+    if (hour > 23 || minute > 59) return "";
+    return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  }
+
+  function buildExpectedStart(operationDate, timeText) {
+    const time = normalizeTime(timeText);
+    if (!operationDate || !time) return "";
+    const hour = Number(time.slice(0, 2));
+    const calendarDate = hour < APP.nextDayBeforeHour ? addCalendarDays(operationDate, 1) : operationDate;
+    return `${calendarDate} ${time}`;
+  }
+
+  function moneyNumber(value) {
+    const s = norm(value);
+    if (!s || s === "-") return null;
+    const cleaned = s.replace(/[￥¥,，\s]/g, "");
+    if (!/^-?\d+(?:\.\d+)?$/.test(cleaned)) return null;
+    const n = Number(cleaned);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function numericExpectation(value, expressionAllowed = false) {
+    const raw = norm(value);
+    if (!raw) return { kind: "BLANK", value: null, raw };
+    if (raw === "-") return { kind: "NONE", value: null, raw };
+    if (expressionAllowed) {
+      const expression = raw.replace(/[￥¥,，\s]/g, "");
+      if (/^\d+(?:\*\d+)*(?:\+\d+(?:\*\d+)*)*$/.test(expression)) {
+        const valueNumber = expression.split("+").reduce((sum, term) =>
+          sum + term.split("*").reduce((product, factor) => product * Number(factor), 1), 0);
+        return { kind: "VALUE", value: valueNumber, raw };
+      }
     }
+    const parsed = moneyNumber(raw);
+    return parsed == null
+      ? { kind: "INVALID", value: null, raw }
+      : { kind: "VALUE", value: parsed, raw };
+  }
+
+  function tournamentCode(value) {
+    const s = norm(value).normalize("NFKC");
+    if (/^\d{1,3}$/.test(s)) return `#${String(Number(s)).padStart(2, "0")}`;
+    if (/^s\d{1,3}$/i.test(s)) return `s${String(Number(s.replace(/\D/g, ""))).padStart(2, "0")}`;
+    const sat = s.match(/(?:#|\()?\s*s\s*0*(\d{1,3})\s*\)?/i);
+    if (sat) return `s${String(Number(sat[1])).padStart(2, "0")}`;
+    const no = s.match(/#\s*0*(\d{1,3})([A-Za-z])?/);
+    if (no) return `#${String(Number(no[1])).padStart(2, "0")}${(no[2] || "").toUpperCase()}`;
+    if (/sit\s*(?:&|and)?\s*go/i.test(s)) return "Sit";
     return "";
   }
 
-  function addDays(dateText, days) {
-    const m = normalizeDate(dateText).match(/(\d{4})\/(\d{2})\/(\d{2})/);
-    if (!m) return "";
-    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-    d.setDate(d.getDate() + days);
-    return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`;
+  function buildNameFromParts(prefix, noRaw, name) {
+    const no = norm(noRaw);
+    if (!prefix) return norm(`${no} ${name}`);
+    if (/^s\d+$/i.test(no)) return norm(`${prefix}(${no}) ${name}`);
+    if (no === "-" || /^sit/i.test(no)) return norm(`${prefix}${name}`);
+    if (/^\d+$/.test(no)) return norm(`${prefix}#${String(Number(no)).padStart(2, "0")} ${name}`);
+    return norm(`${prefix}${no} ${name}`);
   }
 
-  function buildExpectedStart(operationDate, startTime) {
-    const date = normalizeDate(operationDate);
-    const tm = String(startTime || "").match(/(\d{1,2}):(\d{2})/);
-    if (!date || !tm) return "";
-
-    const hour = Number(tm[1]);
-    const minute = Number(tm[2]);
-    const actualDate = hour < CONFIG.nextDayBeforeHour ? addDays(date, 1) : date;
-
-    return `${actualDate} ${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
-  }
-
-  function parseRules(raw) {
-    const result = {
-      defaultFee: 1000,
-      entries: []
-    };
-
-    String(raw || "")
-      .split(/\r?\n/)
-      .map(norm)
-      .filter(Boolean)
-      .forEach(line => {
-        const m = line.match(/^(.+?)\s*[:：\t=]\s*\+?\s*([\d,]+)\s*$/);
-        if (!m) return;
-
-        const key = norm(m[1]);
-        const fee = Number(m[2].replace(/,/g, ""));
-        if (!Number.isFinite(fee)) return;
-
-        if (/^(default|默认|デフォルト)$/i.test(key)) {
-          result.defaultFee = fee;
-        } else {
-          result.entries.push({ keyword: key, fee });
-        }
-      });
-
-    // 長いキーワード優先
-    result.entries.sort((a, b) => b.keyword.length - a.keyword.length);
-    const ensureRule = (keyword, fee) => {
-      const key = compact(keyword);
-      if (!result.entries.some(entry => compact(entry.keyword) === key)) {
-        result.entries.push({ keyword, fee });
-      }
-    };
-
-    ensureRule("Satellite", 0);
-    ensureRule("Sattelite", 0);
-    ensureRule("Satelite", 0);
-
-    result.entries.sort((a, b) => b.keyword.length - a.keyword.length);
-    return result;
-  }
-
-  function getDrinkFee(name, rules) {
-    const s = compact(name);
-    for (const rule of rules.entries) {
-      if (s.includes(compact(rule.keyword))) return rule.fee;
-    }
-    return rules.defaultFee;
-  }
-
-  function parseTicketCondition(raw) {
-    const s = norm(raw);
-    if (!s) {
-      return {
-        raw: "",
-        count: 0,
-        cash: 0,
-        hasTicket: false
-      };
-    }
-
-    const countMatch = s.match(/(\d+)\s*Tickets?/i);
-    const cashMatch = s.match(/[+＋]\s*[￥¥]?\s*([\d,]+)/);
-
-    const count = countMatch ? Number(countMatch[1]) : 0;
-    const cash = cashMatch ? Number(cashMatch[1].replace(/,/g, "")) : 0;
-
-    return {
-      raw: s,
-      count,
-      cash,
-      hasTicket: count > 0
-    };
-  }
-
-  function findHeaderRow(rows, requiredHeaders) {
-    for (let i = 0; i < rows.length; i++) {
-      const values = rows[i].map(norm);
-      if (requiredHeaders.every(h => values.includes(h))) return i;
+  function categoryColumn(rows, headerIndex, label) {
+    for (let r = Math.max(0, headerIndex - 3); r <= headerIndex; r++) {
+      const index = findCell(rows[r] || [], [label]);
+      if (index >= 0) return index;
     }
     return -1;
   }
 
-  function parsePortal(raw, eventPrefix, rules) {
-    const rows = parseTsv(raw);
-    const headerIndex = findHeaderRow(rows, ["Date", "Start", "#", "Name", "Chips", "DBI", "Ticket"]);
+  function parseSourceTable(raw, prefix) {
+    const rows = splitTsv(raw);
+    const headerIndex = rows.findIndex(row =>
+      findCell(row, ["Start"]) >= 0 &&
+      findCell(row, ["トナメ名"]) >= 0 &&
+      findCell(row, ["Name"]) >= 0 &&
+      findCell(row, ["エントリー"]) >= 0
+    );
     if (headerIndex < 0) {
-      throw new Error("Portal表頭を検出できません。Date / Start / # / Name / Chips / DBI / Ticket を含めてコピーしてください。");
+      throw new Error("表頭を検出できません。Start / トナメ名 / Name / エントリーを含む行を貼り付けてください。");
     }
 
-    const headers = rows[headerIndex].map(norm);
-    const idx = name => headers.indexOf(name);
+    const header = rows[headerIndex];
+    const startCol = findCell(header, ["Start"]);
+    const dateCol = Math.max(0, startCol - 1);
+    const fullNameCol = findCell(header, ["トナメ名"]);
+    const noCol = findCell(header, ["#"]);
+    const nameCol = findCell(header, ["Name"]);
+    const chipsCol = categoryColumn(rows, headerIndex, "Chips");
+    const entryCol = findCell(header, ["エントリー"]);
+    const reentryCol = findCell(header, ["リエントリー"]);
+    const entryLimitCol = findCell(header, ["エントリー上限"]);
+    const reentryLimitCol = findCell(header, ["リエントリー上限"]);
+
+    const required = { startCol, fullNameCol, nameCol, chipsCol, entryCol, reentryCol, entryLimitCol, reentryLimitCol };
+    const missing = Object.entries(required).filter(([, index]) => index < 0).map(([key]) => key);
+    if (missing.length) throw new Error(`必要列を検出できません: ${missing.join(", ")}`);
 
     let currentDate = "";
-    const result = [];
-
+    const tournaments = [];
     for (let r = headerIndex + 1; r < rows.length; r++) {
       const cols = rows[r];
-      const dateCell = norm(cols[idx("Date")] || "");
-      const parsedDate = normalizeDate(dateCell);
-      if (parsedDate) currentDate = parsedDate;
+      const date = normalizeDate(cols[dateCol]);
+      if (date) currentDate = date;
 
-      const noRaw = norm(cols[idx("#")] || "");
-      const name = norm(cols[idx("Name")] || "");
-      const start = norm(cols[idx("Start")] || "");
-      const chipsRaw = norm(cols[idx("Chips")] || "");
-      const dbiRaw = norm(cols[idx("DBI")] || "");
-      const ticketRaw = norm(cols[idx("Ticket")] || "");
+      const startRaw = norm(cols[startCol]);
+      const shortName = norm(cols[nameCol]);
+      const noRaw = noCol >= 0 ? norm(cols[noCol]) : "";
+      const suppliedFullName = cleanTournamentName(cols[fullNameCol]);
+      const fullName = suppliedFullName || buildNameFromParts(prefix, noRaw, shortName);
+      if (!fullName || !shortName || !normalizeTime(startRaw)) continue;
 
-      // 実データ行だけ残す
-      if (!name || !start || !currentDate) continue;
-      if (!/\d{1,2}:\d{2}/.test(start)) continue;
+      const conflicts = [];
+      const fullCanonical = canonical(fullName);
+      if (prefix && !fullCanonical.startsWith(canonical(prefix))) conflicts.push("総大会名とトナメ名の大会Prefixが不一致");
+      if (shortName && !fullCanonical.includes(canonical(shortName))) conflicts.push("トナメ名とNameが不一致");
+      const sourceCode = tournamentCode(noRaw);
+      const fullCode = tournamentCode(fullName);
+      if (sourceCode && fullCode && sourceCode !== fullCode) conflicts.push(`#列(${sourceCode})とトナメ名(${fullCode})が不一致`);
+      if (!currentDate) conflicts.push("Datesが空または認識不可");
 
-      const no = normalizeTournamentNo(noRaw, name);
-      const expectedStart = buildExpectedStart(currentDate, start);
-      const drinkFee = getDrinkFee(name, rules);
-      const dbi = moneyToNumber(dbiRaw);
-      const chips = parseMoneyExpression(chipsRaw);
-      const ticket = parseTicketCondition(ticketRaw);
-
-      const expectedEn = dbi == null ? null : dbi + drinkFee;
-      const expectedRe = dbi;
-      const expectedTe = ticket.hasTicket && dbi != null
-        ? ticket.cash - dbi + ticket.count * CONFIG.ticketUnitValue
-        : null;
-
-      result.push({
-        portalRow: r + 1,
+      tournaments.push({
+        sourceRow: r + 1,
         operationDate: currentDate,
-        no,
+        startRaw,
+        expectedStart: buildExpectedStart(currentDate, startRaw),
         noRaw,
-        name,
-        fullExpectedName: buildExpectedName(eventPrefix, no, name),
-        startRaw: start,
-        expectedStart,
-        chipsRaw,
-        expectedChips: chips.value,
-        expectedChipsTotal: chips.total,
-        chipsIsSimple: chips.isSimple,
-        dbiRaw,
-        dbi,
-        ticketRaw,
-        ticketCount: ticket.count,
-        ticketCash: ticket.cash,
-        drinkFee,
-        expectedEn,
-        expectedRe,
-        expectedTe,
-        matrixAlias: buildMatrixAlias(no, name)
+        shortName,
+        fullName,
+        code: fullCode || sourceCode,
+        chips: numericExpectation(cols[chipsCol], true),
+        entry: numericExpectation(cols[entryCol]),
+        reentry: numericExpectation(cols[reentryCol]),
+        entryLimit: numericExpectation(cols[entryLimitCol]),
+        reentryLimit: numericExpectation(cols[reentryLimitCol]),
+        conflicts
       });
     }
+    if (!tournaments.length) throw new Error("大会データ行を1件も抽出できませんでした。");
+    return { headerIndex, tournaments };
+  }
 
-    if (!result.length) {
-      throw new Error("Portalから大会行を1件も抽出できませんでした。");
+  function isVisible(win, el) {
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    const style = win.getComputedStyle(el);
+    return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+  }
+
+  function waitForWindowLoad(win) {
+    return new Promise((resolve, reject) => {
+      const started = Date.now();
+      const tick = () => {
+        try {
+          if (!win || win.closed) return reject(new Error("OPEN一覧ウィンドウが閉じられました"));
+          if (win.document?.readyState === "complete") return resolve();
+        } catch (e) {
+          return reject(e);
+        }
+        if (Date.now() - started > APP.waitMs) return reject(new Error("OPEN一覧の読込がtimeoutしました"));
+        setTimeout(tick, APP.pollMs);
+      };
+      tick();
+    });
+  }
+
+  async function waitForInWindow(win, fn, timeout = 18000) {
+    const started = Date.now();
+    while (Date.now() - started < timeout) {
+      try {
+        const result = fn(win);
+        if (result) return result;
+      } catch (_) {}
+      await sleep(APP.pollMs);
     }
+    return null;
+  }
 
+  function dataTable(win) {
+    try {
+      if (!win.jQuery?.fn?.dataTable) return null;
+      for (const table of Array.from(win.jQuery.fn.dataTable.tables() || [])) {
+        if (!win.jQuery.fn.DataTable.isDataTable(table)) continue;
+        const dt = win.jQuery(table).DataTable();
+        if (dt) return dt;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  function dataTableNode(dt) {
+    try { return dt?.table?.().node?.() || null; } catch (_) { return null; }
+  }
+
+  function listRows(win, searchApplied) {
+    const result = [];
+    const seen = new Set();
+    const add = row => {
+      if (!row || !String(row.innerHTML || "").includes("/torneio/painel/")) return;
+      const key = row.outerHTML || row.innerText;
+      if (seen.has(key)) return;
+      seen.add(key);
+      result.push(row);
+    };
+    const dt = dataTable(win);
+    try {
+      if (dt) {
+        dt.rows(searchApplied ? { search: "applied" } : {}).nodes().each(add);
+        const node = dataTableNode(dt);
+        if (node) [...node.querySelectorAll("tbody tr")].forEach(add);
+      }
+      [...win.document.querySelectorAll("tr")].forEach(add);
+    } catch (_) {}
     return result;
   }
 
-  function normalizeTournamentNo(noRaw, name) {
-    const s = norm(noRaw);
-
-    if (/^s\d+$/i.test(s)) {
-      return `s${String(Number(s.replace(/\D/g, ""))).padStart(2, "0")}`;
-    }
-
-    if (/^\d+$/.test(s)) {
-      return `#${String(Number(s)).padStart(2, "0")}`;
-    }
-
-    if (/sit\s*&?\s*go/i.test(name)) return "Sit";
-    if (/fukuoka/i.test(name)) return "Fukuoka";
-    if (s === "-") return "-";
-
-    return s || "";
-  }
-
-  function buildExpectedName(prefix, no, name) {
-    const p = norm(prefix);
-    if (!p) return norm(`${no} ${name}`);
-
-    if (/^s\d+$/i.test(no)) return norm(`${p}(${no}) ${name}`);
-    if (no === "Sit" || no === "Fukuoka" || no === "-") return norm(`${p}${name}`);
-    return norm(`${p}${no} ${name}`);
-  }
-
-  function buildMatrixAlias(no, name) {
-    if (no === "Sit") return "Sit";
-    if (no === "Fukuoka") return "Fukuoka";
-    if (/^s\d+$/i.test(no)) return no;
-
-    const day1 = name.match(/Day\s*1\s*([A-Z])/i);
-    if (day1) return `${no}(${day1[1].toUpperCase()})`;
-
-    const day2 = name.match(/Day\s*2/i);
-    if (day2) return `${no}(D2)`;
-
-    const day3 = name.match(/Day\s*3/i);
-    if (day3) return `${no}(D3)`;
-
-    return no;
-  }
-
-  function parseTicketMatrix(raw, portalRows) {
-    const rows = parseTsv(raw).filter(row => row.some(cell => norm(cell)));
-    if (rows.length < 4) throw new Error("Ticket Link表の行数が不足しています。");
-
-    const idRowIndex = rows.findIndex(row =>
-      row.some(cell => /^\d{4,}$/.test(norm(cell))) &&
-      row.some(cell => /メイン/i.test(norm(cell)))
-    );
-
-    if (idRowIndex < 1) {
-      throw new Error("Ticket Link表のTournament ID行（メイン行）を検出できません。");
-    }
-
-    const labelRowIndex = idRowIndex - 1;
-    const dateRowIndex = Math.max(0, idRowIndex - 2);
-
-    const labelRow = rows[labelRowIndex];
-    const idRow = rows[idRowIndex];
-    const dateRow = rows[dateRowIndex];
-
-    const defaultYear = portalRows.map(x => x.operationDate.slice(0, 4)).find(Boolean) || "";
-    let currentDate = "";
-
-    const columns = [];
-    const maxCols = Math.max(labelRow.length, idRow.length, dateRow.length);
-
-    for (let c = 0; c < maxCols; c++) {
-      const dateCandidate = normalizeShortDate(dateRow[c], defaultYear);
-      if (dateCandidate) currentDate = dateCandidate;
-
-      const label = norm(labelRow[c]);
-      const tournamentId = norm(idRow[c]);
-
-      if (!label || !/^\d+$/.test(tournamentId)) continue;
-
-      columns.push({
-        col: c,
-        operationDate: currentDate,
-        label: normalizeMatrixLabel(label),
-        tournamentId
-      });
-    }
-
-    if (!columns.length) {
-      throw new Error("Ticket Link表から大会列を抽出できませんでした。");
-    }
-
-    const ticketRows = [];
-    for (let r = idRowIndex + 1; r < rows.length; r++) {
-      const row = rows[r];
-      const firstCells = row.slice(0, Math.min(...columns.map(x => x.col))).map(norm);
-      const ticketName = detectTicketName(firstCells);
-
-      if (!ticketName) continue;
-
-      const links = new Map();
-      for (const col of columns) {
-        const rawValue = norm(row[col.col]);
-        const state = parseLinkState(rawValue);
-        links.set(col.tournamentId, {
-          raw: rawValue,
-          state
-        });
-      }
-
-      ticketRows.push({
-        row: r + 1,
-        ticketName,
-        normalizedName: normalizeTicketName(ticketName),
-        links
-      });
-    }
-
-    const columnByKey = new Map();
-    columns.forEach(col => {
-      columnByKey.set(`${col.operationDate}|${col.label}`, col);
-    });
-
-    return {
-      columns,
-      columnByKey,
-      ticketRows
-    };
-  }
-
-  function normalizeMatrixLabel(label) {
-    return norm(label)
-      .replace(/^(\d+)/, "#$1")
-      .replace(/\((d2|d3)\)/i, m => m.toUpperCase())
-      .replace(/\s+/g, "");
-  }
-
-  function detectTicketName(firstCells) {
-    // Ticket名らしい長いセルを優先
-    const candidates = firstCells
-      .filter(Boolean)
-      .filter(x => !/^(Tokyo|Osaka|Sapporo|Fukuoka|メイン|特殊メイン|Voucher|Invitaion|Invitation)$/i.test(x))
-      .filter(x => /JOPT|Voucher|Ticket|Invitation|PASS|オンライン/i.test(x));
-
-    return candidates
-      .filter(x => !/^(En|Re|TE|Ti|Dr|0)\s*(Entry|Ticket Entry|Drink)?$/i.test(x))
-      .filter(x => !/ticket\s*entry|配席|seat|seating/i.test(x))
-      .sort((a, b) => b.length - a.length)[0] || "";
-  }
-
-  function normalizeTicketName(name) {
-    return compact(name)
-      .replace(/ticket/g, "")
-      .replace(/メインチケット/g, "main")
-      .replace(/main event/g, "main")
-      .replace(/\/-\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}.*/i, "")
-      .replace(/期限.*$/i, "");
-  }
-
-  function parseLinkState(value) {
-    const s = norm(value).toLowerCase();
-    if (CONFIG.trueValues.has(s)) return "LINKED";
-    if (!s) return "NOT_LINKED";
-    if (s === "≈") return "SPECIAL";
-    return "UNKNOWN";
-  }
-
-  function matchPortalToMatrix(portal, matrix) {
-    const directKey = `${portal.operationDate}|${normalizeMatrixLabel(portal.matrixAlias)}`;
-    const direct = matrix.columnByKey.get(directKey);
-    if (direct) return { ...direct, matchStatus: "OK" };
-
-    const sameLabel = matrix.columns.filter(c => c.label === normalizeMatrixLabel(portal.matrixAlias));
-    if (sameLabel.length === 1) return { ...sameLabel[0], matchStatus: "DATE_FALLBACK" };
-
-    return {
-      operationDate: portal.operationDate,
-      label: portal.matrixAlias,
-      tournamentId: "",
-      matchStatus: sameLabel.length > 1 ? "AMBIGUOUS" : "NOT_FOUND"
-    };
-  }
-
-  function getExpectedTicketLinks(matrix, tournamentId) {
-    const linked = [];
-    const special = [];
-
-    for (const ticket of matrix.ticketRows) {
-      const info = ticket.links.get(String(tournamentId));
-      if (!info) continue;
-
-      if (info.state === "LINKED") linked.push(ticket.ticketName);
-      if (info.state === "SPECIAL") special.push(ticket.ticketName);
-    }
-
-    return { linked, special };
-  }
-
-  function popupSnapshot(w) {
-    try {
-      return {
-        href: String(w.location.href || ""),
-        title: String(w.document?.title || ""),
-        body: String(w.document?.body?.innerText || "")
+  function waitDraw(win, dt) {
+    return new Promise(resolve => {
+      const node = dataTableNode(dt);
+      if (!node || !win.jQuery) return resolve(false);
+      let done = false;
+      const finish = ok => {
+        if (done) return;
+        done = true;
+        win.clearTimeout(timer);
+        try { win.jQuery(node).off("draw.dt", onDraw); } catch (_) {}
+        resolve(ok);
       };
-    } catch (e) {
-      return { href: "", title: "", body: "", error: e?.message || String(e) };
-    }
-  }
-
-  function isRealPage(w, id) {
-    const s = popupSnapshot(w);
-    return (
-      s.href.includes(`/torneio/painel/${id}`) &&
-      s.href !== "about:blank" &&
-      s.body.length > 80
-    );
-  }
-
-  function parseHtml(html, url = location.href) {
-    const doc = new DOMParser().parseFromString(String(html || ""), "text/html");
-    try {
-      Object.defineProperty(doc, "URL", { value: url, configurable: true });
-    } catch (_) {}
-    return doc;
-  }
-
-  function documentLooksLikeTournamentPage(d, id) {
-    const url = String(d.URL || "");
-    const body = String(d.body?.textContent || "");
-    return (
-      url.includes(`/torneio/painel/${id}`) &&
-      body.length > 80 &&
-      !/login|entrar|senha/i.test(String(d.title || ""))
-    );
-  }
-
-  async function fetchTournamentDocument(tournamentId, expectedName = "") {
-    const resolved = resolveTournamentUrl(tournamentId, expectedName);
-    const url = resolved.url.startsWith("http")
-      ? resolved.url
-      : `${location.origin}${resolved.url}`;
-
-    const res = await fetch(url, {
-      method: "GET",
-      credentials: "same-origin",
-      redirect: "follow",
-      cache: "no-store"
+      const onDraw = () => finish(true);
+      const timer = win.setTimeout(() => finish(false), APP.waitMs);
+      try { win.jQuery(node).one("draw.dt", onDraw); } catch (_) { finish(false); }
     });
-
-    if (!res.ok) {
-      throw new Error(`PAGE_FETCH_HTTP_${res.status}: ${resolved.tournamentId}`);
-    }
-
-    const html = await res.text();
-    const doc = parseHtml(html, url);
-
-    if (!documentLooksLikeTournamentPage(doc, resolved.tournamentId)) {
-      throw new Error(`PAGE_FETCH_NOT_TOURNAMENT: ${resolved.tournamentId}`);
-    }
-
-    return { doc, resolved };
   }
 
-  async function openPopupById(tournamentId, expectedName = "") {
-    const resolved = resolveTournamentUrl(tournamentId, expectedName);
-    const url = resolved.url.startsWith("http")
-      ? resolved.url
-      : `${location.origin}${resolved.url}`;
+  async function searchOpenTable(win, prefix) {
+    const dt = dataTable(win);
+    if (dt) {
+      const draw = waitDraw(win, dt);
+      const query = norm(prefix).replace(/[【】\[\]]/g, " ");
+      dt.search(query || prefix);
+      dt.page.len(APP.pageLength);
+      dt.page(0);
+      dt.draw();
+      await draw;
+      await sleep(200);
+      return dt;
+    }
+    const input = [...win.document.querySelectorAll('.dataTables_filter input[type="search"],input[type="search"]')].find(el => isVisible(win, el));
+    if (input) {
+      input.value = prefix;
+      input.dispatchEvent(new win.Event("input", { bubbles: true }));
+      input.dispatchEvent(new win.Event("change", { bubbles: true }));
+      await sleep(900);
+    }
+    return dataTable(win);
+  }
 
-    const w = window.open("", `${CONFIG.popupBaseName}_${resolved.tournamentId}_${Date.now()}`, "width=1280,height=900");
-    if (!w) throw new Error("POPUP_BLOCKED");
+  async function goTablePage(win, dt, page) {
+    if (!dt) return;
+    const draw = waitDraw(win, dt);
+    dt.page(page).draw("page");
+    if (!(await draw)) throw new Error(`OPEN一覧 ${page + 1}ページの描画timeout`);
+    await sleep(APP.betweenPagesMs);
+  }
 
-    w.location.href = url;
+  function extractListTitle(rowText) {
+    let s = norm(rowText);
+    const m = s.match(/(【[^】]+】\s*(?:(?:#|\()?s?\d+[A-Za-z]?\)?|-)?\s*.+?)(?:\s+\d{1,2}\/\d{1,2}\/\d{4}|\s+Aberto|\s+オープン|$)/i);
+    if (m) return cleanTournamentName(m[1]);
+    s = s
+      .replace(/^アクション\s+/i, "")
+      .replace(/^\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}:\d{2}\s+/, "")
+      .replace(/\s+\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}:\d{2}$/, "")
+      .replace(/\s+(?:Aberto|オープン)$/i, "");
+    return cleanTournamentName(s);
+  }
 
-    const start = Date.now();
-    while (Date.now() - start < CONFIG.pageTimeoutMs) {
-      if (!w || w.closed) throw new Error("POPUP_CLOSED");
-      if (isRealPage(w, resolved.tournamentId)) {
-        w.__PW_DC_V20_RESOLVED_URL = resolved;
-        return w;
+  function extractListTournament(row) {
+    const match = String(row.innerHTML || "").match(/\/torneio\/painel\/(\d+)/);
+    if (!match) return null;
+    const matchedRow = norm(row.innerText || row.textContent || "");
+    const actualName = extractListTitle(matchedRow);
+    return {
+      tournamentId: match[1],
+      url: `/torneio/painel/${match[1]}`,
+      actualName,
+      code: tournamentCode(actualName),
+      matchedRow
+    };
+  }
+
+  function readCache() {
+    try {
+      const cache = JSON.parse(localStorage.getItem(APP.sharedUrlCacheKey) || "{}");
+      return cache && typeof cache === "object" ? cache : {};
+    } catch (_) { return {}; }
+  }
+
+  function cacheOpenEntry(entry, pageNo) {
+    if (!entry.actualName || !entry.tournamentId) return;
+    const cache = readCache();
+    cache[`${entry.actualName}||${entry.tournamentId}`] = {
+      name: entry.actualName,
+      tournamentId: entry.tournamentId,
+      url: entry.url,
+      painelUrl: entry.url,
+      actualName: entry.actualName,
+      matchedRow: entry.matchedRow,
+      savedAt: nowText(),
+      source: `tournament-dc-OPEN-p${pageNo}`
+    };
+    localStorage.setItem(APP.sharedUrlCacheKey, JSON.stringify(cache));
+  }
+
+  async function scanOpen(prefix) {
+    const win = window.open(APP.openListPath, `pw_tournament_dc_open_${Date.now()}`, "width=1280,height=900");
+    if (!win) throw new Error("Popupがブロックされました。OPEN一覧を開けません。");
+    const found = [];
+    const seen = new Set();
+    try {
+      await waitForWindowLoad(win);
+      await waitForInWindow(win, w => dataTable(w) || listRows(w, false).length);
+      await sleep(500);
+      const dt = await searchOpenTable(win, prefix);
+      const pages = dt?.page?.info?.()?.pages || 1;
+      for (let page = 0; page < pages; page++) {
+        if (stopRequested) break;
+        if (dt) await goTablePage(win, dt, page);
+        for (const row of listRows(win, true)) {
+          const entry = extractListTournament(row);
+          if (!entry) continue;
+          const hay = canonical(`${entry.actualName} ${entry.matchedRow}`);
+          if (!hay.includes(canonical(prefix))) continue;
+          if (seen.has(entry.url)) continue;
+          seen.add(entry.url);
+          found.push(entry);
+          cacheOpenEntry(entry, page + 1);
+        }
       }
-      await sleep(CONFIG.pollMs);
+    } finally {
+      try { if (!win.closed) win.close(); } catch (_) {}
     }
-
-    throw new Error(`REAL_PAGE_TIMEOUT: ${resolved.tournamentId}`);
+    return found;
   }
 
-  function parseDateTimeText(raw) {
-    const s = norm(raw);
-
-    let m = s.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{4})\s+(\d{1,2}):(\d{1,2})/);
-    if (m) {
-      return `${m[3]}/${String(Number(m[2])).padStart(2, "0")}/${String(Number(m[1])).padStart(2, "0")} ${String(Number(m[4])).padStart(2, "0")}:${String(Number(m[5])).padStart(2, "0")}`;
-    }
-
-    m = s.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})\s+(\d{1,2}):(\d{1,2})/);
-    if (m) {
-      return `${m[1]}/${String(Number(m[2])).padStart(2, "0")}/${String(Number(m[3])).padStart(2, "0")} ${String(Number(m[4])).padStart(2, "0")}:${String(Number(m[5])).padStart(2, "0")}`;
-    }
-
-    return "";
+  function nameWithoutPrefix(value) {
+    return cleanTournamentName(value).replace(/^【[^】]+】\s*/, "");
   }
 
-  function extractActualName(d) {
-    const input = d.querySelector('input[name="titulo_torneio"]');
-    if (input?.value) return norm(input.value);
+  function matchSourceTournament(source, entries) {
+    const exact = entries.filter(entry => canonical(entry.actualName) === canonical(source.fullName));
+    if (exact.length === 1) return { status: "EXACT", entry: exact[0], candidates: exact };
+    if (exact.length > 1) return { status: "AMBIGUOUS_EXACT", entry: null, candidates: exact };
 
-    const title = norm(d.title || "");
-    return title.replace(/\s*-\s*PokerWeb.*$/i, "");
+    const sourceName = canonical(source.shortName);
+    const codeAndName = entries.filter(entry =>
+      source.code && entry.code === source.code && canonical(nameWithoutPrefix(entry.actualName)).includes(sourceName)
+    );
+    if (codeAndName.length === 1) return { status: "KEY_NAME", entry: codeAndName[0], candidates: codeAndName };
+
+    const sameName = entries.filter(entry => canonical(nameWithoutPrefix(entry.actualName)).includes(sourceName));
+    if (sameName.length === 1) return { status: "NAME_UNIQUE", entry: sameName[0], candidates: sameName };
+
+    const candidates = codeAndName.length ? codeAndName : entries.filter(entry => source.code && entry.code === source.code);
+    return { status: candidates.length > 1 ? "AMBIGUOUS" : "NOT_FOUND", entry: null, candidates };
   }
 
-  function extractActualStart(d) {
-    const input = d.querySelector('input[name="data_hora_torneio"]');
-    if (input?.value) return parseDateTimeText(input.value);
+  function parseDateTimeText(value) {
+    const s = norm(value);
+    let m = s.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{4})\s+(\d{1,2}):(\d{2})/);
+    if (m) return `${m[3]}/${String(Number(m[2])).padStart(2, "0")}/${String(Number(m[1])).padStart(2, "0")} ${String(Number(m[4])).padStart(2, "0")}:${m[5]}`;
+    m = s.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})\s+(\d{1,2}):(\d{2})/);
+    if (m) return `${m[1]}/${String(Number(m[2])).padStart(2, "0")}/${String(Number(m[3])).padStart(2, "0")} ${String(Number(m[4])).padStart(2, "0")}:${m[5]}`;
     return "";
   }
 
   function getDataAttrs(el) {
     const data = {};
     for (const attr of el.attributes || []) {
-      if (attr.name.startsWith("data-")) {
-        data[attr.name.replace(/^data-/, "")] = attr.value;
-      }
+      if (attr.name.startsWith("data-")) data[attr.name.slice(5)] = attr.value;
     }
     return data;
   }
 
-  function extractPriceItems(d) {
-    const els = [...d.querySelectorAll("[data-nome], [data-siglas], [data-valor]")];
-
-    const items = els.map(el => {
+  function extractPriceItems(doc) {
+    const items = [...doc.querySelectorAll("[data-nome], [data-siglas], [data-valor]")].map(el => {
       const data = getDataAttrs(el);
-      const nome = norm(data.nome || el.getAttribute("data-nome") || "");
-      const siglas = norm(data.siglas || el.getAttribute("data-siglas") || "");
-      if (!nome && !siglas) return null;
-
-      const value = moneyToNumber(data.valor ?? el.getAttribute("data-valor") ?? "");
-      const tax = moneyToNumber(data.taxa ?? el.getAttribute("data-taxa") ?? "");
-      const chips = moneyToNumber(data.fichas ?? el.getAttribute("data-fichas") ?? "");
-      const limit = norm(data.limite ?? el.getAttribute("data-limite") ?? "");
-
-      return {
-        nome,
-        siglas,
-        value,
-        tax,
-        total: (value ?? 0) + (tax ?? 0),
-        chips,
-        limit
-      };
+      const name = norm(data.nome || el.getAttribute("data-nome") || "");
+      const sigla = norm(data.siglas || el.getAttribute("data-siglas") || "");
+      if (!name && !sigla) return null;
+      const value = moneyNumber(data.valor ?? el.getAttribute("data-valor") ?? "");
+      const tax = moneyNumber(data.taxa ?? el.getAttribute("data-taxa") ?? "");
+      const chips = moneyNumber(data.fichas ?? el.getAttribute("data-fichas") ?? "");
+      const limit = moneyNumber(data.limite ?? el.getAttribute("data-limite") ?? "");
+      return { name, sigla, value, tax, total: (value ?? 0) + (tax ?? 0), chips, limit };
     }).filter(Boolean);
-
-    const bySigla = sigla => items.find(x => compact(x.siglas) === compact(sigla));
-    const en = bySigla("En") || items.find(x => /entry/i.test(x.nome) && !/re|ticket/i.test(x.nome));
-    const re = bySigla("Re") || items.find(x => /re[\s-]*entry/i.test(x.nome));
-    const te = bySigla("TE") || bySigla("Ti") || items.find(x => /ticket/i.test(x.nome));
-
-    return { items, en, re, te };
-  }
-
-  function extractGeneralSettings(d) {
-    const byCampo = {};
-    const re = /configGeraisTornStatus\(\s*['"]([^'"]+)['"]/;
-
-    for (const box of [...d.querySelectorAll('input[type="checkbox"]')]) {
-      const onchange = box.getAttribute("onchange") || "";
-      const m = onchange.match(re);
-      if (!m) continue;
-
-      const row = box.closest("tr") || box.parentElement;
-      byCampo[m[1]] = {
-        found: true,
-        checked: !!box.checked,
-        id: box.id || "",
-        text: norm(row?.innerText || row?.textContent || "")
-      };
-    }
-
-    const settings = {};
-    for (const check of GENERAL_SETTING_CHECKS) {
-      settings[check.key] = byCampo[check.campo] || {
-        found: false,
-        checked: null,
-        id: "",
-        text: ""
-      };
-    }
-    return settings;
-  }
-
-  function generalSettingToStatus(setting) {
-    if (!setting?.found) return "CANNOT_READ";
-    return setting.checked ? "ON" : "OFF";
-  }
-
-  function compareGeneralSetting(setting, expected) {
-    if (!setting?.found) return "CHECK";
-    return setting.checked === expected ? "OK" : "CHECK";
-  }
-
-  function cleanTicketRowText(text) {
-    return norm(text)
-      .replace(/仮想通貨を使用した販売を許可する/g, "")
-      .replace(/\b(on|off)\b/gi, "")
-      .replace(/\s+/g, " ");
-  }
-
-  function extractActualTicketLinks(d, usdtInfo) {
-    const result = [];
-
-    const boxes = [...d.querySelectorAll('input[id^="imp_ticket_"][type="checkbox"]')];
-    for (const box of boxes) {
-      if (usdtInfo?.id && box.id === usdtInfo.id) continue;
-
-      const row = box.closest("tr") || box.parentElement?.parentElement || box.parentElement;
-      const rowText = cleanTicketRowText(row?.innerText || row?.textContent || "");
-      const rowKey = compact(rowText);
-
-      if (
-        /^(en|re|te|ti|dr|0)$/.test(rowKey) ||
-        /^(enentry|reentry|teticketentry|titicketentry|drdrink|drink)$/.test(rowKey) ||
-        /ticketentry/i.test(rowText) ||
-        /配席|seat|seating/i.test(rowText) ||
-        (/\b(en|re|te|ti|dr)\b/i.test(rowText) && /\b(entry|drink)\b/i.test(rowText)) ||
-        !/JOPT|Voucher|Invitation|Invitaion|PASS|Ticket|チケット|券|招待/i.test(rowText)
-      ) {
-        continue;
-      }
-
-      result.push({
-        id: box.id,
-        checked: !!box.checked,
-        rowText,
-        normalizedName: normalizeTicketName(rowText)
-      });
-    }
-
-    return result;
-  }
-
-  function ticketNameMatches(expectedName, actualRow) {
-    const e = normalizeTicketName(expectedName);
-    const a = actualRow.normalizedName;
-    if (!e || !a) return false;
-    return a.includes(e) || e.includes(a);
-  }
-
-  function compareTicketLinks(expectedNames, actualRows) {
-    const actualLinked = actualRows.filter(x => x.checked);
-
-    const missing = expectedNames.filter(expected =>
-      !actualLinked.some(actual => ticketNameMatches(expected, actual))
-    );
-
-    const unexpected = actualLinked.filter(actual =>
-      !expectedNames.some(expected => ticketNameMatches(expected, actual))
-    );
-
+    const bySigla = sigla => items.find(item => canonical(item.sigla) === canonical(sigla));
     return {
-      status: missing.length || unexpected.length ? "NG" : "OK",
-      missing,
-      unexpected: unexpected.map(x => x.rowText || x.id),
-      actualLinked: actualLinked.map(x => x.rowText || x.id)
+      items,
+      en: bySigla("En") || items.find(item => /entry/i.test(item.name) && !/re|ticket/i.test(item.name)),
+      re: bySigla("Re") || items.find(item => /re[\s-]*entry/i.test(item.name))
     };
   }
 
-  async function extractTournament(tournamentId, expectedName = "") {
-    if (CONFIG.fetchPageMode) {
-      const { doc, resolved } = await fetchTournamentDocument(tournamentId, expectedName);
-      const prices = extractPriceItems(doc);
-      const generalSettings = extractGeneralSettings(doc);
-      const usdt = generalSettings.USDT;
-      const ticketLinks = extractActualTicketLinks(doc, usdt);
-
-      return {
-        resolvedTournamentId: resolved.tournamentId,
-        resolvedUrl: resolved.url,
-        urlSource: resolved.source,
-        urlStatus: resolved.status,
-
-        actualName: extractActualName(doc),
-        actualStart: extractActualStart(doc),
-
-        actualEn: prices.en?.total ?? null,
-        actualRe: prices.re?.total ?? null,
-        actualTe: prices.te?.total ?? null,
-
-        actualEnChips: prices.en?.chips ?? null,
-        actualReChips: prices.re?.chips ?? null,
-        actualTeChips: prices.te?.chips ?? null,
-
-        actualEnLimit: prices.en?.limit || "",
-        actualReLimit: prices.re?.limit || "",
-        actualTeLimit: prices.te?.limit || "",
-
-        usdtFound: usdt.found,
-        usdtOn: usdt.checked,
-        usdtId: usdt.id,
-        generalSettings,
-
-        ticketLinks
-      };
+  function extractSettings(doc) {
+    const actualByCampo = {};
+    const re = /configGeraisTornStatus\(\s*['"]([^'"]+)['"]/;
+    for (const box of [...doc.querySelectorAll('input[type="checkbox"]')]) {
+      const match = String(box.getAttribute("onchange") || "").match(re);
+      if (match) actualByCampo[match[1]] = !!box.checked;
     }
+    return Object.fromEntries(SETTINGS.map(setting => [setting.key, {
+      expected: setting.expected,
+      found: Object.prototype.hasOwnProperty.call(actualByCampo, setting.campo),
+      actual: Object.prototype.hasOwnProperty.call(actualByCampo, setting.campo) ? actualByCampo[setting.campo] : null
+    }]));
+  }
 
-    const w = await openPopupById(tournamentId, expectedName);
+  async function fetchActual(entry) {
+    const response = await fetch(new URL(entry.url, location.origin).href, { credentials: "include", cache: "no-store" });
+    if (!response.ok) throw new Error(`GET ${response.status}: ${entry.url}`);
+    const html = await response.text();
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const titleInput = doc.querySelector('input[name="titulo_torneio"]');
+    const name = cleanTournamentName(titleInput?.value || doc.title);
+    const start = parseDateTimeText(doc.querySelector('input[name="data_hora_torneio"]')?.value || "");
+    if (!titleInput || (!doc.querySelector("[data-nome]") && !doc.querySelector('input[onchange*="configGeraisTornStatus"]'))) {
+      throw new Error("大会ページを確認できません");
+    }
+    return { name, start, prices: extractPriceItems(doc), settings: extractSettings(doc) };
+  }
 
+  function compareText(expected, actual) {
+    if (!expected) return "SOURCE_BLANK";
+    if (!actual) return "CANNOT_READ";
+    return canonical(expected) === canonical(actual) ? "OK" : "DIFF";
+  }
+
+  function compareExpected(expected, actualItem, field) {
+    if (expected.kind === "BLANK") return "SOURCE_BLANK";
+    if (expected.kind === "INVALID") return "SOURCE_INVALID";
+    const actual = actualItem ? actualItem[field] : null;
+    if (expected.kind === "NONE") return actualItem == null ? "OK" : "DIFF";
+    if (actual == null) return "CANNOT_READ";
+    return Number(expected.value) === Number(actual) ? "OK" : "DIFF";
+  }
+
+  function settingsStatus(settings) {
+    const states = SETTINGS.map(setting => {
+      const value = settings[setting.key];
+      if (!value?.found) return "CANNOT_READ";
+      return value.actual === value.expected ? "OK" : "DIFF";
+    });
+    if (states.includes("CANNOT_READ")) return "CANNOT_READ";
+    return states.includes("DIFF") ? "DIFF" : "OK";
+  }
+
+  function settingDisplay(setting, values) {
+    const value = values[setting.key];
+    if (!value?.found) return `期待:${setting.expected ? "ON" : "OFF"} / 実際:CANNOT_READ`;
+    return `期待:${setting.expected ? "ON" : "OFF"} / 実際:${value.actual ? "ON" : "OFF"} / ${value.actual === setting.expected ? "OK" : "DIFF"}`;
+  }
+
+  function overallFromRow(row, sourceConflicts) {
+    if (row.Error) return "ERROR";
+    if (!/^(EXACT|KEY_NAME|NAME_UNIQUE)$/.test(row.Match)) return "要人工確認";
+    if (sourceConflicts.length) return "表側要確認";
+    const checks = [
+      row["大会名_Check"], row["Start_Check"], row["Chips_Check"], row["Entry_Check"],
+      row["ReEntry_Check"], row["Entry上限_Check"], row["ReEntry上限_Check"], row["Settings_Check"]
+    ];
+    if (checks.some(check => check === "DIFF" || check === "CANNOT_READ")) return "不一致";
+    if (checks.some(check => check === "SOURCE_BLANK" || check === "SOURCE_INVALID")) return "表側要確認";
+    return "一致";
+  }
+
+  function baseOutput(source, match) {
+    return {
+      "Overall": "",
+      "表行": source.sourceRow,
+      "Match": match.status,
+      "Candidates": match.candidates.map(item => `${item.tournamentId}:${item.actualName}`).join(" | "),
+      "TournamentId": match.entry?.tournamentId || "",
+      "URL": match.entry?.url || "",
+      "表_大会名": source.fullName,
+      "PW_大会名": "",
+      "大会名_Check": "",
+      "表_赛事日": source.operationDate,
+      "表_Start": source.startRaw,
+      "換算後_期待Start": source.expectedStart,
+      "PW_Start": "",
+      "Start_Check": "",
+      "表_Chips": source.chips.raw,
+      "期待_Chips": source.chips.value ?? (source.chips.kind === "NONE" ? "NONE" : ""),
+      "PW_Chips": "",
+      "Chips_Check": "",
+      "表_Entry": source.entry.raw,
+      "PW_Entry": "",
+      "Entry_Check": "",
+      "表_ReEntry": source.reentry.raw,
+      "PW_ReEntry": "",
+      "ReEntry_Check": "",
+      "表_Entry上限": source.entryLimit.raw,
+      "PW_Entry上限": "",
+      "Entry上限_Check": "",
+      "表_ReEntry上限": source.reentryLimit.raw,
+      "PW_ReEntry上限": "",
+      "ReEntry上限_Check": "",
+      "Settings_Check": "",
+      "Sale_Ticket_View": "", "Ticket_Print_Direct": "", "Default_No_Seat": "", "Ticket_Image_Rights": "", "USDT": "",
+      "Source_Check": source.conflicts.length ? "CHECK" : "OK",
+      "Notes": source.conflicts.join(" | "),
+      "CheckedAt": nowText(),
+      "Error": ""
+    };
+  }
+
+  async function checkTournament(source, match) {
+    const row = baseOutput(source, match);
+    if (!match.entry) {
+      row.Overall = "要人工確認";
+      row.Notes = [row.Notes, match.status === "NOT_FOUND" ? "OPEN大会が見つかりません" : "候補が複数あります"].filter(Boolean).join(" | ");
+      return row;
+    }
     try {
-      const resolvedUrl = w.__PW_DC_V20_RESOLVED_URL || resolveTournamentUrl(tournamentId, expectedName);
-      const d = w.document;
-      const prices = extractPriceItems(d);
-      const generalSettings = extractGeneralSettings(d);
-      const usdt = generalSettings.USDT;
-      const ticketLinks = extractActualTicketLinks(d, usdt);
-
-      return {
-        resolvedTournamentId: resolvedUrl.tournamentId,
-        resolvedUrl: resolvedUrl.url,
-        urlSource: resolvedUrl.source,
-        urlStatus: resolvedUrl.status,
-
-        actualName: extractActualName(d),
-        actualStart: extractActualStart(d),
-
-        actualEn: prices.en?.total ?? null,
-        actualRe: prices.re?.total ?? null,
-        actualTe: prices.te?.total ?? null,
-
-        actualEnChips: prices.en?.chips ?? null,
-        actualReChips: prices.re?.chips ?? null,
-        actualTeChips: prices.te?.chips ?? null,
-
-        actualEnLimit: prices.en?.limit || "",
-        actualReLimit: prices.re?.limit || "",
-        actualTeLimit: prices.te?.limit || "",
-
-        usdtFound: usdt.found,
-        usdtOn: usdt.checked,
-        usdtId: usdt.id,
-        generalSettings,
-
-        ticketLinks
-      };
-    } finally {
-      if (CONFIG.closePopupAfterEach) {
-        try { w.close(); } catch (_) {}
-      }
+      const actual = await fetchActual(match.entry);
+      row["PW_大会名"] = actual.name;
+      row["大会名_Check"] = compareText(source.fullName, actual.name);
+      row["PW_Start"] = actual.start;
+      row["Start_Check"] = compareText(source.expectedStart, actual.start);
+      row["PW_Chips"] = actual.prices.en?.chips ?? "NONE";
+      row["Chips_Check"] = compareExpected(source.chips, actual.prices.en, "chips");
+      row["PW_Entry"] = actual.prices.en?.total ?? "NONE";
+      row["Entry_Check"] = compareExpected(source.entry, actual.prices.en, "total");
+      row["PW_ReEntry"] = actual.prices.re?.total ?? "NONE";
+      row["ReEntry_Check"] = compareExpected(source.reentry, actual.prices.re, "total");
+      row["PW_Entry上限"] = actual.prices.en?.limit ?? "NONE";
+      row["Entry上限_Check"] = compareExpected(source.entryLimit, actual.prices.en, "limit");
+      row["PW_ReEntry上限"] = actual.prices.re?.limit ?? "NONE";
+      row["ReEntry上限_Check"] = compareExpected(source.reentryLimit, actual.prices.re, "limit");
+      row["Settings_Check"] = settingsStatus(actual.settings);
+      for (const setting of SETTINGS) row[setting.key] = settingDisplay(setting, actual.settings);
+    } catch (e) {
+      row.Error = e?.message || String(e);
+      row.Notes = [row.Notes, row.Error].filter(Boolean).join(" | ");
     }
+    row.Overall = overallFromRow(row, source.conflicts);
+    return row;
   }
 
-  function eqNum(expected, actual) {
-    if (expected == null && actual == null) return true;
-    if (expected == null || actual == null) return false;
-    return Number(expected) === Number(actual);
-  }
-
-  function compareName(expected, actual) {
-    if (!expected || !actual) return "CHECK";
-    return compact(actual).includes(compact(expected)) || compact(expected).includes(compact(actual))
-      ? "OK"
-      : "NG";
-  }
-
-  function compareSimple(expected, actual) {
-    return norm(expected) === norm(actual) ? "OK" : "NG";
-  }
-
-  function reviewStatus(status) {
-    return status === "NG" ? "CHECK" : status;
-  }
-
-  function compareReviewSimple(expected, actual) {
-    return reviewStatus(compareSimple(expected, actual));
-  }
-
-  function compareReviewName(expected, actual) {
-    return reviewStatus(compareName(expected, actual));
-  }
-
-  function compareReviewNum(expected, actual) {
-    if (expected == null && actual == null) return "OK";
-    if (expected == null || actual == null) return "CHECK";
-    return eqNum(expected, actual) ? "OK" : "CHECK";
-  }
-
-  function joinErrors(parts) {
-    return parts.filter(Boolean).join(" | ");
-  }
-
-  const OUT_HEADERS = [
-    "Overall",
-    "TournamentId",
-    "Resolved_TournamentId",
-    "Resolved_URL",
-    "URL_Source",
-    "URL_Status",
-    "Matrix_Label",
-    "Portal_Row",
-    "Operation_Date",
-    "No",
-    "Portal_Name",
-    "Actual_Name",
-    "Name_Check",
-
-    "Expected_Start",
-    "Actual_Start",
-    "Start_Check",
-
-    "Portal_Chips",
-    "Expected_Chips",
-    "Actual_EN_Chips",
-    "Chips_Check",
-
-    "DBI",
-    "Drink_Fee",
-    "Expected_EN",
-    "Actual_EN",
-    "EN_Check",
-
-    "Expected_RE",
-    "Actual_RE",
-    "RE_Check",
-
-    "Portal_Ticket",
-    "Ticket_Count",
-    "Ticket_Cash",
-    "Expected_TE",
-    "Actual_TE",
-    "TE_Check",
-
-    "Expected_Ticket_Link_Count",
-    "Actual_Ticket_Link_Count",
-    "Ticket_Link_Check",
-    "Ticket_Missing",
-    "Ticket_Unexpected",
-
-    "USDT_Expected",
-    "USDT_Actual",
-    "USDT_Check",
-    "USDT_Element_Id",
-
-    "General_Settings_Check",
-    "Sale_Ticket_View_Expected",
-    "Sale_Ticket_View_Actual",
-    "Sale_Ticket_View_Check",
-    "Ticket_Print_Direct_Expected",
-    "Ticket_Print_Direct_Actual",
-    "Ticket_Print_Direct_Check",
-    "Default_No_Seat_Expected",
-    "Default_No_Seat_Actual",
-    "Default_No_Seat_Check",
-    "Ticket_Image_Rights_Expected",
-    "Ticket_Image_Rights_Actual",
-    "Ticket_Image_Rights_Check",
-
-    "Matrix_Match",
-    "Error"
-  ];
-
-  async function runDoubleCheck() {
+  async function runDc() {
     if (running) return alert("処理中です");
+    const prefix = norm(document.querySelector("#pw-dc-v3-prefix")?.value || "");
+    const raw = document.querySelector("#pw-dc-v3-source")?.value || "";
+    if (!prefix) return alert("総大会名を入力してください。例：【SPADIE OSAKA 1st】");
+    if (!norm(raw)) return alert("大会管理表を貼り付けてください。");
 
-    const prefix = norm(document.querySelector("#pw-dc-v20-prefix")?.value || "");
-    const portalRaw = document.querySelector("#pw-dc-v20-portal")?.value || "";
-    const ticketRaw = document.querySelector("#pw-dc-v20-ticket")?.value || "";
-    const rulesRaw = document.querySelector("#pw-dc-v20-rules")?.value || "";
-
-    if (!prefix) return alert("① 総大会名を入力してください");
-    if (!portalRaw.trim()) return alert("② Portal Tournamentページを貼り付けてください");
-    if (!ticketRaw.trim()) return alert("③ 受付Portal Ticket Linkページを貼り付けてください");
-
-    localStorage.setItem(CONFIG.storagePrefix + "prefix", prefix);
-    localStorage.setItem(CONFIG.storagePrefix + "portal", portalRaw);
-    localStorage.setItem(CONFIG.storagePrefix + "ticket", ticketRaw);
-    localStorage.setItem(CONFIG.storagePrefix + "rules", rulesRaw);
-
+    localStorage.setItem(APP.storagePrefix + "PREFIX", prefix);
+    localStorage.setItem(APP.storagePrefix + "SOURCE", raw);
     running = true;
     stopRequested = false;
-
     try {
-      log("入力データ解析中…");
-
-      const rules = parseRules(rulesRaw);
-      const portalRows = parsePortal(portalRaw, prefix, rules);
-      const matrix = parseTicketMatrix(ticketRaw, portalRows);
+      setStatus("大会管理表を解析中...");
+      const parsed = parseSourceTable(raw, prefix);
+      setStatus(`OPEN URLスキャン中... 表 ${parsed.tournaments.length}件`);
+      const entries = await scanOpen(prefix);
+      if (!entries.length) throw new Error("OPEN一覧から対象大会を1件も検出できませんでした。");
 
       const results = [];
-
-      for (let i = 0; i < portalRows.length; i++) {
+      for (let i = 0; i < parsed.tournaments.length; i++) {
         if (stopRequested) break;
-
-        const portal = portalRows[i];
-        const matrixMatch = matchPortalToMatrix(portal, matrix);
-        const base = {};
-        OUT_HEADERS.forEach(h => base[h] = "");
-
-        base.Portal_Row = portal.portalRow;
-        base.Operation_Date = portal.operationDate;
-        base.No = portal.no;
-        base.Portal_Name = portal.name;
-        base.Expected_Start = portal.expectedStart;
-        base.Portal_Chips = portal.chipsRaw;
-        base.Expected_Chips = portal.expectedChips ?? "";
-        base.DBI = portal.dbi ?? "";
-        base.Drink_Fee = portal.drinkFee;
-        base.Expected_EN = portal.expectedEn ?? "";
-        base.Expected_RE = portal.expectedRe ?? "";
-        base.Portal_Ticket = portal.ticketRaw;
-        base.Ticket_Count = portal.ticketCount;
-        base.Ticket_Cash = portal.ticketCash;
-        base.Expected_TE = portal.expectedTe ?? "";
-        base.Matrix_Label = matrixMatch.label || portal.matrixAlias;
-        base.TournamentId = matrixMatch.tournamentId || "";
-        base.Matrix_Match = matrixMatch.matchStatus;
-
-        if (!matrixMatch.tournamentId) {
-          base.Overall = "CHECK";
-          base.Error = `MATRIX_${matrixMatch.matchStatus}`;
-          results.push(base);
-          continue;
-        }
-
-        try {
-          log(`(${i + 1}/${portalRows.length}) fetch #${matrixMatch.tournamentId} ${portal.name}`);
-
-          const actual = await extractTournament(matrixMatch.tournamentId, portal.fullExpectedName);
-          const expectedLinks = getExpectedTicketLinks(matrix, actual.resolvedTournamentId || matrixMatch.tournamentId);
-
-          base.Resolved_TournamentId = actual.resolvedTournamentId || "";
-          base.Resolved_URL = actual.resolvedUrl || "";
-          base.URL_Source = actual.urlSource || "";
-          base.URL_Status = actual.urlStatus || "";
-
-          base.Actual_Name = actual.actualName;
-          base.Name_Check = compareReviewName(portal.fullExpectedName, actual.actualName);
-
-          base.Actual_Start = actual.actualStart;
-          base.Start_Check = compareReviewSimple(portal.expectedStart, actual.actualStart);
-
-          base.Actual_EN_Chips = actual.actualEnChips ?? "";
-          if (portal.expectedChips == null || actual.actualEnChips == null) {
-            base.Chips_Check = "CHECK";
-          } else if (!portal.chipsIsSimple) {
-            // 20,000*3 等は1人分との一致を確認しつつCHECK扱い
-            base.Chips_Check = eqNum(portal.expectedChips, actual.actualEnChips) ? "CHECK" : "CHECK";
-          } else {
-            base.Chips_Check = eqNum(portal.expectedChips, actual.actualEnChips) ? "OK" : "CHECK";
-          }
-
-          base.Actual_EN = actual.actualEn ?? "";
-          base.EN_Check = compareReviewNum(portal.expectedEn, actual.actualEn);
-
-          base.Actual_RE = actual.actualRe ?? "";
-          base.RE_Check = compareReviewNum(portal.expectedRe, actual.actualRe);
-
-          base.Actual_TE = actual.actualTe ?? "";
-          if (portal.expectedTe == null) {
-            base.TE_Check = actual.actualTe == null ? "OK" : "CHECK";
-          } else {
-            base.TE_Check = compareReviewNum(portal.expectedTe, actual.actualTe);
-          }
-
-          const ticketCheck = compareTicketLinks(expectedLinks.linked, actual.ticketLinks);
-          base.Expected_Ticket_Link_Count = expectedLinks.linked.length;
-          base.Actual_Ticket_Link_Count = ticketCheck.actualLinked.length;
-          base.Ticket_Link_Check = expectedLinks.special.length
-            ? (ticketCheck.status === "OK" ? "CHECK" : "CHECK")
-            : reviewStatus(ticketCheck.status);
-          base.Ticket_Missing = ticketCheck.missing.join(" || ");
-          base.Ticket_Unexpected = ticketCheck.unexpected.join(" || ");
-
-          base.USDT_Expected = CONFIG.expectedUsdt ? "ON" : "OFF";
-          base.USDT_Actual = !actual.usdtFound ? "CANNOT_READ" : (actual.usdtOn ? "ON" : "OFF");
-          base.USDT_Check = !actual.usdtFound
-            ? "CHECK"
-            : actual.usdtOn === CONFIG.expectedUsdt ? "OK" : "CHECK";
-          base.USDT_Element_Id = actual.usdtId;
-
-          const generalSettingChecks = [];
-          for (const check of GENERAL_SETTING_CHECKS) {
-            const setting = actual.generalSettings?.[check.key];
-            const expected = check.expected ? "ON" : "OFF";
-            const actualStatus = generalSettingToStatus(setting);
-            const status = compareGeneralSetting(setting, check.expected);
-            if (check.key !== "USDT") {
-              base[`${check.key}_Expected`] = expected;
-              base[`${check.key}_Actual`] = actualStatus;
-              base[`${check.key}_Check`] = status;
-              generalSettingChecks.push(status);
-            }
-          }
-          base.General_Settings_Check = generalSettingChecks.every(x => x === "OK") ? "OK" : "CHECK";
-
-          const checks = [
-            base.Name_Check,
-            base.Start_Check,
-            base.Chips_Check,
-            base.EN_Check,
-            base.RE_Check,
-            base.TE_Check,
-            base.Ticket_Link_Check,
-            base.USDT_Check,
-            base.General_Settings_Check
-          ];
-
-          base.Overall = checks.includes("CHECK") || checks.includes("NG")
-            ? "CHECK"
-            : "OK";
-
-          const errors = [];
-          if (base.Name_Check === "CHECK") errors.push(`NAME: ${portal.fullExpectedName} <> ${actual.actualName}`);
-          if (base.Start_Check === "CHECK") errors.push(`START: ${portal.expectedStart} <> ${actual.actualStart}`);
-          if (base.Chips_Check === "CHECK") errors.push(`CHIPS: ${portal.expectedChips ?? "NONE"} <> ${actual.actualEnChips ?? "NONE"}`);
-          if (base.EN_Check === "CHECK") errors.push(`EN: ${portal.expectedEn ?? "NONE"} <> ${actual.actualEn ?? "NONE"}`);
-          if (base.RE_Check === "CHECK") errors.push(`RE: ${portal.expectedRe ?? "NONE"} <> ${actual.actualRe ?? "NONE"}`);
-          if (base.TE_Check === "CHECK") errors.push(`TE: ${portal.expectedTe ?? "NONE"} <> ${actual.actualTe ?? "NONE"}`);
-          if (base.Ticket_Link_Check === "CHECK") {
-            if (ticketCheck.missing.length) errors.push(`TICKET_MISSING: ${ticketCheck.missing.join(", ")}`);
-            if (ticketCheck.unexpected.length) errors.push(`TICKET_UNEXPECTED: ${ticketCheck.unexpected.join(", ")}`);
-          }
-          if (base.USDT_Check === "CHECK") errors.push(`USDT: EXPECTED ${base.USDT_Expected} <> ACTUAL ${base.USDT_Actual}`);
-          for (const check of GENERAL_SETTING_CHECKS.filter(x => x.key !== "USDT")) {
-            if (base[`${check.key}_Check`] === "CHECK") {
-              errors.push(`${check.label}: EXPECTED ${base[`${check.key}_Expected`]} <> ACTUAL ${base[`${check.key}_Actual`]}`);
-            }
-          }
-
-          base.Error = joinErrors(errors);
-
-        } catch (e) {
-          base.Overall = "ERROR";
-          base.Error = e?.message || String(e);
-        }
-
-        results.push(base);
-
-        const partial = toTsv(results, OUT_HEADERS);
-        window.PW_DC_V20_LAST_TSV = partial;
-        localStorage.setItem(CONFIG.storagePrefix + "output", partial);
-
-        await sleep(CONFIG.betweenPagesMs);
+        const source = parsed.tournaments[i];
+        const match = matchSourceTournament(source, entries);
+        setStatus(`照合中 ${i + 1}/${parsed.tournaments.length}: ${source.fullName}`);
+        results.push(await checkTournament(source, match));
+        await sleep(100);
       }
 
-      const tsv = toTsv(results, OUT_HEADERS);
-      window.PW_DC_V20_LAST_TSV = tsv;
-      localStorage.setItem(CONFIG.storagePrefix + "output", tsv);
-      const ok = results.filter(x => x.Overall === "OK").length;
-      const ng = results.filter(x => x.Overall === "NG").length;
-      const check = results.filter(x => x.Overall === "CHECK").length;
-      const error = results.filter(x => x.Overall === "ERROR").length;
-
-      showResultModal(results, tsv, { ok, ng, check, error });
-
-
-      log(`Done: OK ${ok} / CHECK ${check} / ERROR ${error} / Total ${results.length}`);
-
+      const tsv = toTsv(results);
+      const output = document.querySelector("#pw-dc-v3-output");
+      if (output) output.value = tsv;
+      localStorage.setItem(APP.storagePrefix + "OUTPUT", tsv);
+      const counts = results.reduce((acc, row) => {
+        acc[row.Overall] = (acc[row.Overall] || 0) + 1;
+        return acc;
+      }, {});
+      setStatus(`完了 / 一致 ${counts["一致"] || 0} / 不一致 ${counts["不一致"] || 0} / 表側要確認 ${counts["表側要確認"] || 0} / 要人工確認 ${counts["要人工確認"] || 0} / ERROR ${counts.ERROR || 0}`);
+      alert(`PW Tournament DC 完了\n\nOPEN検出: ${entries.length}件\n表: ${parsed.tournaments.length}件\n一致: ${counts["一致"] || 0}\n不一致: ${counts["不一致"] || 0}\n表側要確認: ${counts["表側要確認"] || 0}\n要人工確認: ${counts["要人工確認"] || 0}\nERROR: ${counts.ERROR || 0}`);
     } catch (e) {
-      console.error(e);
-      alert(e?.message || String(e));
-      log(`ERROR: ${e?.message || String(e)}`);
+      console.error("[PW-TOURNAMENT-DC-v3]", e);
+      setStatus(`ERROR: ${e?.message || e}`);
+      alert("ERROR: " + (e?.message || String(e)));
     } finally {
       running = false;
+      stopRequested = false;
     }
   }
 
-  function htmlEsc(value) {
-    return String(value ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  }
-
-  function resultBadgeStyle(status) {
-    if (status === "OK") return "background:#173b25;color:#b9efc0;border-color:#357a4f;";
-    if (status === "NG" || status === "ERROR") return "background:#4a1f1f;color:#ffd1d1;border-color:#a55;";
-    return "background:#3b3217;color:#ffe6a6;border-color:#9a7a2a;";
-  }
-
-  function buildIssueLines(row) {
-    const lines = [];
-    const add = (label, check, expected, actual) => {
-      if (check === "OK" || !check) return;
-      lines.push(`${label}: ${check} / expected ${expected || "-"} / actual ${actual || "-"}`);
-    };
-
-    add("Name", row.Name_Check, row.Portal_Name, row.Actual_Name);
-    add("Start", row.Start_Check, row.Expected_Start, row.Actual_Start);
-    add("Chips", row.Chips_Check, row.Expected_Chips, row.Actual_EN_Chips);
-    add("EN", row.EN_Check, row.Expected_EN, row.Actual_EN);
-    add("RE", row.RE_Check, row.Expected_RE, row.Actual_RE);
-    add("TE", row.TE_Check, row.Expected_TE, row.Actual_TE);
-    add("Ticket Link", row.Ticket_Link_Check, row.Expected_Ticket_Link_Count, row.Actual_Ticket_Link_Count);
-    add("Settings", row.General_Settings_Check, "1/2/4/5 ON, 3 OFF", settingsDetail(row));
-    add("USDT", row.USDT_Check, row.USDT_Expected, row.USDT_Actual);
-
-    if (row.Ticket_Missing) lines.push(`Missing ticket: ${row.Ticket_Missing}`);
-    if (row.Ticket_Unexpected) lines.push(`Unexpected ticket: ${row.Ticket_Unexpected}`);
-    if (row.Error && !lines.length) lines.push(row.Error);
-
-    return lines;
-  }
-
-  function buildReadableSummary(results, counts) {
-    const title = `Double Check: OK ${counts.ok} / CHECK ${counts.check} / ERROR ${counts.error} / Total ${results.length}`;
-    const headers = ["Overall", "Tournament", "Start", "EN", "RE", "TE", "Chips", "Settings", "USDT", "Ticket Link", "Notes"];
-    const lines = [
-      title,
-      "",
-      headers.join("\t"),
-      ...results.map(row => headers.map(h => humanCell(row, h)).join("\t"))
-    ];
-
-    const checkRows = results.filter(row => row.Overall !== "OK");
-    if (checkRows.length) {
-      lines.push("", "CHECK LIST");
-      for (const row of checkRows) {
-        lines.push(`${row.Portal_Name || "-"}\t${buildIssueLines(row).join(" / ") || row.Error || "Needs review"}`);
-      }
+  function clearInputs() {
+    if (!confirm("大会名・入力表・出力TSVをクリアしますか？")) return;
+    for (const id of ["#pw-dc-v3-prefix", "#pw-dc-v3-source", "#pw-dc-v3-output"]) {
+      const el = document.querySelector(id);
+      if (el) el.value = "";
     }
-
-    return lines.join("\n");
-  }
-
-  function statusDetail(check, expected, actual) {
-    const e = expected === "" || expected == null ? "-" : expected;
-    const a = actual === "" || actual == null ? "-" : actual;
-    return check === "OK" ? `OK ${a}` : `CHECK ${e} <> ${a}`;
-  }
-
-  function ticketLinkDetail(row) {
-    if (row.Ticket_Link_Check === "OK") {
-      return `OK ${row.Actual_Ticket_Link_Count || 0}/${row.Expected_Ticket_Link_Count || 0}`;
-    }
-
-    const parts = [`CHECK ${row.Actual_Ticket_Link_Count || 0}/${row.Expected_Ticket_Link_Count || 0}`];
-    if (row.Ticket_Missing) parts.push(`missing: ${row.Ticket_Missing}`);
-    if (row.Ticket_Unexpected) parts.push(`unexpected: ${row.Ticket_Unexpected}`);
-    return parts.join(" / ");
-  }
-
-  function settingsDetail(row) {
-    const parts = GENERAL_SETTING_CHECKS
-      .filter(x => x.key !== "USDT")
-      .map(check => {
-        const actual = row[`${check.key}_Actual`] || "-";
-        const ok = row[`${check.key}_Check`] === "OK";
-        return `${ok ? "OK" : "CHECK"} ${check.label}:${actual}`;
-      });
-    return parts.join(" / ");
-  }
-
-  function humanCell(row, key) {
-    if (key === "Overall") return row.Overall || "";
-    if (key === "Tournament") return row.Portal_Name || "";
-    if (key === "Start") return statusDetail(row.Start_Check, row.Expected_Start, row.Actual_Start);
-    if (key === "EN") return statusDetail(row.EN_Check, row.Expected_EN, row.Actual_EN);
-    if (key === "RE") return statusDetail(row.RE_Check, row.Expected_RE, row.Actual_RE);
-    if (key === "TE") return statusDetail(row.TE_Check, row.Expected_TE, row.Actual_TE);
-    if (key === "Chips") return statusDetail(row.Chips_Check, row.Expected_Chips, row.Actual_EN_Chips);
-    if (key === "Settings") return row.General_Settings_Check === "OK" ? `OK ${settingsDetail(row)}` : `CHECK ${settingsDetail(row)}`;
-    if (key === "USDT") return statusDetail(row.USDT_Check, row.USDT_Expected, row.USDT_Actual);
-    if (key === "Ticket Link") return ticketLinkDetail(row);
-    if (key === "Notes") return buildIssueLines(row).join(" / ");
-    return "";
-  }
-
-  function humanTableHtml(results) {
-    const headers = ["Overall", "Tournament", "Start", "EN", "RE", "TE", "Chips", "Settings", "USDT", "Ticket Link"];
-    return `
-      <table style="width:100%;border-collapse:collapse;font-size:12px;">
-        <thead>
-          <tr>
-            ${headers.map(h => `<th style="position:sticky;top:0;background:#252525;border:1px solid #444;padding:5px;text-align:left;">${htmlEsc(h)}</th>`).join("")}
-          </tr>
-        </thead>
-        <tbody>
-          ${results.map(row => `
-            <tr>
-              ${headers.map(h => {
-                const isStatus = h === "Overall";
-                const isCheck = String(humanCell(row, h)).startsWith("CHECK") || row.Overall === "ERROR";
-                const style = isStatus
-                  ? resultBadgeStyle(row.Overall)
-                  : isCheck
-                    ? "background:#332816;color:#ffe6a6;"
-                    : "background:#17251b;color:#c7f6d0;";
-                return `<td style="border:1px solid #444;padding:5px;vertical-align:top;${style}">${htmlEsc(humanCell(row, h))}</td>`;
-              }).join("")}
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
-    `;
-  }
-
-  function showResultModal(results, tsv, counts) {
-    document.querySelector("#pw-dc-v20-modal")?.remove();
-
-    const problemRows = results.filter(row => row.Overall !== "OK");
-    const readable = buildReadableSummary(results, counts);
-
-    const div = document.createElement("div");
-    div.id = "pw-dc-v20-modal";
-    div.style.cssText = `
-      position:fixed;inset:32px;z-index:1000001;background:#111;color:#fff;
-      border:2px solid #6aa9ff;border-radius:10px;padding:14px;
-      display:flex;flex-direction:column;gap:10px;font-family:Arial,sans-serif;
-    `;
-
-    div.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <strong>PW Tournament Double Check v2.0 Result</strong>
-        <button id="pw-dc-v20-modal-close">Close</button>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <span style="padding:5px 9px;border:1px solid #357a4f;background:#173b25;color:#b9efc0;">OK ${counts.ok}</span>
-        <span style="padding:5px 9px;border:1px solid #9a7a2a;background:#3b3217;color:#ffe6a6;">CHECK ${counts.check}</span>
-        <span style="padding:5px 9px;border:1px solid #a55;background:#4a1f1f;color:#ffd1d1;">ERROR ${counts.error}</span>
-        <span style="padding:5px 9px;border:1px solid #555;background:#222;color:#ddd;">Total ${results.length}</span>
-      </div>
-      <div style="flex:1;min-height:320px;overflow:auto;background:#181818;border:1px solid #444;padding:8px;">
-        ${humanTableHtml(results)}
-      </div>
-      <details ${problemRows.length ? "open" : ""}>
-        <summary style="cursor:pointer;color:#ffe6a6;">CHECK List (${problemRows.length})</summary>
-        <div style="margin-top:8px;max-height:180px;overflow:auto;background:#181818;border:1px solid #444;padding:8px;">
-          ${
-            problemRows.length
-              ? problemRows.map(row => `
-                <div style="border-bottom:1px solid #333;padding:6px 0;">
-                  <strong>${htmlEsc(row.Portal_Name || "-")}</strong>
-                  <ul style="margin:4px 0 0 20px;padding:0;color:#eee;">
-                    ${buildIssueLines(row).map(line => `<li>${htmlEsc(line)}</li>`).join("") || `<li>${htmlEsc(row.Error || "Needs review")}</li>`}
-                  </ul>
-                </div>
-              `).join("")
-              : `<div style="color:#b9efc0;">All rows OK.</div>`
-          }
-        </div>
-      <details>
-        <summary style="cursor:pointer;color:#9ecbff;">Raw TSV LOG</summary>
-        <textarea id="pw-dc-v20-output"
-          style="margin-top:8px;width:100%;height:180px;box-sizing:border-box;background:#222;color:#fff;border:1px solid #555;padding:8px;
-          font-family:Consolas,monospace;font-size:12px;"></textarea>
-      </details>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button id="pw-dc-v20-modal-copy-summary">Copy Summary</button>
-        <button id="pw-dc-v20-modal-copy">Copy Raw TSV</button>
-      </div>
-    `;
-
-    document.body.appendChild(div);
-    div.querySelector("#pw-dc-v20-output").value = tsv;
-    div.querySelector("#pw-dc-v20-modal-copy-summary").onclick = () => copyText(readable);
-    div.querySelector("#pw-dc-v20-modal-copy").onclick = () => copyText(div.querySelector("#pw-dc-v20-output").value);
-    div.querySelector("#pw-dc-v20-modal-close").onclick = () => div.remove();
-  }
-
-  function stopRun() {
-    stopRequested = true;
-    log("停止要求：現在の1件が終わったら停止します");
+    for (const key of ["PREFIX", "SOURCE", "OUTPUT"]) localStorage.removeItem(APP.storagePrefix + key);
+    setStatus("クリアしました");
   }
 
   function addPanel() {
-    if (document.querySelector("#pw-dc-v20-panel")) return;
-
+    if (document.querySelector("#pw-dc-v3-panel")) return;
     const panel = document.createElement("div");
-    panel.id = "pw-dc-v20-panel";
-    panel.style.cssText = `
-      position:fixed;right:16px;bottom:16px;z-index:999999;background:#202124;color:#fff;
-      width:560px;max-height:92vh;overflow:auto;padding:12px;border-radius:10px;
-      box-shadow:0 3px 16px rgba(0,0,0,.45);font:13px Arial,sans-serif;
-    `;
-
+    panel.id = "pw-dc-v3-panel";
+    panel.style.cssText = "position:fixed;right:16px;top:16px;z-index:2147483646;width:min(760px,calc(100vw - 32px));max-height:94vh;overflow:auto;background:#111827;color:#fff;border:1px solid #64748b;border-radius:12px;padding:12px;box-shadow:0 12px 32px rgba(0,0,0,.45);font-family:Arial,sans-serif;";
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <strong>PW Tournament Double Check v2.0</strong>
-        <div>
-          <button id="pw-dc-v20-min">Min</button>
-          <button id="pw-dc-v20-close">×</button>
-        </div>
+        <div style="font-size:16px;font-weight:bold;color:#fde68a;">PW Tournament DC 表照合 v${APP.version}</div>
+        <div><button id="pw-dc-v3-min">Min</button> <button id="pw-dc-v3-close">x</button></div>
       </div>
-
-      <div id="pw-dc-v20-body" style="margin-top:10px;">
-        <div style="font-weight:bold;margin-top:8px;">① 総大会名</div>
-        <div style="font-size:11px;color:#bbb;margin:3px 0;">
-          例：【JOPT 2026 Tokyo #02】
+      <div id="pw-dc-v3-body">
+        <div style="font-size:11px;color:#cbd5e1;line-height:1.45;margin:7px 0;">大会管理表を基準にOPEN大会だけを読取専用で照合します。Ticket LinkはPW Ticket Link Semi Auto側で確認します。00:00–05:59は表の赛事日から翌日へ換算します。</div>
+        <div style="font-weight:bold;margin-top:6px;">1. 総大会名</div>
+        <input id="pw-dc-v3-prefix" placeholder="【SPADIE OSAKA 1st】" style="width:100%;box-sizing:border-box;background:#020617;color:#fff;border:1px solid #475569;padding:8px;">
+        <div style="font-weight:bold;margin-top:8px;">2. 大会管理表</div>
+        <div style="font-size:11px;color:#cbd5e1;">Start / トナメ名 / Name / Chips / エントリー / リエントリー / 上限を含む範囲を貼り付け</div>
+        <textarea id="pw-dc-v3-source" style="width:100%;height:180px;box-sizing:border-box;background:#020617;color:#fff;border:1px solid #475569;padding:8px;font-family:Consolas,monospace;"></textarea>
+        <div style="display:flex;gap:6px;margin-top:7px;">
+          <button id="pw-dc-v3-run" style="flex:2;padding:8px;background:#bbf7d0;border:1px solid #16a34a;cursor:pointer;">OPENをスキャンしてDC</button>
+          <button id="pw-dc-v3-stop" style="flex:1;padding:8px;background:#fecaca;border:1px solid #dc2626;cursor:pointer;">Stop</button>
+          <button id="pw-dc-v3-clear" style="flex:1;padding:8px;cursor:pointer;">Clear</button>
         </div>
-        <input id="pw-dc-v20-prefix"
-          style="width:100%;box-sizing:border-box;background:#111;color:#fff;border:1px solid #555;padding:7px;"
-          placeholder="【JOPT 2026 Tokyo #02】">
-
-        <div style="font-weight:bold;margin-top:10px;">② Portal の Tournament ページ</div>
-        <div style="font-size:11px;color:#bbb;margin:3px 0;">
-          Date / Start / # / Name / Chips / DBI / Ticket を含む表を、そのまま全体コピー
-        </div>
-        <textarea id="pw-dc-v20-portal"
-          style="width:100%;height:150px;box-sizing:border-box;background:#111;color:#fff;border:1px solid #555;padding:7px;font-family:Consolas,monospace;"
-          placeholder="Portal Tournamentページを貼り付け"></textarea>
-
-        <div style="font-weight:bold;margin-top:10px;">③ 受付Portal の Ticket Link ページ</div>
-        <div style="font-size:11px;color:#bbb;margin:3px 0;">
-          上部の日付・大会番号・Tournament ID（メイン行）・Ticket行を含めて、そのまま全体コピー
-        </div>
-        <textarea id="pw-dc-v20-ticket"
-          style="width:100%;height:150px;box-sizing:border-box;background:#111;color:#fff;border:1px solid #555;padding:7px;font-family:Consolas,monospace;"
-          placeholder="受付Portal Ticket Linkページを貼り付け"></textarea>
-
-        <details style="margin-top:10px;">
-          <summary style="cursor:pointer;font-weight:bold;">詳細設定：ドリンク券ルール</summary>
-          <textarea id="pw-dc-v20-rules"
-            style="width:100%;height:105px;box-sizing:border-box;margin-top:6px;background:#111;color:#fff;border:1px solid #555;padding:7px;font-family:Consolas,monospace;"></textarea>
-        </details>
-
-        <div style="display:flex;gap:8px;margin-top:12px;">
-          <button id="pw-dc-v20-run"
-            style="flex:1;padding:9px;background:#b9efc0;border:1px solid #7a8;cursor:pointer;font-weight:bold;">
-            Double Check
-          </button>
-          <button id="pw-dc-v20-stop"
-            style="padding:9px;background:#f3cccc;border:1px solid #c88;cursor:pointer;">
-            Stop
-          </button>
-        </div>
-
-        <button id="pw-dc-v20-copy"
-          style="width:100%;margin-top:8px;padding:8px;background:#d9ecff;border:1px solid #88a;cursor:pointer;">
-          Copy Last LOG
-        </button>
-
-        <div id="pw-dc-v20-status"
-          style="margin-top:8px;font-size:11px;color:#9fe;white-space:pre-wrap;">ready</div>
-      </div>
-    `;
-
+        <div style="font-weight:bold;margin-top:8px;">DC TSV / Output</div>
+        <textarea id="pw-dc-v3-output" readonly style="width:100%;height:220px;box-sizing:border-box;background:#020617;color:#a7f3d0;border:1px solid #475569;padding:8px;font-family:Consolas,monospace;"></textarea>
+        <button id="pw-dc-v3-copy" style="width:100%;padding:8px;margin-top:5px;cursor:pointer;">Copy DC TSV</button>
+        <div id="pw-dc-v3-status" style="font-size:11px;color:#93c5fd;white-space:pre-wrap;margin-top:7px;">ready</div>
+      </div>`;
     document.body.appendChild(panel);
 
-    panel.querySelector("#pw-dc-v20-prefix").value =
-      localStorage.getItem(CONFIG.storagePrefix + "prefix") || "";
-
-    panel.querySelector("#pw-dc-v20-portal").value =
-      localStorage.getItem(CONFIG.storagePrefix + "portal") || "";
-
-    panel.querySelector("#pw-dc-v20-ticket").value =
-      localStorage.getItem(CONFIG.storagePrefix + "ticket") || "";
-
-    panel.querySelector("#pw-dc-v20-rules").value =
-      localStorage.getItem(CONFIG.storagePrefix + "rules") ||
-`DEFAULT: 1000
-Tag Team: 2000
-Tag: 2000
-3on3: 3000
-Crown: 0
-Platinum: 0
-Satellite: 0
-Sattelite: 0`;
-
-    panel.querySelector("#pw-dc-v20-run").onclick = runDoubleCheck;
-    panel.querySelector("#pw-dc-v20-stop").onclick = stopRun;
-
-    panel.querySelector("#pw-dc-v20-copy").onclick = () => {
-      const tsv = window.PW_DC_V20_LAST_TSV ||
-        localStorage.getItem(CONFIG.storagePrefix + "output") || "";
-      if (!tsv) return alert("まだLOGがありません");
-      copyText(tsv);
-      alert("LOGをコピーしました");
+    document.querySelector("#pw-dc-v3-prefix").value = localStorage.getItem(APP.storagePrefix + "PREFIX") || "";
+    document.querySelector("#pw-dc-v3-source").value = localStorage.getItem(APP.storagePrefix + "SOURCE") || "";
+    document.querySelector("#pw-dc-v3-output").value = localStorage.getItem(APP.storagePrefix + "OUTPUT") || "";
+    document.querySelector("#pw-dc-v3-run").onclick = runDc;
+    document.querySelector("#pw-dc-v3-stop").onclick = () => { stopRequested = true; setStatus("停止要求を受け付けました"); };
+    document.querySelector("#pw-dc-v3-clear").onclick = clearInputs;
+    document.querySelector("#pw-dc-v3-copy").onclick = () => {
+      const text = document.querySelector("#pw-dc-v3-output")?.value || "";
+      if (!norm(text)) return alert("出力TSVがありません。");
+      copyText(text);
+      alert("DC TSVをコピーしました。");
     };
-
-    panel.querySelector("#pw-dc-v20-min").onclick = () => {
-      const body = panel.querySelector("#pw-dc-v20-body");
+    document.querySelector("#pw-dc-v3-min").onclick = () => {
+      const body = document.querySelector("#pw-dc-v3-body");
       const hidden = body.style.display === "none";
       body.style.display = hidden ? "block" : "none";
-      panel.querySelector("#pw-dc-v20-min").textContent = hidden ? "Min" : "Open";
+      document.querySelector("#pw-dc-v3-min").textContent = hidden ? "Min" : "Open";
     };
-
-    panel.querySelector("#pw-dc-v20-close").onclick = () => {
-      panel.style.display = "none";
-    };
+    document.querySelector("#pw-dc-v3-close").onclick = () => { panel.style.display = "none"; };
   }
 
   function boot() {
     addPanel();
-
-    window.PWTournamentDC = {
-      run: runDoubleCheck,
-      stop: stopRun,
-      parsePortal,
-      parseTicketMatrix
-    };
-
-    log("ready");
+    window.PWTournamentDC = { run: runDc, parseSourceTable, scanOpen, stop: () => { stopRequested = true; } };
+    setStatus("ready / OPENのみ / Ticket Link DCなし");
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", boot);
-  } else {
-    boot();
-  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
 })();

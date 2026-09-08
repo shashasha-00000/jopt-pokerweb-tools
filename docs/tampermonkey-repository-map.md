@@ -11,7 +11,7 @@ Scripts under `legacy/`, `private/`, `experimental/`, and `test-scripts/` are no
 | `pw-tournament-blind-manual.user.js` | PW Tournament Blind Manual | Existing tournament blind setup | Usable, pending safer template/preview upgrade. Rules are currently hardcoded. |
 | `pw-ticket-link-semi-auto.user.js` | PW Ticket Link Semi Auto | Existing tournament Ticket Link | Confirmed URL flow using Shared Cache / URL pool, background fetch, then POST Ticket Link. |
 | `pw-tournament-close-audit-batch.user.js` | PW Tournament CLOSE + AUDIT Background Batch | Existing tournament close/audit | Background CLOSE and audit execution. URL resolution uses explicit URL/TournamentId, Shared Cache, then Event Prefix URL pool. |
-| `pw-existing-item-fee-patch.user.js` | PW Existing Tournament Patch | Existing tournament name and item fee patch | Minimal TSV patch tool. Uses pasted URL/TournamentId, Shared Cache, then Event Prefix URL pool before updating only the listed name and/or item fee fields. |
+| `pw-existing-tournament-item-updater.user.js` | PW 既存大会 Item 更新 人工確認版 | Existing tournament item update | Preview/Resolve and manual confirmation before enabling USDT sales and updating or adding any number of sale items. |
 | `pw-prize-batch-manual.user.js` | PW Prize Plan Semi Auto | Prize Plan check/write | File name kept for the recently shared install URL. |
 | `pw-national-ticket-batch.user.js` | PW National Ticket Batch | National ticket issue flow | Batch issue by Game ID and ticket name. |
 | `pw-receipt-full-auto.user.js` | PW Receipt Full Auto | Receipt full-auto flow | Current V7 line; old V6 is in `legacy/`. |
