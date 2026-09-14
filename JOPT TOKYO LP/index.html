@@ -378,16 +378,67 @@
     flex:1; background:white; border:1px solid #dde4f0; border-radius:12px;
     padding:1.5rem 1.75rem; cursor:pointer; text-align:left;
     display:flex; align-items:center; gap:1.25rem;
+    width:100%; font:inherit; appearance:none;
     transition:transform 0.2s, box-shadow 0.2s;
   }
   .step-item.final .step-card { background:#fffbf0; border-color:#f0dfa8; }
   .step-card:hover { transform:translateY(-2px); box-shadow:0 10px 26px rgba(26,58,110,0.1); }
   .step-card-icon { font-size:1.9rem; flex-shrink:0; }
   .step-card-body { flex:1; }
-  .step-card-label { font-family:'Oswald',sans-serif; font-size:0.72rem; font-weight:700; letter-spacing:2px; color:var(--jopt-blue-light); text-transform:uppercase; margin-bottom:0.3rem; }
-  .step-card-title { font-size:1.05rem; font-weight:700; color:var(--jopt-blue-dark); margin-bottom:0.3rem; }
-  .step-card-desc { font-size:0.86rem; color:var(--jopt-gray); line-height:1.6; }
+  .step-card-label { display:block; font-family:'Oswald',sans-serif; font-size:0.72rem; font-weight:700; letter-spacing:2px; color:var(--jopt-blue-light); text-transform:uppercase; margin-bottom:0.3rem; }
+  .step-card-title { display:block; font-size:1.05rem; font-weight:700; color:var(--jopt-blue-dark); margin-bottom:0.3rem; }
+  .step-card-desc { display:block; font-size:0.86rem; color:var(--jopt-gray); line-height:1.6; }
   .step-card-arrow { font-size:1.3rem; color:var(--jopt-blue-light); flex-shrink:0; }
+
+  .guide-entry-card, .food-entry-card {
+    width:100%; max-width:760px; margin:2rem auto 0; padding:2rem;
+    border:1px solid #dce5f2; border-radius:18px; background:#fff;
+    display:flex; align-items:center; gap:1.4rem; text-align:left;
+    cursor:pointer; font:inherit; appearance:none;
+    box-shadow:0 10px 30px rgba(25,58,111,0.08);
+    transition:transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+  }
+  .guide-entry-card:hover, .food-entry-card:hover { transform:translateY(-3px); border-color:#9fc2ee; box-shadow:0 14px 34px rgba(25,58,111,0.13); }
+  .guide-entry-card:focus-visible, .food-entry-card:focus-visible { outline:3px solid rgba(30,117,209,0.32); outline-offset:3px; }
+  .entry-card-icon {
+    width:72px; height:72px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    background:#edf5ff; font-size:2rem;
+  }
+  .food-entry-card .entry-card-icon { background:#fff4d8; }
+  .entry-card-copy { flex:1; }
+  .entry-card-title { display:block; color:var(--jopt-blue-dark); font-size:1.3rem; font-weight:700; margin-bottom:0.45rem; }
+  .entry-card-arrow { color:var(--jopt-blue-light); font-size:1.5rem; flex-shrink:0; }
+  .players-guide-entry {
+    max-width:760px; margin:1rem auto 0; padding:1rem 1.25rem;
+    border:1px dashed #b8c8dd; border-radius:12px; background:#f7f9fc;
+    display:flex; align-items:center; gap:0.8rem; color:var(--jopt-blue-dark); text-decoration:none;
+  }
+  .players-guide-entry:not([href]) { cursor:default; }
+  .players-guide-entry[href]:hover { border-style:solid; border-color:#9fc2ee; background:#edf5ff; }
+  .players-guide-icon { font-size:1.25rem; }
+  .players-guide-title { flex:1; font-size:0.9rem; font-weight:700; }
+  .players-guide-status { color:var(--jopt-gray); font-size:0.8rem; }
+
+  .food-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem; margin-top:2rem; }
+  .food-card { border:1px solid #dce5f2; border-radius:16px; background:#fff; padding:1.4rem; box-shadow:0 8px 24px rgba(25,58,111,0.06); }
+  .food-card-image { display:block; width:100%; height:170px; object-fit:cover; margin-bottom:1rem; border-radius:12px; cursor:zoom-in; }
+  .food-card-title { color:var(--jopt-blue-dark); font-size:1.02rem; font-weight:700; line-height:1.5; margin-bottom:0.25rem; }
+  .food-card-name { color:var(--jopt-gray); font-size:0.78rem; margin-bottom:0.8rem; }
+  .food-card-text { color:#5d697b; font-size:0.86rem; line-height:1.75; margin-bottom:0.8rem; }
+  .food-card-meta { display:flex; flex-wrap:wrap; gap:0.45rem; margin-bottom:1rem; }
+  .food-tag { display:inline-block; padding:4px 9px; border-radius:20px; background:#edf5ff; color:var(--jopt-blue-mid); font-size:0.72rem; font-weight:700; }
+  .food-tag.ticket { background:#fff3d4; color:#7a5600; }
+  .food-card-link { color:var(--jopt-blue-mid); font-size:0.82rem; font-weight:700; text-decoration:none; }
+  .food-card-link:hover { text-decoration:underline; }
+  .food-note { margin-top:1.3rem; padding:0.9rem 1rem; border-radius:10px; background:#f4f8ff; color:#667; font-size:0.8rem; line-height:1.7; }
+  .game-id-guide-image { width:100%; height:auto; display:block; border:1px solid #dce5f2; border-radius:14px; box-shadow:0 8px 24px rgba(25,58,111,0.07); }
+  .floor-map-image { width:100%; height:auto; display:block; border:1px solid #dce5f2; border-radius:14px; cursor:zoom-in; box-shadow:0 8px 24px rgba(25,58,111,0.07); }
+  .floor-map-caption { margin-top:0.65rem; color:var(--jopt-gray); font-size:0.8rem; text-align:center; }
+  .faq-photo-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:0.75rem; margin-top:1rem; }
+  .faq-photo-grid figure { margin:0; }
+  .faq-photo-grid img { width:100%; height:150px; object-fit:cover; display:block; border-radius:9px; border:1px solid #dde4f0; cursor:zoom-in; }
+  .faq-photo-grid figcaption { margin-top:0.35rem; text-align:center; color:var(--jopt-gray); font-size:0.72rem; }
 
   /* ── PROMOTIONAL CONTENT (About / lineup / China guide / FAQ) ── */
   .about-feature {
@@ -412,6 +463,7 @@
   .lineup-card {
     position:relative; overflow:hidden; padding:1.35rem; border-radius:14px;
     background:#fff; border:1px solid #dce5f2; box-shadow:0 8px 24px rgba(25,58,111,0.06);
+    display:flex; flex-direction:column;
   }
   .lineup-card::before { content:''; position:absolute; left:0; top:0; right:0; height:4px; background:var(--jopt-blue-mid); }
   .lineup-card.gold::before { background:var(--jopt-accent); }
@@ -421,6 +473,12 @@
   .lineup-label { color:var(--jopt-blue-light); font-family:'Oswald',sans-serif; font-size:0.68rem; font-weight:700; letter-spacing:0.13em; text-transform:uppercase; }
   .lineup-title { margin:0.25rem 0 0.55rem; color:var(--jopt-blue-dark); font-size:1.02rem; font-weight:700; }
   .lineup-text { color:#667; font-size:0.84rem; line-height:1.7; }
+  .lineup-more {
+    align-self:flex-start; margin-top:auto; padding:0.85rem 0 0; border:0; background:none;
+    color:var(--jopt-blue-mid); font:inherit; font-size:0.82rem; font-weight:700; cursor:pointer;
+  }
+  .lineup-more:hover { text-decoration:underline; }
+  .lineup-more:focus-visible { outline:3px solid rgba(30,117,209,0.3); outline-offset:4px; border-radius:2px; }
   .lineup-note { margin-top:1.2rem; padding:0.9rem 1rem; background:#f4f8ff; border-radius:10px; color:#667; font-size:0.8rem; line-height:1.65; }
 
   .china-benefit-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:0.85rem; margin-top:1.2rem; }
@@ -438,25 +496,17 @@
   .quick-guide-heading { margin:2rem 0 0; color:var(--jopt-blue-dark); font-size:1.05rem; font-weight:700; }
 
   .faq-list { max-width:820px; margin:2rem auto 0; display:grid; gap:0.75rem; }
+  .faq-category-title { max-width:820px; margin:2.2rem auto 0.8rem; color:var(--jopt-blue-dark); font-size:1.05rem; font-weight:700; padding-left:0.75rem; border-left:4px solid var(--jopt-accent); }
+  .faq-category-title + .faq-list { margin-top:0; }
   .faq-item { border:1px solid #dce5f2; border-radius:12px; background:#fff; overflow:hidden; }
   .faq-item summary { cursor:pointer; list-style:none; padding:1rem 3rem 1rem 1.2rem; color:var(--jopt-blue-dark); font-size:0.92rem; font-weight:700; position:relative; }
   .faq-item summary::-webkit-details-marker { display:none; }
   .faq-item summary::after { content:'＋'; position:absolute; right:1.2rem; top:50%; transform:translateY(-50%); color:var(--jopt-blue-light); font-size:1.2rem; }
   .faq-item[open] summary::after { content:'−'; }
   .faq-answer { padding:0 1.2rem 1.1rem; color:#5d697b; font-size:0.86rem; line-height:1.75; }
-
-  .guide-extra { margin-top:2rem; padding-top:1.5rem; border-top:1px dashed #dde4f0; }
-  .guide-extra-title { margin-bottom:0.9rem; color:var(--jopt-blue-dark); font-size:0.9rem; font-weight:700; }
-  .guide-extra-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0.85rem; }
-  .guide-extra-link {
-    display:flex; align-items:center; gap:0.75rem; cursor:pointer;
-    background:white; border:1px solid #dde4f0; border-radius:10px;
-    padding:0.9rem 1.4rem; transition:box-shadow 0.2s, transform 0.2s;
-  }
-  .guide-extra-link:hover { transform:translateY(-2px); box-shadow:0 8px 20px rgba(26,58,110,0.1); }
-  .guide-extra-icon { font-size:1.3rem; }
-  .guide-extra-text { font-size:0.9rem; font-weight:600; color:var(--jopt-blue-dark); }
-  .guide-extra-text::after { content:' 查看详情 →'; font-weight:500; color:var(--jopt-blue-mid); }
+  .faq-inline-link { display:inline-block; margin-top:0.75rem; padding:0; border:0; background:none; color:var(--jopt-blue-mid); font:inherit; font-weight:700; cursor:pointer; }
+  .faq-inline-link:hover { text-decoration:underline; }
+  .qr-placeholder { width:180px; height:180px; margin-top:1rem; border:2px dashed #b9c8db; border-radius:12px; background:#f7faff; color:#7a8799; display:flex; align-items:center; justify-content:center; text-align:center; font-size:0.8rem; line-height:1.6; }
 
   /* ── DETAIL PAGES (full-page tab views) ── */
   .detail-page {
@@ -493,6 +543,7 @@
     flex-shrink: 0;
   }
   .detail-back:hover { background: rgba(255,255,255,0.22); }
+  .detail-qa { margin-left:auto; }
   .detail-header-title {
     color: white;
     font-family: 'Oswald', sans-serif;
@@ -504,6 +555,34 @@
   .detail-eyebrow { font-size:0.75rem; font-weight:700; letter-spacing:3px; color:var(--jopt-blue-light); text-transform:uppercase; margin-bottom:0.5rem; }
   .detail-title { font-family:'Oswald',sans-serif; font-size:clamp(1.5rem,4vw,2.1rem); font-weight:700; color:var(--jopt-blue-dark); margin-bottom:0.75rem; line-height:1.25; }
   .detail-intro { color:var(--jopt-gray); font-size:0.98rem; line-height:1.8; margin-bottom:2rem; }
+
+  .tournament-hero { margin:0 0 1.5rem; border-radius:16px; overflow:hidden; background:#eef3f9; border:1px solid #dce5f2; }
+  .tournament-hero img { width:100%; aspect-ratio:3 / 2; object-fit:cover; display:block; cursor:zoom-in; }
+  .tournament-facts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0.8rem; margin:0 0 2rem; }
+  .tournament-fact { padding:1rem 1.1rem; border-radius:12px; background:#f4f8ff; border:1px solid #dce5f2; }
+  .tournament-fact-label { display:block; color:#718096; font-size:0.72rem; line-height:1.4; margin-bottom:0.3rem; }
+  .tournament-fact-value { display:block; color:var(--jopt-blue-dark); font-size:0.92rem; font-weight:700; line-height:1.55; }
+  .schedule-list { display:flex; flex-direction:column; gap:0.7rem; margin:0 0 2rem; }
+  .schedule-item { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:0.3rem 1rem; padding:1rem 1.2rem; border-radius:12px; background:#f4f8ff; border:1px solid #dce5f2; }
+  .schedule-item-name { color:var(--jopt-blue-dark); font-size:0.95rem; font-weight:700; }
+  .schedule-item-meta { color:#5d697b; font-size:0.88rem; }
+  .schedule-item-meta b { color:var(--jopt-blue-dark); font-weight:700; }
+  .tournament-story { margin:0 0 1.5rem; padding:1.5rem; border-left:4px solid var(--jopt-accent); background:#fffaf0; border-radius:0 12px 12px 0; }
+  .tournament-story h2 { margin:0 0 0.7rem; color:var(--jopt-blue-dark); font-size:1.2rem; line-height:1.5; }
+  .tournament-story p { margin:0; color:#556; font-size:0.92rem; line-height:1.85; }
+  .champion-section { margin:0 0 1.5rem; }
+  .champion-section-title { margin:0 0 1rem; color:var(--jopt-blue-dark); font-size:1.25rem; line-height:1.5; }
+  .champion-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; }
+  .champion-card { overflow:hidden; border:1px solid #dce5f2; border-radius:16px; background:#fff; box-shadow:0 8px 24px rgba(25,58,111,0.07); }
+  .champion-card-image { width:100%; aspect-ratio:4 / 3; object-fit:cover; display:block; cursor:zoom-in; }
+  .champion-card-body { padding:1.2rem; }
+  .champion-card-event { margin:0 0 0.45rem; color:var(--jopt-blue-light); font-size:0.72rem; font-weight:700; line-height:1.5; letter-spacing:0.04em; }
+  .champion-card h3 { margin:0 0 0.7rem; color:var(--jopt-blue-dark); font-size:1.15rem; line-height:1.45; }
+  .champion-prize { margin:0 0 0.8rem; padding:0.65rem 0.75rem; border-radius:10px; background:#f4f8ff; color:#52627a; font-size:0.78rem; line-height:1.55; }
+  .champion-prize strong { display:block; color:var(--jopt-blue-dark); font-family:'Oswald',sans-serif; font-size:1.15rem; letter-spacing:0.02em; }
+  .champion-card-copy { margin:0; color:#556; font-size:0.9rem; line-height:1.8; }
+  .champion-prize-note { margin:0.9rem 0 0; color:#7a8799; font-size:0.74rem; line-height:1.65; }
+  .tournament-disclaimer { margin-top:1.5rem; color:#7a8799; font-size:0.76rem; line-height:1.7; }
 
   /* ── DETAIL INSTRUCTION CARDS (numbered, image-led step flows) ── */
   .instruction-flow { margin:2rem 0; }
@@ -535,30 +614,6 @@
     color:#445; font-size:0.9rem; line-height:1.75;
   }
   .instruction-tip strong { color:var(--jopt-blue-dark); }
-  .side-guide-card {
-    margin:2.5rem 0 0; padding:1.5rem; border-radius:18px;
-    border:1px solid #eadbb8; background:linear-gradient(145deg,#fffdf7 0%,#fff8e8 100%);
-    box-shadow:0 10px 28px rgba(112,78,8,0.08);
-  }
-  .side-guide-tag {
-    display:inline-block; margin-bottom:0.75rem; padding:0.3rem 0.8rem;
-    border-radius:999px; background:var(--jopt-accent); color:var(--jopt-blue-dark);
-    font-size:0.72rem; font-weight:700; letter-spacing:0.12em;
-  }
-  .side-guide-title { margin:0 0 0.55rem; color:var(--jopt-blue-dark); font-size:1.3rem; }
-  .side-guide-text { margin:0; color:#556; font-size:0.92rem; line-height:1.75; }
-  .side-guide-alert {
-    margin:1rem 0 1.25rem; padding:0.85rem 1rem; border-radius:10px;
-    background:#fff; border:1px solid #eadbb8; color:#654b16; font-size:0.88rem; line-height:1.65;
-  }
-  .side-guide-route { display:grid; grid-template-columns:1fr 34px 1fr; gap:0.6rem; align-items:center; }
-  .side-guide-route figure { margin:0; min-width:0; }
-  .side-guide-route img {
-    display:block; width:100%; aspect-ratio:4 / 3; object-fit:cover;
-    border-radius:12px; border:1px solid #e2d5b8; cursor:zoom-in;
-  }
-  .side-guide-route figcaption { margin-top:0.5rem; color:#6c6250; font-size:0.8rem; text-align:center; }
-  .side-guide-arrow { color:var(--jopt-accent); font-size:1.7rem; font-weight:700; text-align:center; }
   .branch-heading { margin:2rem 0 1rem; font-size:1.05rem; font-weight:700; color:var(--jopt-blue-dark); }
   .branch-grid { display:grid; grid-template-columns:1fr 1fr; gap:1.2rem; align-items:start; }
   .branch-panel { border:1px solid #dce5f2; border-radius:16px; overflow:hidden; background:#f9fbff; }
@@ -677,13 +732,20 @@
     .step-card-arrow { display: none; }
     .step-num { width: 38px; height: 38px; font-size: 1.05rem; }
     .step-item-line { left: 18px; top: 42px; }
+    .guide-entry-card, .food-entry-card { padding:1.35rem; gap:1rem; }
+    .entry-card-icon { width:56px; height:56px; font-size:1.55rem; }
+    .entry-card-title { font-size:1.05rem; }
+    .entry-card-arrow { display:none; }
+    .food-grid { grid-template-columns:1fr; }
     .about-feature { grid-template-columns:1fr; }
     .about-feature-image { min-height:230px; }
     .about-feature-copy { padding:1.4rem; }
     .about-mini-grid { grid-template-columns:1fr; }
     .lineup-grid { grid-template-columns:1fr; }
+    .tournament-facts { grid-template-columns:1fr; }
+    .tournament-story { padding:1.2rem; }
+    .champion-grid { grid-template-columns:1fr; }
     .china-benefit-grid { grid-template-columns:1fr 1fr; }
-    .guide-extra-list { grid-template-columns:1fr; }
     .hotel-grid { grid-template-columns: 1fr !important; }
     .jopt-about-grid { grid-template-columns: 1fr !important; }
     .detail-body { padding: 2rem 1.2rem 4rem; }
@@ -691,9 +753,6 @@
     .instruction-num { width:38px; height:38px; font-size:0.9rem; }
     .instruction-media { grid-column:1 / -1; }
     .instruction-media img { max-width:none; max-height:none; object-fit:contain; }
-    .side-guide-card { padding:1.15rem; }
-    .side-guide-route { grid-template-columns:1fr; }
-    .side-guide-arrow { transform:rotate(90deg); }
     .branch-grid { grid-template-columns:1fr; }
   }
 </style>
@@ -711,9 +770,9 @@
   <ul class="nav-links">
     <li><a href="#about">赛事介绍</a></li>
     <li><a href="#guide">参赛指南</a></li>
-    <li><a href="#access">怎么去</a></li>
+    <li><a href="#access">交通指南</a></li>
     <li><a href="#schedule">赛程</a></li>
-    <li><a href="#hotels">推荐酒店</a></li>
+    <li><a href="#faq">Q&amp;A</a></li>
   </ul>
 </nav>
 
@@ -753,85 +812,19 @@
   </div>
 </div>
 
-<!-- GUIDE (4 core steps + 1 extra card → full detail tabs) -->
+<!-- GUIDE (single main-page entry → 4-step guide → step details) -->
 <section id="guide" style="background:var(--jopt-white);padding:5rem 0;">
   <div class="section-inner">
     <p class="section-label reveal">Player Guide</p>
-    <h2 class="section-title reveal">如何参加JOPT？</h2>
+    <h2 class="section-title reveal">第一次参加 JOPT？</h2>
     <div class="divider reveal"></div>
-    <p class="section-desc reveal">只需 4 步，点击卡片查看每一步的详细说明。</p>
-
-    <div class="step-timeline">
-      <div class="step-item reveal">
-        <div class="step-num">1</div>
-        <div class="step-item-line"></div>
-        <div class="step-card" onclick="showDetail('detail-step1')">
-          <div class="step-card-icon">🆔</div>
-          <div class="step-card-body">
-            <div class="step-card-label">STEP 01</div>
-            <div class="step-card-title">注册 Game ID</div>
-            <div class="step-card-desc">第一次来 JOPT？工作人员将协助您完成注册。</div>
-          </div>
-          <div class="step-card-arrow">→</div>
-        </div>
-      </div>
-
-      <div class="step-item reveal">
-        <div class="step-num">2</div>
-        <div class="step-item-line"></div>
-        <div class="step-card" onclick="showDetail('detail-step2')">
-          <div class="step-card-icon">📝</div>
-          <div class="step-card-body">
-            <div class="step-card-label">STEP 02</div>
-            <div class="step-card-title">报名参赛</div>
-            <div class="step-card-desc">寻找对应报名窗口，出示二维码完成报名。</div>
-          </div>
-          <div class="step-card-arrow">→</div>
-        </div>
-      </div>
-
-      <div class="step-item reveal">
-        <div class="step-num">3</div>
-        <div class="step-item-line"></div>
-        <div class="step-card" onclick="showDetail('detail-step3')">
-          <div class="step-card-icon">🃏</div>
-          <div class="step-card-body">
-            <div class="step-card-label">STEP 03</div>
-            <div class="step-card-title">寻找座位</div>
-            <div class="step-card-desc">根据座位票找到对应座位并入座。</div>
-          </div>
-          <div class="step-card-arrow">→</div>
-        </div>
-      </div>
-
-      <div class="step-item final reveal">
-        <div class="step-num">4</div>
-        <div class="step-item-line"></div>
-        <div class="step-card" onclick="showDetail('detail-step4')">
-          <div class="step-card-icon">🏆</div>
-          <div class="step-card-body">
-            <div class="step-card-label">STEP 04</div>
-            <div class="step-card-title">领取奖金</div>
-            <div class="step-card-desc">获得奖金后，前往指定柜台办理领取手续。</div>
-          </div>
-          <div class="step-card-arrow">→</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="guide-extra reveal">
-      <div class="guide-extra-title">更多现场指南</div>
-      <div class="guide-extra-list">
-        <div class="guide-extra-link" onclick="showDetail('detail-amenity')">
-          <span class="guide-extra-icon">🥤</span>
-          <span class="guide-extra-text">饮料柜台</span>
-        </div>
-        <div class="guide-extra-link" onclick="showDetailAt('detail-step2','sitgo-guide')">
-          <span class="guide-extra-icon">⚡</span>
-          <span class="guide-extra-text">Sit &amp; Go 快速赛</span>
-        </div>
-      </div>
-    </div>
+    <button type="button" class="guide-entry-card reveal" onclick="showDetail('detail-guide','guide')">
+      <span class="entry-card-icon">🧭</span>
+      <span class="entry-card-copy">
+        <span class="entry-card-title">查看完整参赛流程</span>
+      </span>
+      <span class="entry-card-arrow">→</span>
+    </button>
   </div>
 </section>
 
@@ -839,7 +832,7 @@
 <section id="access" style="background:#f4f6fb;padding:5rem 0;">
   <div class="section-inner">
     <p class="section-label reveal">Access</p>
-    <h2 class="section-title reveal">怎么去</h2>
+    <h2 class="section-title reveal">会场交通</h2>
     <div class="divider reveal"></div>
     <div class="reveal">
       <dl style="margin-bottom:1.5rem;">
@@ -858,7 +851,10 @@
         <a href="https://j.map.baidu.com/50/a-xi" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:#2f6fbd;color:white;font-family:'Oswald',sans-serif;font-weight:600;font-size:0.88rem;padding:9px 22px;border-radius:4px;text-decoration:none;">🗺 百度地图</a>
         <a href="https://surl.amap.com/1uxS74q1cd0W" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:#00a854;color:white;font-family:'Oswald',sans-serif;font-weight:600;font-size:0.88rem;padding:9px 22px;border-radius:4px;text-decoration:none;">🗺 高德地图</a>
       </div>
-      <button class="btn-outline" style="color:var(--jopt-blue);border-color:var(--jopt-blue);" onclick="showDetail('detail-route')">查看图文路线导览 →</button>
+      <div class="detail-btn-row">
+        <button class="btn-outline" style="color:var(--jopt-blue);border-color:var(--jopt-blue);" onclick="showDetail('detail-route','access')">查看图文路线导览 →</button>
+        <button class="btn-outline" style="color:var(--jopt-blue);border-color:var(--jopt-blue);" onclick="showDetail('detail-floor-map','access')">查看会场 Floor Map →</button>
+      </div>
     </div>
   </div>
 </section>
@@ -873,6 +869,11 @@
       <iframe src="https://schedule.joptchn.com/tokyo03" width="100%" height="600" style="border:none;border-radius:8px;" loading="lazy"></iframe>
       <a href="https://schedule.joptchn.com/tokyo03" target="_blank" style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,0.6);color:white;width:32px;height:32px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;text-decoration:none;">⛶</a>
     </div>
+    <a class="players-guide-entry reveal" data-player-guide>
+      <span class="players-guide-icon">📘</span>
+      <span class="players-guide-title">PLAYER'S GUIDE 中文版</span>
+      <span class="players-guide-status">即将上线</span>
+    </a>
   </div>
 </section>
 
@@ -882,7 +883,6 @@
     <p class="section-label reveal">Accommodation</p>
     <h2 class="section-title reveal">推荐住宿</h2>
     <div class="divider reveal"></div>
-    <p class="section-desc reveal">我们整理了几家会场附近的酒店，可根据预算和需求选择。</p>
 
     <div class="hotel-group-title reveal">📍 距赛场最近的酒店</div>
     <div class="hotel-grid reveal">
@@ -942,13 +942,29 @@
   </div>
 </section>
 
+<!-- FOOD GUIDE -->
+<section id="food" style="background:#f4f6fb;">
+  <div class="section-inner">
+    <p class="section-label reveal">Food Guide</p>
+    <h2 class="section-title reveal">赛场周边美食</h2>
+    <div class="divider reveal"></div>
+    <button type="button" class="food-entry-card reveal" onclick="showDetail('detail-food','food')">
+      <span class="entry-card-icon">🍽️</span>
+      <span class="entry-card-copy">
+        <span class="entry-card-title">查看餐厅推荐</span>
+      </span>
+      <span class="entry-card-arrow">→</span>
+    </button>
+  </div>
+</section>
+
 <!-- ABOUT -->
 <section id="about" style="background:linear-gradient(180deg,var(--jopt-blue) 0%,var(--jopt-blue-dark) 100%);color:#fff;padding:5rem 0;">
   <div class="section-inner">
     <p class="section-label reveal" style="color:var(--jopt-accent);">About JOPT</p>
-    <h2 class="section-title reveal" style="color:#fff;">现场扑克不只有一种玩法</h2>
+    <h2 class="section-title reveal" style="color:#fff;">亚洲顶级扑克盛会</h2>
     <div class="divider reveal" style="background:var(--jopt-accent);"></div>
-    <p class="section-desc reveal" style="color:rgba(255,255,255,0.78);">从系列核心赛事到轻量小赛、团体玩法和 MIX Games，可以先看赛程，再选择适合自己的比赛。</p>
+    <p class="section-desc reveal" style="color:rgba(255,255,255,0.78);">来自不同国家和地区的玩家齐聚 JOPT，在比赛中全情投入，也为彼此的表现喝彩。这里汇聚 Main Event、Side Event 及多种赛制，带来 JOPT 独有的现场扑克体验。</p>
 
     <div class="about-feature reveal">
       <div class="about-feature-image">
@@ -973,8 +989,8 @@
       </div>
       <div class="about-mini-card">
         <div class="about-mini-icon">🌏</div>
-        <div class="about-mini-title">海外玩家指南</div>
-        <div class="about-mini-text">提前确认报名、支付、座位和奖金领取方式，到场后更容易行动。</div>
+        <div class="about-mini-title">完善的海外玩家服务</div>
+        <div class="about-mini-text">现场配备中文及英文翻译人员，为海外玩家提供报名、支付、座位确认及奖金领取等协助。</div>
       </div>
     </div>
   </div>
@@ -984,50 +1000,76 @@
 <section id="lineup" style="background:#f4f6fb;padding:5rem 0;">
   <div class="section-inner">
     <p class="section-label reveal">Tournament Lineup</p>
-    <h2 class="section-title reveal">每一种选择，都是不同的战场</h2>
+    <h2 class="section-title reveal">丰富的赛事阵容</h2>
     <div class="divider reveal"></div>
-    <p class="section-desc reveal">从系列焦点到快节奏小赛，从团队配合到多种牌局。选择你的节奏，牌桌见。</p>
+    <p class="section-desc reveal">可根据参赛方式、比赛时间和熟悉的玩法选择赛事。</p>
 
     <div class="lineup-grid reveal">
       <article class="lineup-card gold">
         <div class="lineup-icon">🏆</div>
         <div class="lineup-label">Main Event</div>
         <h3 class="lineup-title">NLH Main Event</h3>
-        <p class="lineup-text">整站赛事最受瞩目的牌桌。从第一手牌开始，向最后的冠军席位前进。</p>
+        <p class="lineup-text">JOPT 系列最受关注的核心赛事，多日赛程决出最终冠军。</p>
+        <button type="button" class="lineup-more" onclick="showLineupDetail('main')">查看赛事详情 →</button>
       </article>
       <article class="lineup-card">
         <div class="lineup-icon">💎</div>
         <div class="lineup-label">Millions</div>
         <h3 class="lineup-title">NLH Millions</h3>
-        <p class="lineup-text">JOPT 标志性的焦点赛事之一。稳住筹码，在多日赛程中把每一步走得更远。</p>
+        <p class="lineup-text">JOPT 代表性大型赛事之一，多组 Day 1 后晋级选手决出冠军。</p>
+        <button type="button" class="lineup-more" onclick="showLineupDetail('millions')">查看赛事详情 →</button>
+      </article>
+      <article class="lineup-card">
+        <div class="lineup-icon">🎖️</div>
+        <div class="lineup-label">All-round</div>
+        <h3 class="lineup-title">Poker Players Championship</h3>
+        <p class="lineup-text">考验全面实力的综合性赛事，四组 Day 1 后决出冠军。</p>
+        <button type="button" class="lineup-more" onclick="showLineupDetail('ppc')">查看赛事详情 →</button>
       </article>
       <article class="lineup-card gold">
         <div class="lineup-icon">👑</div>
         <div class="lineup-label">High Roller</div>
         <h3 class="lineup-title">Crown / Platinum</h3>
-        <p class="lineup-text">更高的门槛，更少的退路。每一次下注，都把胜负推向更高强度。</p>
+        <p class="lineup-text">面向高额赛事玩家的 High Roller 项目，汇聚众多经验丰富的参赛者。</p>
+        <button type="button" class="lineup-more" onclick="showLineupDetail('highroller')">查看赛事详情 →</button>
       </article>
       <article class="lineup-card team">
         <div class="lineup-icon">🤝</div>
         <div class="lineup-label">Team Battle</div>
-        <h3 class="lineup-title">Tag Team / 3on3</h3>
-        <p class="lineup-text">一个决定，关系整支队伍。和搭档并肩上桌，把默契变成筹码。</p>
+        <h3 class="lineup-title">3on3 / Tag Team</h3>
+        <p class="lineup-text">与搭档共同参加的团队赛事，在个人竞技之外加入团队配合。</p>
+        <button type="button" class="lineup-more" onclick="showLineupDetail('team')">查看赛事详情 →</button>
+      </article>
+      <article class="lineup-card">
+        <div class="lineup-icon">🃏</div>
+        <div class="lineup-label">Mid Stakes</div>
+        <h3 class="lineup-title">Good Game 500 / 1000</h3>
+        <p class="lineup-text">中等买入的人气赛事，赛程期间每天都有场次开赛。</p>
+        <button type="button" class="lineup-more" onclick="showLineupDetail('goodgame')">查看赛事详情 →</button>
       </article>
       <article class="lineup-card mix">
         <div class="lineup-icon">🎴</div>
         <div class="lineup-label">Mixed Games</div>
         <h3 class="lineup-title">MIX / PLO</h3>
-        <p class="lineup-text">不只两张底牌。牌型、节奏和判断不断切换，考验真正全面的牌技。</p>
+        <p class="lineup-text">JOPT 的招牌特色之一，MIX 与 PLO 几乎每天都有场次开赛。</p>
+        <button type="button" class="lineup-more" onclick="showLineupDetail('mixed')">查看赛事详情 →</button>
       </article>
       <article class="lineup-card">
         <div class="lineup-icon">⚡</div>
-        <div class="lineup-label">Fast &amp; Accessible</div>
-        <h3 class="lineup-title">Warm-up / Turbo / Hyper</h3>
-        <p class="lineup-text">时间更短，行动更快。想轻装上桌，也能找到属于自己的比赛节奏。</p>
+        <div class="lineup-label">Low Stakes</div>
+        <h3 class="lineup-title">低额一日快速赛</h3>
+        <p class="lineup-text">买入门槛低，当天开打当天结束，适合旅途间隙轻松一把。</p>
+        <button type="button" class="lineup-more" onclick="showLineupDetail('lowvalue')">查看赛事详情 →</button>
+      </article>
+      <article class="lineup-card">
+        <div class="lineup-icon">🎯</div>
+        <div class="lineup-label">Bounty</div>
+        <h3 class="lineup-title">赏金赛 Bounty</h3>
+        <p class="lineup-text">对局中额外设置赏金奖励，最后一天迎来焦点赛事 Super Heavy Bounty。</p>
+        <button type="button" class="lineup-more" onclick="showLineupDetail('bounty')">查看赛事详情 →</button>
       </article>
     </div>
 
-    <div class="lineup-note reveal">以上为参考 JOPT Tokyo #02 等往届赛程整理的代表性赛事类型，不代表 Tokyo #03 最终阵容。赛事名称、日期、报名费及规则请以 Tokyo #03 正式赛程为准。</div>
     <div class="detail-btn-row reveal">
       <a href="#schedule" class="btn-primary" style="text-decoration:none;">查看 Tokyo #03 赛程</a>
     </div>
@@ -1040,8 +1082,6 @@
     <p class="section-label reveal">FAQ</p>
     <h2 class="section-title reveal">常见问题</h2>
     <div class="divider reveal"></div>
-    <p class="section-desc reveal">以下内容根据本页现有参加流程整理。现场安排发生变化时，请以工作人员说明为准。</p>
-
     <h3 class="quick-guide-heading reveal">常用指南入口</h3>
     <div class="china-benefit-grid reveal">
       <button type="button" class="china-benefit-card" onclick="showDetail('detail-step1','faq')"><span class="china-benefit-icon">💬</span><span class="china-benefit-title">中文协助</span><span class="china-benefit-text">查看 Game ID 注册与中文协助</span><span class="china-benefit-arrow">查看详情 →</span></button>
@@ -1051,15 +1091,60 @@
       <button type="button" class="china-benefit-card" onclick="showDetail('detail-step4','faq')"><span class="china-benefit-icon">🏅</span><span class="china-benefit-title">奖金领取</span><span class="china-benefit-text">查看 Coin、eKYC 与 USDT 说明</span><span class="china-benefit-arrow">查看详情 →</span></button>
     </div>
 
+    <h3 class="faq-category-title reveal">Game ID 与报名</h3>
     <div class="faq-list reveal">
-      <details class="faq-item"><summary>第一次参加 JOPT，需要先做什么？</summary><div class="faq-answer">如果还没有 Game ID，请先前往一楼大厅右侧的国际服务窗口。现场有会中文的工作人员，可以协助完成注册。</div></details>
+      <details class="faq-item"><summary>第一次参加 JOPT，需要先做什么？</summary><div class="faq-answer">请先查看“第一次参加 JOPT？”中的完整参赛流程，从 STEP 01 注册 Game ID 开始，依次确认报名、入座和奖金领取方法。</div></details>
+      <details class="faq-item"><summary>Game ID 可以到达会场后再注册吗？</summary><div class="faq-answer">可以到达会场后再注册，现场工作人员会全程协助您完成注册。</div></details>
+      <details class="faq-item"><summary>中国大陆怎么下载 Game ID？</summary><div class="faq-answer">请使用日本区 App Store，并开启 VPN 下载。中国区账号无法下载。</div></details>
+      <details class="faq-item"><summary>没有日本手机号，可以注册 Game ID 吗？</summary><div class="faq-answer">可以。注册 Game ID 时，请将区号选择为日本（+81），电话号码填写本国号码即可。</div></details>
+      <details class="faq-item"><summary>没有日本地址，可以注册 Game ID 吗？</summary><div class="faq-answer">可以。注册时请将国家/地区选择为“日本”。没有日本地址的玩家，可在地址栏填写任意内容。</div></details>
+      <details class="faq-item"><summary>Game ID 的姓名应该怎么填写？</summary><div class="faq-answer">必须使用英文填写，不支持汉字或其他输入方式。</div></details>
+      <details class="faq-item"><summary>Game ID 无法注册或不会注册怎么办？</summary><div class="faq-answer">可以前往一楼大厅右侧的国际服务窗口，请认准 International Counter 指示牌。现场工作人员可以协助确认。</div></details>
+      <details class="faq-item"><summary>参加比赛需要提前报名吗？</summary><div class="faq-answer">除少数预约制比赛外，其他比赛均为现场报名。如需了解预约制比赛详情，可以咨询官方微信客服。</div></details>
       <details class="faq-item"><summary>报名窗口怎么找？</summary><div class="faq-answer">先确认要参加的赛事名称，再查看报名窗口指南和现场指示牌，前往对应窗口排队。</div></details>
-      <details class="faq-item"><summary>现场可以使用哪些支付方式？</summary><div class="faq-answer">可查看 STEP 02 中的支付方式一览。现金仅支持日元，不支持人民币现金，具体以现场说明为准。</div></details>
-      <details class="faq-item"><summary>拿到座位票后去哪里？</summary><div class="faq-answer">先确认票面是否有桌号和座位号。有座位号时根据 Floor Map 入座；没有座位号时，前往票面盖章字母对应的柜台。</div></details>
-      <details class="faq-item"><summary>领取奖金需要准备什么？</summary><div class="faq-answer">需要获奖者本人于当天前往选手契约柜台，并携带护照办理领取手续。</div></details>
+      <details class="faq-item"><summary>赛场可以用人民币兑换日元吗？</summary><div class="faq-answer">赛场不提供人民币兑换日元服务。如需兑换日元，请前往银行或正规的外币兑换机构办理。</div></details>
+      <details class="faq-item"><summary>报名支持哪些支付方式？</summary><div class="faq-answer">现场支持微信、支付宝、银联、Visa、Mastercard 等支付方式。带有银联标志的中国银行卡可以使用。使用现金时仅支持日元，不接受人民币现金。</div></details>
+    </div>
+
+    <h3 class="faq-category-title reveal">比赛与观赛</h3>
+    <div class="faq-list reveal">
+      <details class="faq-item"><summary>不会日语也可以参加比赛吗？</summary><div class="faq-answer">可以。JOPT 比赛的官方语言为日语和英语。如需中文协助，请咨询现场工作人员。</div></details>
+      <details class="faq-item"><summary>在哪里查看比赛规则？</summary><div class="faq-answer">比赛采用 JOPT Official Rule，并依据 TDA 2024 规则进行。最终裁定以 JOPT House Rule 及现场赛事总监（TD）的决定为准。<br><a class="faq-inline-link" href="https://japanopenpoker.com/rule/" target="_blank" rel="noopener">查看 JOPT Official Rule →</a><br><a class="faq-inline-link" href="https://www.pokertda.com/forum/index.php?topic=1740.0" target="_blank" rel="noopener">查看 TDA 2024 中文版 →</a></div></details>
+      <details class="faq-item"><summary>没有参赛的朋友可以进入会场观赛吗？</summary><div class="faq-answer">可以，没有参赛的同行者也可以进入会场观赛。</div></details>
+      <details class="faq-item"><summary>未满18岁可以进入会场观赛吗？</summary><div class="faq-answer">可以，但有入场时间限制。未满16岁者在18:00后不可入场；16～17岁者在22:00后不可入场，即使有监护人陪同也不例外。已满18岁但仍在读高中的人员，22:00后也不可入场或继续停留。</div></details>
+      <details class="faq-item"><summary>会场内可以拍照或录像吗？</summary><div class="faq-answer">可以，但需要提前申请 Media Pass。申请方法请扫描下方二维码查看。<div class="qr-placeholder" role="img" aria-label="Media Pass 申请二维码待添加">Media Pass 申请二维码<br>待添加</div></div></details>
+      <details class="faq-item"><summary>比赛期间可以暂时离开会场，之后再回来吗？</summary><div class="faq-answer">可以。但离席期间比赛仍会正常进行，轮到您支付盲注或前注时，将照常从您的筹码中扣除。</div></details>
+    </div>
+
+    <h3 class="faq-category-title reveal">交通与到场</h3>
+    <div class="faq-list reveal">
+      <details class="faq-item"><summary>如何从机场到赛场？</summary><div class="faq-answer"><b>从成田机场出发：</b>乘坐京成 Skyliner 到日暮里站，换乘 JR 山手线到高田马场站。<br><b>从羽田机场出发：</b>乘坐京急线到品川站，换乘 JR 山手线到高田马场站。<br>从高田马场站步行约 9 分钟即可到达会场。<br><button type="button" class="faq-inline-link" onclick="showDetail('detail-route','faq')">查看从高田马场站到会场的图文路线 →</button></div></details>
+      <details class="faq-item"><summary>日本的电车怎么乘坐？</summary><div class="faq-answer">车票、IC 卡、进出站及换乘方法，请查看中文指南。<br><a class="faq-inline-link" href="https://cooljapan-videos.com/cn/articles/re66wh8d" target="_blank" rel="noopener">查看日本电车搭乘中文指南 →</a></div></details>
+      <details class="faq-item"><summary>会场可以寄存行李吗？</summary><div class="faq-answer">可以在报名处寄存行李箱。寄存服务仅限行李箱，详情请咨询现场工作人员。</div></details>
+      <details class="faq-item"><summary>会场有停车场吗？</summary><div class="faq-answer">会场不提供停车场。如驾车前来，请使用附近的公共停车场。</div></details>
+    </div>
+
+    <h3 class="faq-category-title reveal">会场内</h3>
+    <div class="faq-list reveal">
+      <details class="faq-item"><summary>拿到座位票后去哪里？</summary><div class="faq-answer">先确认票面是否有桌号和座位号。有座位号时根据 Floor Map 入座；没有座位号时，前往票面盖章字母对应的柜台。<br><button type="button" class="faq-inline-link" onclick="showDetail('detail-floor-map','faq')">查看会场 Floor Map →</button></div></details>
+      <details class="faq-item"><summary>会场可以随便抽烟吗？</summary><div class="faq-answer">会场及周边区域均不可随意吸烟。会场内设有指定吸烟区，具体位置请参考 Floor Map。<br><button type="button" class="faq-inline-link" onclick="showDetail('detail-floor-map','faq')">查看会场 Floor Map →</button></div></details>
+      <details class="faq-item"><summary>会场有 Wi-Fi 吗？</summary><div class="faq-answer">有，现场有可供玩家使用的免费 Wi-Fi。</div></details>
+      <details class="faq-item"><summary>会场有可以给手机充电的地方吗？</summary><div class="faq-answer">可以，会场内设有充电宝租借点，具体位置请参考 Floor Map。<br><button type="button" class="faq-inline-link" onclick="showDetail('detail-floor-map','faq')">查看会场 Floor Map →</button></div></details>
+      <details class="faq-item"><summary>会场内可以携带食物和饮料吗？</summary><div class="faq-answer">不可以，禁止携带外购食品和饮料进入会场。</div></details>
+      <details class="faq-item"><summary>在会场遗失物品怎么办？</summary><div class="faq-answer">请前往报名前台咨询现场工作人员。</div></details>
+      <details class="faq-item"><summary>会场有中文工作人员吗？</summary><div class="faq-answer">有，如需中文协助，请咨询现场工作人员。</div></details>
+      <details class="faq-item"><summary>在会场身体不适或遇到紧急情况怎么办？</summary><div class="faq-answer">请立即联系现场工作人员。如有需要，工作人员可以协助呼叫救护车。</div></details>
+      <details class="faq-item"><summary>遇到地震或火灾等紧急情况怎么办？</summary><div class="faq-answer">请保持冷静，立即停止比赛，并按照现场广播及工作人员的指示有序撤离。请勿擅自行动或使用电梯。地震发生时请先保护头部，待摇晃减弱后再按指示避难。</div></details>
+      <details class="faq-item"><summary>饮料柜台在哪里？</summary><div class="faq-answer">下电梯后左转，沿路直走即可看到饮料柜台，可以使用 Drink Ticket 兑换饮料。<br><button type="button" class="faq-inline-link" onclick="showDetail('detail-floor-map','faq')">在 Floor Map 中查看位置 →</button><div class="faq-photo-grid"><figure><img src="photos/amenity-turnleft.jpg" onclick="lightbox(this.src)" alt="下电梯后左转"><figcaption>① 下电梯后左转</figcaption></figure><figure><img src="photos/amenity-straight.jpg" onclick="lightbox(this.src)" alt="沿路直走"><figcaption>② 沿路直走</figcaption></figure><figure><img src="photos/amenity-drink-counter.jpg" onclick="lightbox(this.src)" alt="饮料柜台"><figcaption>③ 饮料柜台</figcaption></figure></div></div></details>
+      <details class="faq-item"><summary>Drink Ticket 可以在哪里使用？</summary><div class="faq-answer">可以在会场饮料柜台以及网站介绍的合作餐厅使用。使用条件请以现场及店铺说明为准。<br><button type="button" class="faq-inline-link" onclick="showDetail('detail-food','faq')">查看周边餐厅推荐 →</button></div></details>
+      <details class="faq-item"><summary>Sit &amp; Go 在哪里报名？</summary><div class="faq-answer">Sit &amp; Go 报名窗口和一般比赛不同，不在一楼。请前往 B2 层的 Sit &amp; Go 报名窗口（A 柜台）。<div class="faq-photo-grid"><figure><img src="photos/step3-escalator-turn.jpg" onclick="lightbox(this.src)" alt="下电梯后右转"><figcaption>① 下电梯后右转</figcaption></figure><figure><img src="photos/step2-sitgo.jpg" onclick="lightbox(this.src)" alt="Sit &amp; Go 报名窗口"><figcaption>② Sit &amp; Go 报名窗口（A 柜台）</figcaption></figure></div></div></details>
+    </div>
+
+    <h3 class="faq-category-title reveal">奖金与领奖</h3>
+    <div class="faq-list reveal">
+      <details class="faq-item"><summary>领取奖金需要准备什么？</summary><div class="faq-answer">需要获奖者本人于当天前往选手契约柜台，并携带护照办理领取手续。<br><button type="button" class="faq-inline-link" onclick="showDetail('detail-floor-map','faq')">在 Floor Map 中查看选手契约柜台位置 →</button></div></details>
       <details class="faq-item"><summary>为什么我的 Pokerweb Coin 无法使用？</summary><div class="faq-answer">Pokerweb Coin需要通过本人验证才可以在APP中进行转账操作，本人验证根据情况可能会花费较长时间，不能保证次日可以立即使用。</div></details>
       <details class="faq-item"><summary>USDT 什么时候转入个人钱包？</summary><div class="faq-answer">选择以USDT方式领取奖金的玩家，将统一在赛事结束后约3周内到账，具体详情查看随后的客服联络邮件。</div></details>
-      <details class="faq-item"><summary>Sit &amp; Go 在哪里报名？</summary><div class="faq-answer">Sit &amp; Go 报名窗口和一般比赛不同，并不在1楼，想参加的玩家请直接前往B2层Sit &amp; Go柜台，详情可以点击“更多现场指南”中的 Sit &amp; Go 标签查看照片路线。</div></details>
     </div>
   </div>
 </section>
@@ -1084,15 +1169,179 @@
 </div><!-- /#main-view -->
 
 
-<!-- ══════════════ DETAIL PAGE · 怎么去（图文路线导览，从"怎么去"区块打开） ══════════════ -->
+<!-- ══════════════ DETAIL PAGE · 赛事推荐 ══════════════ -->
+<div id="detail-lineup" class="detail-page">
+  <div class="detail-header">
+    <button class="detail-back" onclick="hideDetail()">← 返回</button>
+    <span id="lineup-detail-header" class="detail-header-title">赛事详情</span>
+    <button class="detail-back detail-qa" onclick="goToMainSection('schedule')">查看赛程</button>
+  </div>
+  <div class="detail-body">
+    <p id="lineup-detail-eyebrow" class="detail-eyebrow"></p>
+    <h1 id="lineup-detail-title" class="detail-title"></h1>
+    <p id="lineup-detail-intro" class="detail-intro"></p>
+
+    <figure id="lineup-detail-hero" class="tournament-hero">
+      <img id="lineup-detail-image" src="" alt="" onclick="lightbox(this.src)">
+    </figure>
+
+    <div id="lineup-detail-facts" class="schedule-list"></div>
+
+    <div id="lineup-detail-story-card" class="tournament-story">
+      <h2 id="lineup-detail-story-title"></h2>
+      <p id="lineup-detail-story"></p>
+    </div>
+
+    <section id="lineup-detail-champion-section" class="champion-section" hidden>
+      <h2 class="champion-section-title">中国玩家冠军时刻</h2>
+      <div id="lineup-detail-champions" class="champion-grid"></div>
+      <p class="champion-prize-note">注：上述金额指 JOPT 官方资料所列的选手合同（委托费）金额，并非现金奖金；美元数值采用对应赛事的官方公布值。</p>
+    </section>
+
+    <p class="tournament-disclaimer">本页为赛事推荐参考。日期、开始时间、报名方式及赛制可能调整，请以 JOPT 官方网站、Player's Guide 与现场公告为准。</p>
+  </div>
+</div>
+
+
+<!-- ══════════════ DETAIL PAGE · 完整参赛流程 ══════════════ -->
+<div id="detail-guide" class="detail-page">
+  <div class="detail-header">
+    <button class="detail-back" onclick="hideDetail()">← 返回</button>
+    <span class="detail-header-title">如何参加 JOPT</span>
+    <button class="detail-back detail-qa" onclick="goToMainSection('faq')">Q&amp;A</button>
+  </div>
+  <div class="detail-body">
+    <p class="detail-eyebrow">Player Guide</p>
+    <h1 class="detail-title">第一次参加 JOPT？</h1>
+
+    <div class="step-timeline">
+      <div class="step-item">
+        <div class="step-num">1</div>
+        <div class="step-item-line"></div>
+        <button type="button" class="step-card" onclick="showNestedDetail('detail-step1')">
+          <span class="step-card-icon">🆔</span>
+          <span class="step-card-body">
+            <span class="step-card-label">STEP 01</span>
+            <span class="step-card-title">注册 Game ID</span>
+            <span class="step-card-desc">按照中文版说明完成 Game ID 注册及 My Club 登记。</span>
+          </span>
+          <span class="step-card-arrow">→</span>
+        </button>
+      </div>
+
+      <div class="step-item">
+        <div class="step-num">2</div>
+        <div class="step-item-line"></div>
+        <button type="button" class="step-card" onclick="showNestedDetail('detail-step2')">
+          <span class="step-card-icon">📝</span>
+          <span class="step-card-body">
+            <span class="step-card-label">STEP 02</span>
+            <span class="step-card-title">报名参赛</span>
+            <span class="step-card-desc">寻找对应报名窗口，出示二维码完成报名。</span>
+          </span>
+          <span class="step-card-arrow">→</span>
+        </button>
+      </div>
+
+      <div class="step-item">
+        <div class="step-num">3</div>
+        <div class="step-item-line"></div>
+        <button type="button" class="step-card" onclick="showNestedDetail('detail-step3')">
+          <span class="step-card-icon">🃏</span>
+          <span class="step-card-body">
+            <span class="step-card-label">STEP 03</span>
+            <span class="step-card-title">寻找座位</span>
+            <span class="step-card-desc">根据座位票找到对应座位并入座。</span>
+          </span>
+          <span class="step-card-arrow">→</span>
+        </button>
+      </div>
+
+      <div class="step-item final">
+        <div class="step-num">4</div>
+        <div class="step-item-line"></div>
+        <button type="button" class="step-card" onclick="showNestedDetail('detail-step4')">
+          <span class="step-card-icon">🏆</span>
+          <span class="step-card-body">
+            <span class="step-card-label">STEP 04</span>
+            <span class="step-card-title">领取奖金</span>
+            <span class="step-card-desc">获得奖金后，前往指定柜台办理领取手续。</span>
+          </span>
+          <span class="step-card-arrow">→</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ DETAIL PAGE · 赛场周边美食 ══════════════ -->
+<div id="detail-food" class="detail-page">
+  <div class="detail-header">
+    <button class="detail-back" onclick="hideDetail()">← 返回</button>
+    <span class="detail-header-title">赛场周边美食</span>
+    <button class="detail-back detail-qa" onclick="goToMainSection('faq')">Q&amp;A</button>
+  </div>
+  <div class="detail-body">
+    <p class="detail-eyebrow">Food Guide</p>
+    <h1 class="detail-title">会场附近餐厅推荐</h1>
+
+    <div class="food-grid">
+      <article class="food-card">
+        <img class="food-card-image" src="photos/food-nigicha.jpg" onclick="lightbox(this.src)" alt="NIGICHA 的饭团与抹茶饮品">
+        <h2 class="food-card-title">NIGICHA 抹茶饭团咖啡店</h2>
+        <p class="food-card-name">NIGICHA</p>
+        <p class="food-card-text">可以品尝饭团、抹茶、日本茶和甜点。适合早餐、午餐，或在比赛间隙简单补充体力。</p>
+        <div class="food-card-meta"><span class="food-tag">轻食</span><span class="food-tag">一个人方便</span><span class="food-tag ticket">Drink Ticket 可用</span></div>
+        <a class="food-card-link" href="https://www.nigicha.com/menu/onigiri/" target="_blank" rel="noopener">查看店铺信息 →</a>
+      </article>
+
+      <article class="food-card">
+        <img class="food-card-image" src="photos/food-kanetora.jpeg" onclick="lightbox(this.src)" alt="神户烤肉 金虎的烤肉">
+        <h2 class="food-card-title">神户烤肉 金虎</h2>
+        <p class="food-card-name">神戸焼肉 金虎 高田馬場</p>
+        <p class="food-card-text">主打精选神户牛的烤肉店，距离高田马场站较近。适合想在比赛前后认真享用一顿烤肉的玩家。</p>
+        <div class="food-card-meta"><span class="food-tag">神户牛</span><span class="food-tag">烤肉</span><span class="food-tag ticket">Drink Ticket 可用</span></div>
+        <a class="food-card-link" href="https://instagram.com/kanetora_kobebeef/" target="_blank" rel="noopener">查看店铺信息 →</a>
+      </article>
+
+      <article class="food-card">
+        <img class="food-card-image" src="photos/food-kogichip.jpg" onclick="lightbox(this.src)" alt="海云台 Kogichip 的韩国烤肉">
+        <h2 class="food-card-title">海云台 Kogichip</h2>
+        <p class="food-card-name">焼肉 サムギョプサル専門店 海雲台コギチプ 高田馬場店</p>
+        <p class="food-card-text">以厚切五花肉为主的韩国烤肉店，也提供石锅拌饭、汤锅等韩国料理。适合朋友一起用餐。</p>
+        <div class="food-card-meta"><span class="food-tag">韩国料理</span><span class="food-tag">五花肉</span><span class="food-tag ticket">Drink Ticket 可用</span></div>
+        <a class="food-card-link" href="https://misoritakadanobaba.owst.jp/" target="_blank" rel="noopener">查看店铺信息 →</a>
+      </article>
+    </div>
+    <p class="food-note">更多可用 Drink Ticket 的合作餐厅陆续添加中，敬请期待。店铺营业情况可能发生变化，请以各店最新公告为准。</p>
+  </div>
+</div>
+
+<!-- ══════════════ DETAIL PAGE · 会场 Floor Map ══════════════ -->
+<div id="detail-floor-map" class="detail-page">
+  <div class="detail-header">
+    <button class="detail-back" onclick="hideDetail()">← 返回</button>
+    <span class="detail-header-title">会场 Floor Map</span>
+    <button class="detail-back detail-qa" onclick="goToMainSection('faq')">Q&amp;A</button>
+  </div>
+  <div class="detail-body">
+    <p class="detail-eyebrow">Venue Map</p>
+    <h1 class="detail-title">会场 Floor Map</h1>
+    <img class="floor-map-image" src="photos/floor-map-tokyo02-reference.png" onclick="lightbox(this.src)" alt="Tokyo #02 会场 Floor Map 参考图">
+    <p class="floor-map-caption">Tokyo #02 会场地图（参考）</p>
+  </div>
+</div>
+
+<!-- ══════════════ DETAIL PAGE · 交通指南（从“会场交通”区块打开） ══════════════ -->
 <div id="detail-route" class="detail-page">
   <div class="detail-header">
     <button class="detail-back" onclick="hideDetail()">← 返回</button>
-    <span class="detail-header-title">怎么去</span>
+    <span class="detail-header-title">交通指南</span>
+    <button class="detail-back detail-qa" onclick="goToMainSection('faq')">Q&amp;A</button>
   </div>
   <div class="detail-body">
     <p class="detail-eyebrow">Access · Route</p>
-    <h1 class="detail-title">车站到会场路线导览</h1>
+    <h1 class="detail-title">从高田马场站到会场</h1>
     <p class="detail-intro">从「高田马场」站出发，先前往站前最显眼的地标建筑 <b>BIG BOX</b> 方向，再按下方照片指引步行前往会场，全程约9分钟。</p>
 
     <div class="photo-sequence">
@@ -1112,49 +1361,14 @@
   <div class="detail-header">
     <button class="detail-back" onclick="hideDetail()">← 返回</button>
     <span class="detail-header-title">STEP 01 · 注册 Game ID</span>
+    <button class="detail-back detail-qa" onclick="goToMainSection('faq')">Q&amp;A</button>
   </div>
   <div class="detail-body">
     <p class="detail-eyebrow">STEP 01</p>
     <h1 class="detail-title">注册 Game ID</h1>
-    <p class="detail-intro">还没有 Game ID？按照下面的步骤前往服务窗口，现场工作人员会协助您完成注册。</p>
-
-    <div class="instruction-flow">
-      <div class="instruction-card">
-        <div class="instruction-num">01</div>
-        <div>
-          <div class="instruction-title">第一次参加 JOPT？</div>
-          <div class="instruction-text">首次到场且还没有 Game ID 的玩家，需要先完成注册。已经注册过的玩家可以直接前往 STEP 02 报名参赛。</div>
-        </div>
-      </div>
-      <div class="instruction-arrow">↓</div>
-      <div class="instruction-card">
-        <div class="instruction-num">02</div>
-        <div>
-          <div class="instruction-title">前往一楼大厅右侧</div>
-          <div class="instruction-text">进入会场后，前往一楼大厅右侧的服务柜台区域。</div>
-        </div>
-      </div>
-      <div class="instruction-arrow">↓</div>
-      <div class="instruction-card">
-        <div class="instruction-num">03</div>
-        <div>
-          <div class="instruction-title">找到国际服务窗口</div>
-          <div class="instruction-text">请认准写有 <b>International Counter</b> 的现场指示牌。该窗口可提供中文协助。</div>
-        </div>
-        <figure class="instruction-media">
-          <img src="photos/step1-special-counter.jpg" onclick="lightbox(this.src)" alt="国际服务窗口">
-          <figcaption class="instruction-caption">国际服务窗口（International Counter）</figcaption>
-        </figure>
-      </div>
-      <div class="instruction-arrow">↓</div>
-      <div class="instruction-card">
-        <div class="instruction-num">04</div>
-        <div>
-          <div class="instruction-title">在工作人员协助下完成注册</div>
-          <div class="instruction-text">向工作人员说明需要注册 Game ID。现场有会中文的工作人员，可以协助您完成注册。</div>
-        </div>
-      </div>
-    </div>
+    <p class="detail-intro">参加 JOPT 前，需要先完成 Game ID 的注册及 My Club 登记。请按照下方中文版说明完成操作。</p>
+    <img class="game-id-guide-image" src="GAME_id_china.png" alt="Game ID 注册及 My Club 登记中文版说明">
+    <p class="food-note">如果注册过程中遇到问题，请查看 Q&amp;A，或前往现场国际服务窗口咨询。</p>
   </div>
 </div>
 
@@ -1163,6 +1377,7 @@
   <div class="detail-header">
     <button class="detail-back" onclick="hideDetail()">← 返回</button>
     <span class="detail-header-title">STEP 02 · 报名参赛</span>
+    <button class="detail-back detail-qa" onclick="goToMainSection('faq')">Q&amp;A</button>
   </div>
   <div class="detail-body">
     <p class="detail-eyebrow">STEP 02</p>
@@ -1223,23 +1438,6 @@
       </div>
     </div>
 
-    <div id="sitgo-guide" class="side-guide-card">
-      <div class="side-guide-tag">现场加赛</div>
-      <h2 class="side-guide-title">Sit &amp; Go 快速赛</h2>
-      <p class="side-guide-text">现场同时提供 Sit &amp; Go 快速赛（¥3,000/局），坐满即开局，适合等位间隙加赛一局。</p>
-      <div class="side-guide-alert"><b>报名地点不同：</b>Sit &amp; Go 报名窗口在楼下，不是上方介绍的普通赛事报名窗口。</div>
-      <div class="side-guide-route">
-        <figure>
-          <img src="photos/step3-escalator-turn.jpg" onclick="lightbox(this.src)" alt="下电梯后右转">
-          <figcaption>① 下电梯后右转</figcaption>
-        </figure>
-        <div class="side-guide-arrow">→</div>
-        <figure>
-          <img src="photos/step2-sitgo.jpg" onclick="lightbox(this.src)" alt="Sit &amp; Go 报名窗口">
-          <figcaption>② Sit &amp; Go 报名窗口（A 柜台）</figcaption>
-        </figure>
-      </div>
-    </div>
   </div>
 </div>
 
@@ -1248,6 +1446,7 @@
   <div class="detail-header">
     <button class="detail-back" onclick="hideDetail()">← 返回</button>
     <span class="detail-header-title">STEP 03 · 寻找座位</span>
+    <button class="detail-back detail-qa" onclick="goToMainSection('faq')">Q&amp;A</button>
   </div>
   <div class="detail-body">
     <p class="detail-eyebrow">STEP 03</p>
@@ -1267,7 +1466,7 @@
         <div class="instruction-num">02</div>
         <div>
           <div class="instruction-title">下电梯后右转</div>
-          <div class="instruction-text">右手边拐角处可以看到 <b>Floor Map（赛场地图）</b>，对面是筹码柜台。</div>
+          <div class="instruction-text">右手边拐角处可以看到 <b>Floor Map（赛场地图）</b>，对面是筹码柜台。<br><button type="button" class="faq-inline-link" onclick="showNestedDetail('detail-floor-map')">打开会场 Floor Map →</button></div>
         </div>
         <figure class="instruction-media">
           <img src="photos/step3-escalator-turn.jpg" onclick="lightbox(this.src)" alt="下电梯后右转">
@@ -1286,7 +1485,7 @@
             <div>
               <div class="branch-step-title">查看赛场地图</div>
               <div class="branch-step-text">根据 Floor Map 确认桌号所在区域。</div>
-              <div class="branch-media"><img src="photos/step3-floormap-board.jpg" onclick="lightbox(this.src)" alt="Floor Map"></div>
+              <div class="branch-media"><img src="photos/step3-floormap-board.jpg" onclick="showNestedDetail('detail-floor-map')" alt="打开会场 Floor Map"></div>
             </div>
           </div>
           <div class="branch-arrow">↓</div>
@@ -1340,7 +1539,7 @@
     </div>
 
     <div class="detail-btn-row">
-      <button class="btn-outline" style="color:var(--jopt-blue);border-color:var(--jopt-blue);" onclick="document.getElementById('floormap-modal').style.display='flex'">查看完整赛场地图</button>
+      <button class="btn-outline" style="color:var(--jopt-blue);border-color:var(--jopt-blue);" onclick="showNestedDetail('detail-floor-map')">查看完整会场 Floor Map</button>
     </div>
   </div>
 </div>
@@ -1350,6 +1549,7 @@
   <div class="detail-header">
     <button class="detail-back" onclick="hideDetail()">← 返回</button>
     <span class="detail-header-title">STEP 04 · 领取奖金</span>
+    <button class="detail-back detail-qa" onclick="goToMainSection('faq')">Q&amp;A</button>
   </div>
   <div class="detail-body">
     <p class="detail-eyebrow">STEP 04</p>
@@ -1375,10 +1575,9 @@
           <img src="photos/step4-contract-counter.jpg" onclick="lightbox(this.src)" alt="选手契约柜台">
           <figcaption class="instruction-caption">选手契约柜台</figcaption>
         </figure>
-        <figure class="instruction-media diagram">
-          <img src="floor map b2f.png" onclick="lightbox(this.src)" alt="赛场地图">
-          <figcaption class="instruction-caption">赛场地图（柜台位置参考）</figcaption>
-        </figure>
+        <div class="instruction-media">
+          <button type="button" class="faq-inline-link" onclick="showNestedDetail('detail-floor-map')">在 Floor Map 中查看选手契约柜台位置 →</button>
+        </div>
       </div>
       <div class="instruction-arrow">↓</div>
       <div class="instruction-card">
@@ -1439,36 +1638,6 @@
   </div>
 </div>
 
-<!-- ══════════════ DETAIL PAGE · 其他（饮料柜台） ══════════════ -->
-<div id="detail-amenity" class="detail-page">
-  <div class="detail-header">
-    <button class="detail-back" onclick="hideDetail()">← 返回</button>
-    <span class="detail-header-title">饮料柜台</span>
-  </div>
-  <div class="detail-body">
-    <p class="detail-eyebrow">Facilities</p>
-    <h1 class="detail-title">饮料柜台位置</h1>
-    <p class="detail-intro">下电梯左转，沿路直走即可看到饮料柜台，用 <b>Drink Ticket</b> 可兑换饮料。</p>
-
-    <div class="photo-sequence">
-      <figure><img src="photos/amenity-turnleft.jpg" onclick="lightbox(this.src)"><figcaption>① 下电梯左转</figcaption></figure>
-      <div class="photo-sequence-arrow">↓</div>
-      <figure><img src="photos/amenity-straight.jpg" onclick="lightbox(this.src)"><figcaption>② 继续往前直走</figcaption></figure>
-      <div class="photo-sequence-arrow">↓</div>
-      <figure><img src="photos/amenity-drink-counter.jpg" onclick="lightbox(this.src)"><figcaption>③ 饮料柜台，用 Drink Ticket 兑换</figcaption></figure>
-    </div>
-  </div>
-</div>
-
-
-<!-- Floor Map Modal (quick lightbox, reused from detail pages) -->
-<div id="floormap-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,20,0.88);z-index:2000;align-items:center;justify-content:center;padding:1rem;" onclick="this.style.display='none'">
-  <div onclick="event.stopPropagation()" style="max-width:700px;width:100%;">
-    <img src="floor map b2f.png" style="width:100%;border-radius:10px;display:block;">
-    <button onclick="document.getElementById('floormap-modal').style.display='none'" style="margin-top:1rem;display:block;width:100%;padding:0.6rem;background:rgba(255,255,255,0.15);color:white;border:1px solid rgba(255,255,255,0.3);border-radius:6px;cursor:pointer;font-size:0.9rem;">关闭</button>
-  </div>
-</div>
-
 <!-- USDT Guide Modal -->
 <div id="usdt-guide-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,20,0.75);z-index:2000;align-items:center;justify-content:center;padding:1rem;" onclick="this.style.display='none'">
   <div onclick="event.stopPropagation()" style="background:white;border-radius:12px;padding:2rem;max-width:560px;width:100%;">
@@ -1493,6 +1662,17 @@
 </div>
 
 <script>
+  // PLAYER'S GUIDE 正式链接完成后，只需在这里填写 URL。
+  const playersGuideUrl = '';
+  if (playersGuideUrl) {
+    document.querySelectorAll('[data-player-guide]').forEach(link => {
+      link.href = playersGuideUrl;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      link.querySelector('.players-guide-status').textContent = '查看指南 →';
+    });
+  }
+
   const observer = new IntersectionObserver((entries) => {
     entries.forEach(e => {
       if (e.isIntersecting) {
@@ -1503,22 +1683,250 @@
   }, { threshold: 0.1 });
   document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
 
+  const lineupDetails = {
+    main: {
+      eyebrow: 'Tokyo #03 · Core Event',
+      title: 'NLH Main Event',
+      intro: 'JOPT 系列最受关注的核心赛事，起始筹码 50,000，可用 3 张日本国内主赛票＋8,000日元报名参赛；海外玩家另有现场直接买入通道。四组 Day 1 依次开赛，晋级选手进入 Day 2、Day 3 决出冠军。',
+      schedule: [
+        { name: '#01 NLH Main Event / Day 1A', meta: ['10月9日 11:00'] },
+        { name: '#01 NLH Main Event / Day 1B', meta: ['10月9日 18:00'] },
+        { name: '#01 NLH Main Event / Day 1C', meta: ['10月10日 11:00'] },
+        { name: '#01 NLH Main Event / Day 1D Turbo', meta: ['10月10日 18:00'] },
+        { name: '#01 NLH Main Event / Day 2', meta: ['10月11日 11:00'] },
+        { name: '#01 NLH Main Event / Day 3', meta: ['10月12日 11:00'] },
+        { name: '海外玩家现场买入', meta: ['金额待定'] }
+      ]
+    },
+    millions: {
+      eyebrow: 'Tokyo #03 · Multiday',
+      title: 'NLH Millions',
+      intro: 'JOPT 具有代表性的大型赛事之一，起始筹码 50,000，可用 1 张日本国内主赛票＋8,000日元报名参赛；海外玩家另有现场直接买入通道。三组 Day 1 结束后，晋级选手于 Day 2 决出冠军。',
+      schedule: [
+        { name: '#03 NLH Millions / Day 1A', meta: ['10月8日 18:00'] },
+        { name: '#03 NLH Millions / Day 1B', meta: ['10月8日 21:00'] },
+        { name: '#03 NLH Millions / Day 1C Turbo', meta: ['10月9日 10:00'] },
+        { name: '#03 NLH Millions / Day 2', meta: ['10月9日 14:00'] },
+        { name: '海外玩家现场买入', meta: ['金额待定'] }
+      ]
+    },
+    ppc: {
+      eyebrow: 'Tokyo #03 · All-round',
+      title: 'NLH Poker Players Championship',
+      intro: '考验全面实力的综合性赛事，报名费 40,000日元，起始筹码 50,000。四组 Day 1 结束后，晋级选手于 Day 2 决出冠军。',
+      schedule: [
+        { name: '#47 NLH Poker Players Championship / Day 1A Turbo', meta: ['10月10日 23:00'] },
+        { name: '#47 NLH Poker Players Championship / Day 1B', meta: ['10月11日 11:00'] },
+        { name: '#47 NLH Poker Players Championship / Day 1C', meta: ['10月11日 17:00'] },
+        { name: '#47 NLH Poker Players Championship / Day 1D Turbo', meta: ['10月11日 23:00'] },
+        { name: '#47 NLH Poker Players Championship / Day 2', meta: ['10月12日 11:00'] }
+      ]
+    },
+    highroller: {
+      eyebrow: 'Tokyo #03 · High Roller',
+      title: 'Crown / Platinum',
+      intro: '面向高额赛事玩家的 High Roller 系列，由 APT（Asian Poker Tour）联合呈现，Platinum 与 Crown 均采用 200,000 起始筹码。',
+      image: 'photos/lineup-crown-ziwenliu.jpg',
+      imageAlt: '中国选手 Liu Ziwen 获得 JOPT NLH Crown 冠军',
+      schedule: [
+        { name: '#39 NLH Platinum Sponsored by APT', meta: ['10月10日 16:00', '报名费 500,000日元'] },
+        { name: '#56 NLH Crown Sponsored by APT', meta: ['10月11日 16:00', '报名费 300,000日元'] }
+      ],
+      champions: [{
+        event: 'JOPT 2026 Sapporo #01 · #17 NLH Crown',
+        name: 'Liu Ziwen',
+        image: 'photos/lineup-crown-ziwenliu.jpg',
+        imageAlt: '中国选手 Liu Ziwen 获得 JOPT NLH Crown 冠军',
+        prize: '$11,987.77',
+        copy: '中国选手 Liu Ziwen 在 JOPT 2026 Sapporo #01 的 NLH Crown 中夺冠，斩获 $11,987.77 美元冠军奖金。这是他首次在日本参赛，从赛事早段就掌握筹码领先优势，并在焦灼的单挑中笑到最后。'
+      }]
+    },
+    team: {
+      eyebrow: 'Tokyo #03 · Team Battle',
+      title: '3on3 / Tag Team',
+      intro: '与搭档并肩作战的团队赛事。3on3 由三人组队出战；Tag Team 等双人赛事也在赛程期间每日开赛，可按行程灵活选择。',
+      image: 'photos/lineup-team-china.jpg',
+      imageAlt: 'JOPT 2026 Tokyo #02 NLH Tag Team 冠军細胞与 LYQ 的官方优胜照片',
+      schedule: [
+        { name: '#06 NLH 3on3', meta: ['10月8日 19:00', '报名费 30,000日元／20,000×3筹码'] }
+      ],
+      champions: [{
+        event: 'JOPT 2026 Tokyo #02 · #25 NLH Tag Team Sponsored by BrewDog',
+        name: '細胞 & LYQ',
+        image: 'photos/lineup-team-china.jpg',
+        imageAlt: '中国玩家細胞与 LYQ 获得 JOPT NLH Tag Team 冠军',
+        prize: '$5,158.31 ／人',
+        prizeLabel: '冠军奖金（USD，两人各自所得）',
+        copy: '中国选手组合「細胞」（WANG LONGFEI）与「LYQ」（LIU YANQI）搭档，在 JOPT 2026 Tokyo #02 的 #25 NLH Tag Team（Sponsored by BrewDog）中夺冠，两人各获得 $5,158.31 美元冠军奖金。'
+      }]
+    },
+    goodgame: {
+      eyebrow: 'Tokyo #03 · Mid Stakes',
+      title: 'Good Game 500 / 1000',
+      intro: '中等买入的人气赛事，赛程期间每天都有场次开赛，是练手和冲刺战绩的热门选择。',
+      schedule: [],
+      champions: [{
+        event: 'JOPT 2026 Grand Final · #65 NLH Good Game 500',
+        name: 'mayu（yu jizhou）',
+        image: 'photos/lineup-goodgame-mayu.jpg',
+        imageAlt: '中国选手 mayu（yu jizhou）获得 JOPT NLH Good Game 500 冠军',
+        prize: '$9,877.34',
+        copy: '中国选手 yu jizhou（花名 mayu）在 JOPT 2026 Grand Final 的 #65 NLH Good Game 500 中夺冠，赢得 $9,877.34 美元冠军奖金。'
+      }]
+    },
+    mixed: {
+      eyebrow: 'Tokyo #03 · Mixed Games',
+      title: 'MIX / PLO',
+      intro: 'JOPT 的招牌特色之一：从各类换牌玩法到 10-Game MIX Championship，MIX 与 PLO 几乎每天都有场次开赛，覆盖新手到硬核老玩家的不同需求。',
+      schedule: [],
+      champions: [{
+        event: 'JOPT 2026 Grand Final · #131 10-Game MIX Championship',
+        name: 'Liu Qing（T6s）',
+        image: 'photos/lineup-mix-ryu.jpg',
+        imageAlt: '中国选手 Liu Qing 获得 JOPT 10-Game MIX Championship 冠军',
+        prize: '$6,021.09',
+        copy: '中国选手 Liu Qing（ID：T6s）在 JOPT 2026 Grand Final 的 #131 10-Game MIX Championship 中夺冠，赢得 $6,021.09 美元冠军奖金。MIX 项目要求选手在十种玩法间持续切换，考验全面的技术适应能力。'
+      }, {
+        event: 'JOPT 2026 Grand Final · #99 FL Triple Draw MIX Championship',
+        name: 'Lu Yang（luyang343）',
+        image: 'photos/lineup-mix-luyang.jpg',
+        imageAlt: '中国选手 Lu Yang 获得 JOPT FL Triple Draw MIX Championship 冠军',
+        prize: '$2,899.76',
+        copy: '中国选手 Lu Yang（ID：luyang343）在 JOPT 2026 Grand Final 的 #99 FL Triple Draw MIX Championship 中夺冠，赢得 $2,899.76 美元冠军奖金。'
+      }, {
+        event: 'JOPT 2026 Grand Final · #156 PL 2-7 Triple Draw',
+        name: 'Alex（zhang xiaochuan）',
+        image: 'photos/lineup-mix-alex.jpg',
+        imageAlt: '中国选手 Alex（zhang xiaochuan）获得 JOPT PL 2-7 Triple Draw 冠军',
+        prize: '$1,101.12',
+        copy: '中国选手 Alex（zhang xiaochuan）在 JOPT 2026 Grand Final 的 #156 PL 2-7 Triple Draw 中夺冠，赢得 $1,101.12 美元冠军奖金。'
+      }]
+    },
+    lowvalue: {
+      eyebrow: 'Tokyo #03 · Low Stakes',
+      title: '低额一日快速赛',
+      intro: '买入门槛低，当天开打当天结束。适合行程紧凑的旅客，也适合在其他赛事间隙穿插一把消遣。',
+      schedule: [],
+      champions: [{
+        event: 'JOPT 2026 Osaka #01 · #48 NLH Last Party',
+        name: 'wong kachun',
+        image: 'photos/lineup-lowvalue-wongkachun.jpg',
+        imageAlt: '中国选手 wong kachun 获得 JOPT NLH Last Party 冠军',
+        prize: '$622.00',
+        copy: '中国选手 wong kachun 在 JOPT 2026 Osaka #01 的 #48 NLH Last Party 中夺冠，赢得 $622.00 美元冠军奖金。'
+      }, {
+        event: 'JOPT 2026 Tokyo #02 · #16 NLH Bigstack Hyper',
+        name: 'usagi（jie zhenhong）',
+        image: 'photos/lineup-lowvalue-usagi.jpg',
+        imageAlt: '中国选手 usagi（jie zhenhong）获得 JOPT NLH Bigstack Hyper 冠军',
+        prize: '$1,408.43',
+        copy: '中国选手 jie zhenhong（花名 usagi）在 JOPT 2026 Tokyo #02 的 #16 NLH Bigstack Hyper 中夺冠，赢得 $1,408.43 美元冠军奖金。'
+      }]
+    },
+    bounty: {
+      eyebrow: 'Tokyo #03 · Bounty',
+      title: '赏金赛 Bounty',
+      intro: '从中途翻倍到全场狙击，赏金赛为对局增加额外奖励，让每一次淘汰都更有价值。',
+      schedule: [
+        { name: '#14 NLH Bounty Hyper', meta: ['10月9日 02:00（10/8夜场延续）', '报名费 10,000日元'] },
+        { name: '#40 NLH Mystery Bounty', meta: ['10月10日 18:00', '报名费 30,000日元'] },
+        { name: '#51 NLH Bounty Hyper', meta: ['10月11日 02:00（10/10夜场延续）', '报名费 10,000日元'] },
+        { name: '#57 NLH Progressive Bounty', meta: ['10月11日 18:00', '报名费 30,000日元'] },
+        { name: '#71 NLH Super Heavy Bounty', meta: ['10月12日 12:00', '报名费 150,000日元'] }
+      ]
+    }
+  };
+
+  function showLineupDetail(key) {
+    const data = lineupDetails[key];
+    if (!data) return;
+    document.getElementById('lineup-detail-header').textContent = data.title;
+    document.getElementById('lineup-detail-eyebrow').textContent = data.eyebrow;
+    document.getElementById('lineup-detail-title').textContent = data.title;
+    document.getElementById('lineup-detail-intro').textContent = data.intro;
+    document.getElementById('lineup-detail-hero').hidden = !data.image || Boolean(data.champions);
+    const image = document.getElementById('lineup-detail-image');
+    if (data.image) {
+      image.src = data.image;
+      image.alt = data.imageAlt || '';
+    }
+    const facts = document.getElementById('lineup-detail-facts');
+    facts.replaceChildren(...(data.schedule || []).map(item => {
+      const row = document.createElement('div');
+      row.className = 'schedule-item';
+      const name = document.createElement('span');
+      name.className = 'schedule-item-name';
+      name.textContent = item.name;
+      const meta = document.createElement('span');
+      meta.className = 'schedule-item-meta';
+      meta.textContent = item.meta.join(' · ');
+      row.append(name, meta);
+      return row;
+    }));
+    const storyCard = document.getElementById('lineup-detail-story-card');
+    storyCard.hidden = !data.storyTitle;
+    document.getElementById('lineup-detail-story-title').textContent = data.storyTitle || '';
+    document.getElementById('lineup-detail-story').textContent = data.story || '';
+    const champions = data.champions || [];
+    const championSection = document.getElementById('lineup-detail-champion-section');
+    championSection.hidden = champions.length === 0;
+    document.getElementById('lineup-detail-champions').replaceChildren(...champions.map(champion => {
+      const card = document.createElement('article');
+      card.className = 'champion-card';
+      if (champion.image) {
+        const cardImage = document.createElement('img');
+        cardImage.className = 'champion-card-image';
+        cardImage.src = champion.image;
+        cardImage.alt = champion.imageAlt;
+        cardImage.addEventListener('click', () => lightbox(cardImage.src));
+        card.append(cardImage);
+      }
+      const body = document.createElement('div');
+      body.className = 'champion-card-body';
+      const event = document.createElement('p');
+      event.className = 'champion-card-event';
+      event.textContent = champion.event;
+      const name = document.createElement('h3');
+      name.textContent = champion.name;
+      const prize = document.createElement('p');
+      prize.className = 'champion-prize';
+      prize.append(champion.prizeLabel || '冠军奖金（USD）');
+      const prizeValue = document.createElement('strong');
+      prizeValue.textContent = champion.prize;
+      prize.append(prizeValue);
+      const copy = document.createElement('p');
+      copy.className = 'champion-card-copy';
+      copy.textContent = champion.copy;
+      body.append(event, name, prize, copy);
+      card.append(body);
+      return card;
+    }));
+    showDetail('detail-lineup', 'lineup');
+  }
+
   let detailReturnId = null;
-  function showDetail(id, returnId = null) {
-    detailReturnId = returnId;
+  let detailHistory = [];
+  function activateDetail(id) {
     document.getElementById('main-view').classList.add('hidden');
     document.querySelectorAll('.detail-page').forEach(p => p.classList.remove('active'));
     document.getElementById(id).classList.add('active');
     window.scrollTo(0, 0);
   }
-  function showDetailAt(id, targetId) {
-    showDetail(id);
-    requestAnimationFrame(() => {
-      const target = document.getElementById(targetId);
-      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
+  function showDetail(id, returnId = null) {
+    detailReturnId = returnId;
+    detailHistory = [];
+    activateDetail(id);
+  }
+  function showNestedDetail(id) {
+    const activeDetail = document.querySelector('.detail-page.active');
+    if (activeDetail) detailHistory.push(activeDetail.id);
+    activateDetail(id);
   }
   function hideDetail() {
+    if (detailHistory.length) {
+      activateDetail(detailHistory.pop());
+      return;
+    }
     document.querySelectorAll('.detail-page').forEach(p => p.classList.remove('active'));
     document.getElementById('main-view').classList.remove('hidden');
     const returnTarget = detailReturnId ? document.getElementById(detailReturnId) : null;
@@ -1528,6 +1936,14 @@
     } else {
       window.scrollTo(0, 0);
     }
+  }
+  function goToMainSection(id) {
+    detailHistory = [];
+    detailReturnId = null;
+    document.querySelectorAll('.detail-page').forEach(p => p.classList.remove('active'));
+    document.getElementById('main-view').classList.remove('hidden');
+    const target = document.getElementById(id);
+    if (target) requestAnimationFrame(() => target.scrollIntoView({ block: 'start' }));
   }
   function lightbox(src) {
     document.getElementById('photo-lightbox-img').src = src;

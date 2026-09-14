@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         PW ナショナルチケット Batch
 // @namespace    pw-national-ticket-batch-safe
-// @version      1.3.7
+// @version      1.3.8
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
 // @description  任意のPokerWeb管理画面からGameID・チケット名TSVを厳密検証し、ナショナルチケットを安全に一件ずつ付与する正式版
 // @author       xhpc007 + Codex
 // @match        https://japanopt.bt.pokerweb.com.br/*
+// @match        https://formanager.bt.pokerweb.com.br/*
 // @match        https://formanager.pokerweb.com.br/cb/*
 // @grant        GM_setClipboard
 // @run-at       document-idle
@@ -15,7 +16,10 @@
 (() => {
   'use strict';
 
-  const IS_BT_SITE = location.hostname === 'japanopt.bt.pokerweb.com.br';
+  const IS_BT_SITE = [
+    'japanopt.bt.pokerweb.com.br',
+    'formanager.bt.pokerweb.com.br'
+  ].includes(location.hostname);
 
   const APP = {
     inputKey: 'PW_NATIONAL_TICKET_BATCH_V10_INPUT',
@@ -1202,7 +1206,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <strong>PW ナショナルチケット一括付与 正式版 v1.3.7</strong>
+        <strong>PW ナショナルチケット一括付与 正式版 v1.3.8</strong>
         <div><button id="pwnt-min">Min</button> <button id="pwnt-close">x</button></div>
       </div>
       <div id="pwnt-body" style="overflow:auto;margin-top:8px;">

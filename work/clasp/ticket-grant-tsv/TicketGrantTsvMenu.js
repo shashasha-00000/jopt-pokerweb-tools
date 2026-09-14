@@ -24,6 +24,7 @@ function NTB_addMenu_() {
   try {
     SpreadsheetApp.getUi()
     .createMenu('チケット付与TSV')
+    .addItem('Tokyo #03 付与TSV生成', 'buildTokyo03NationalTicketTsv')
     .addItem('Tokyo #02 付与TSV生成', 'buildTokyo02NationalTicketTsv')
     .addItem('2026 Fukuoka #01 Main Ticket 付与TSV生成', 'buildFukuoka01NationalTicketTsv')
     .addToUi();
