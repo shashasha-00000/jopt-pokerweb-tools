@@ -25,6 +25,7 @@ const RSE = (() => {
     SETTINGS_SHEET: 'RSE_設定',
     GAME_ID_CHECK_SHEET: 'RSE_GAME_ID_CHECK',
     PW_INPUT_SHEET: 'RSE_PW_INPUT',
+    SKIP_CORRECTION_SHEET: 'RSE_SKIP修正',
     CHECK_SHEET: 'RSE_領収書CHECK',
     LEDGER_SHEET: 'RSE_領収書管理',
     USDT_RATE_SHEET: 'RSE_USDTレート',
@@ -42,6 +43,7 @@ const RSE = (() => {
     AUTO_GAME_CONFIRM_OK_PROPERTY: 'RSE_AUTO_GAME_CONFIRM_OK_V1',
     AUTO_RECEIPT_CONFIRM_OK_PROPERTY: 'RSE_AUTO_RECEIPT_CONFIRM_OK_V1',
     AUTO_SEND_OK_PROPERTY: 'RSE_AUTO_SEND_OK_V1',
+    RUNNING_OPERATION_PROPERTY: 'RSE_RUNNING_OPERATION_V1',
     TIME_ZONE: 'Asia/Tokyo'
   };
 
@@ -50,7 +52,6 @@ const RSE = (() => {
     ['PW_SHEET_NAME', CONFIG.DEFAULT_PW_SHEET, '人工取得したPW TSVのSheet名'],
     ['NEXT_RECEIPT_NO', '900000', '次に採番する領収書番号。純数字または 任意の接頭辞-0001 形式'],
     ['MAX_RECEIPTS_PER_RUN', '', '空白なら全件生成。必要時だけ1回あたりの上限件数を入力'],
-    ['PDF_FETCH_BATCH_SIZE', '200', '旧ブラウザ生成用。GS生成では使用しない'],
     ['PDF_UPLOAD_BATCH_SIZE', '10', 'GS生成の進捗をSheetへ保存する間隔。推奨10、設定範囲1～50'],
     ['MAX_EXECUTION_SECONDS', '24000', 'PDF生成・草稿作成の1回の最大実行秒数。推奨2400'],
     ['RECIPIENT_MIN_FONT_MM', '5.5', '長い宛名を自動縮小する最小文字サイズ。推奨5.5'],
@@ -69,6 +70,11 @@ const RSE = (() => {
   ];
 
   const PW_INPUT_HEADERS = ['Game ID', '対象大会', '対象期間'];
+
+  const SKIP_CORRECTION_HEADERS = [
+    '状態', 'SKIP理由', '原Game ID', '本名', 'メールアドレス', '宛名',
+    'eventName', '対象期間', '修正Game ID', '最終処理結果', '更新日時', '更新者', '申請キー'
+  ];
 
   const CHECK_HEADERS = [
     '判定', '確認状態', '確認内容', 'checkKey', 'sourceHash', 'confirmedHash',
@@ -132,8 +138,10 @@ const RSE = (() => {
       .addItem('1. Form → Game ID CHECK更新', 'RSE_refreshGameIdCheck')
       .addItem('2. Game ID CHECK勾選行を確定', 'RSE_confirmGameIdCheck')
       .addItem('3. PW 1.6.17入力を生成・表示', 'RSE_buildPwInput')
+      .addItem('3a. SKIP修正者だけPW入力を生成', 'RSE_buildSkipPwInput')
       .addSeparator()
       .addItem('4. PW TSV → 領収書CHECK更新', 'RSE_refreshReceiptCheck')
+      .addItem('4a. SKIP修正者だけ領収書CHECKへ追加', 'RSE_appendSkipCorrections')
       .addItem('5. 領収書CHECK勾選行を確定', 'RSE_confirmReceiptCheck')
       .addItem('6. 未採番行へ領収書番号を採番', 'RSE_assignReceiptNumbers')
       .addSeparator()
@@ -155,6 +163,7 @@ const RSE = (() => {
     ensureSettingsDefaults_(settingsSheet);
     ensureSheet_(ss, CONFIG.GAME_ID_CHECK_SHEET, GAME_ID_CHECK_HEADERS);
     ensureSheet_(ss, CONFIG.PW_INPUT_SHEET, PW_INPUT_HEADERS);
+    formatSkipCorrectionSheet_(ensureSheet_(ss, CONFIG.SKIP_CORRECTION_SHEET, SKIP_CORRECTION_HEADERS), 0);
     ensureSheet_(ss, CONFIG.CHECK_SHEET, CHECK_HEADERS);
     ensureSheet_(ss, CONFIG.LEDGER_SHEET, LEDGER_HEADERS);
     formatUsdtRateSheet_(ensureSheet_(ss, CONFIG.USDT_RATE_SHEET, USDT_RATE_HEADERS));
@@ -171,8 +180,7 @@ const RSE = (() => {
   }
 
   function refreshGameIdCheck() {
-    const lock = LockService.getDocumentLock();
-    lock.waitLock(30000);
+    const lock = acquireDocumentLock_('1. Form → Game ID CHECK更新');
     try {
       const ss = SpreadsheetApp.getActiveSpreadsheet();
       assertInitialized_(ss);
@@ -351,13 +359,12 @@ const RSE = (() => {
         '「CHECKを確定」を実行してください。未選択行はスキップされます。'
       );
     } finally {
-      lock.releaseLock();
+      releaseDocumentLock_(lock);
     }
   }
 
   function confirmGameIdCheck() {
-    const lock = LockService.getDocumentLock();
-    lock.waitLock(30000);
+    const lock = acquireDocumentLock_('2. Game ID CHECK勾選行を確定');
     try {
       const ss = SpreadsheetApp.getActiveSpreadsheet();
       const sheet = requiredSheet_(ss, CONFIG.GAME_ID_CHECK_SHEET);
@@ -412,7 +419,7 @@ const RSE = (() => {
         (errors.length ? '\n\nエラー:\n' + errors.slice(0, 20).join('\n') : '')
       );
     } finally {
-      lock.releaseLock();
+      releaseDocumentLock_(lock);
     }
   }
 
@@ -429,6 +436,58 @@ const RSE = (() => {
 
     writePwInputRows_(outputSheet, input.headers, input.rows);
     showPwInputDialog_(input.tsv, input.rows.length);
+  }
+
+  function buildSkipPwInput() {
+    const lock = acquireDocumentLock_('3a. SKIP修正者だけPW入力を生成');
+    try {
+      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      assertInitialized_(ss);
+      const skipSheet = ensureSheet_(ss, CONFIG.SKIP_CORRECTION_SHEET, SKIP_CORRECTION_HEADERS);
+      const outputSheet = requiredSheet_(ss, CONFIG.PW_INPUT_SHEET);
+      const state = readSheetUpdateState_(skipSheet);
+      const outputRows = [];
+      const seen = new Set();
+      const errors = [];
+      const now = new Date();
+      const actor = activeUserEmail_();
+
+      state.objects.forEach(row => {
+        if (text_(row['状態']) === '追加済み') return;
+        const rawCorrectedGameId = text_(row['修正Game ID']);
+        const correctedGameId = normalizeGameId_(row['修正Game ID']);
+        if (!rawCorrectedGameId) return;
+        if (!correctedGameId) {
+          errors.push((row.__rowNo || '?') + '行: 修正Game IDは8桁で入力してください');
+          return;
+        }
+        const applicationKey = text_(row['申請キー']);
+        const period = parseApplicationKey_(applicationKey);
+        if (!applicationKey || !period.gameId || (!period.allDates && (!period.startDate || !period.endDate))) {
+          errors.push((row.__rowNo || '?') + '行: 申請キーが不正です');
+          return;
+        }
+        const eventName = text_(row.eventName);
+        const periodText = period.allDates ? '' : [pwInputDate_(period.startDate), pwInputDate_(period.endDate)].join(' - ');
+        const outputKey = [correctedGameId, eventName, periodText].join('\t');
+        if (!seen.has(outputKey)) {
+          seen.add(outputKey);
+          outputRows.push([correctedGameId, eventName, periodText]);
+        }
+        setUpdateStateValue_(state, row, '状態', 'PW取得待ち');
+        setUpdateStateValue_(state, row, '最終処理結果', '3aで補完用PW入力を生成');
+        setUpdateStateValue_(state, row, '更新日時', now);
+        setUpdateStateValue_(state, row, '更新者', actor);
+      });
+
+      if (errors.length) throw new Error(errors.slice(0, 20).join('\n'));
+      if (!outputRows.length) throw new Error('修正Game IDが入力された未処理のSKIP申請がありません');
+      writeSheetUpdateState_(skipSheet, state);
+      writePwInputRows_(outputSheet, PW_INPUT_HEADERS, outputRows);
+      showPwInputDialog_(outputRows.map(row => row.join('\t')).join('\n'), outputRows.length);
+    } finally {
+      releaseDocumentLock_(lock);
+    }
   }
 
   function readFormEventNameByApplicationKey_(sheet) {
@@ -510,8 +569,7 @@ const RSE = (() => {
   }
 
   function refreshReceiptCheck() {
-    const lock = LockService.getDocumentLock();
-    lock.waitLock(30000);
+    const lock = acquireDocumentLock_('4. PW TSV → 領収書CHECK更新');
     try {
       const ss = SpreadsheetApp.getActiveSpreadsheet();
       assertInitialized_(ss);
@@ -528,6 +586,8 @@ const RSE = (() => {
       const documentProperties = PropertiesService.getDocumentProperties();
       const applyAutoCheckMigration = documentProperties.getProperty(CONFIG.AUTO_RECEIPT_CONFIRM_OK_PROPERTY) !== '1';
       const rows = buildReceiptCheckRows_(applications, pwResult, ledgerMap, prior, settings, applyAutoCheckMigration);
+      const unmatchedApplications = findUnmatchedApplications_(applications, pwResult);
+      syncSkipCorrectionSheet_(ss, applications, unmatchedApplications, pwResult);
       const outputCheckKeys = new Set(rows.map(row => text_(row[3])));
       priorRows.forEach(old => {
         if (!blockedGameIds.has(normalizeGameId_(old['Game ID']))) return;
@@ -557,6 +617,11 @@ const RSE = (() => {
         '対象明細: ' + rows.length + '件\n' +
         'Game ID CHECK確定値による自動差替: ' + replacementCount + '件\n' +
         '今回TSVなしでスキップした申請: ' + intersection.formOnlyGameIds + '件\n' +
+        (unmatchedApplications.length
+          ? '対象者: ' + unmatchedApplications.slice(0, 10).map(app => app.name + ' (' + app.gameId + ')').join(', ') +
+            (unmatchedApplications.length > 10 ? ' ほか' + (unmatchedApplications.length - 10) + '件' : '') +
+            '\n詳細: ' + CONFIG.SKIP_CORRECTION_SHEET + '\n'
+          : '') +
         'Form申請なしでスキップしたGame ID: ' + intersection.pwOnlyGameIds + '件\n' +
         '不正TSV行スキップ: ' + intersection.invalidPwRows + '件\n' +
         '未確定: ' + unresolved + '件\n\n' +
@@ -564,7 +629,7 @@ const RSE = (() => {
         '必要ならAA列へ理由を記録してAB列をONにしてください。未選択行は後続処理でもスキップされます。'
       );
     } finally {
-      lock.releaseLock();
+      releaseDocumentLock_(lock);
     }
   }
 
@@ -732,6 +797,255 @@ const RSE = (() => {
     };
   }
 
+  function findUnmatchedApplications_(applications, pwResult) {
+    const pwByGameId = (pwResult && pwResult.byGameId) || {};
+    return Object.keys(applications || {}).map(key => applications[key]).filter(app =>
+      !(pwByGameId[app.gameId] || []).some(pw => pwMatchesApplicationPeriod_(pw, app))
+    );
+  }
+
+  function syncSkipCorrectionSheet_(ss, applications, unmatchedApplications, pwResult) {
+    const sheet = ensureSheet_(ss, CONFIG.SKIP_CORRECTION_SHEET, SKIP_CORRECTION_HEADERS);
+    const priorRows = readObjects_(sheet);
+    const priorByApplicationKey = objectMapBy_(priorRows, '申請キー');
+    const unmatchedByApplicationKey = {};
+    (unmatchedApplications || []).forEach(app => { unmatchedByApplicationKey[app.applicationKey] = app; });
+    const applicationKeys = uniqueStrings_(
+      priorRows.map(row => text_(row['申請キー'])).concat(Object.keys(unmatchedByApplicationKey))
+    );
+    const now = new Date();
+    const actor = activeUserEmail_();
+    const rows = applicationKeys.map(applicationKey => {
+      const old = priorByApplicationKey[applicationKey] || {};
+      const app = (applications || {})[applicationKey] || unmatchedByApplicationKey[applicationKey] || {};
+      const originalPeriod = parseApplicationKey_(applicationKey);
+      const originalGameId = normalizeGameId_(old['原Game ID']) || originalPeriod.gameId || app.gameId || '';
+      const correctedGameId = normalizeGameId_(old['修正Game ID']);
+      const currentlyUnmatched = Boolean(unmatchedByApplicationKey[applicationKey]);
+      const nowMatched = Boolean(app.gameId) && (((pwResult && pwResult.byGameId) || {})[app.gameId] || [])
+        .some(pw => pwMatchesApplicationPeriod_(pw, app));
+      let status = text_(old['状態']);
+      let result = text_(old['最終処理結果']);
+      let updatedAt = old['更新日時'] || '';
+      let updatedBy = text_(old['更新者']);
+
+      if (currentlyUnmatched && status !== '追加済み') {
+        status = correctedGameId ? '修正ID入力済み' : '未修正';
+        result = correctedGameId ? '3aで補完用PW入力を生成してください' : '正しいGame IDを入力してください';
+        updatedAt = now;
+        updatedBy = actor;
+      } else if (nowMatched && status && status !== '追加済み') {
+        status = '追加済み';
+        result = '通常のメニュー4で一致済み';
+        updatedAt = now;
+        updatedBy = actor;
+      }
+
+      return [
+        status || '未修正', 'PW TSVにGame ID・対象期間の一致なし', originalGameId,
+        app.name || old['本名'] || '', app.email || old['メールアドレス'] || '',
+        app.recipient || old['宛名'] || '', app.eventName || old.eventName || '',
+        applicationPeriodLabel_(app.startDate !== undefined ? app : originalPeriod), correctedGameId,
+        result, updatedAt, updatedBy, applicationKey
+      ];
+    });
+    writeManagedRows_(sheet, SKIP_CORRECTION_HEADERS, rows, []);
+    formatSkipCorrectionSheet_(sheet, rows.length);
+  }
+
+  function appendSkipCorrections() {
+    const lock = acquireDocumentLock_('4a. SKIP修正者だけ領収書CHECKへ追加');
+    try {
+      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      assertInitialized_(ss);
+      const settings = readSettings_(ss);
+      const skipSheet = ensureSheet_(ss, CONFIG.SKIP_CORRECTION_SHEET, SKIP_CORRECTION_HEADERS);
+      const skipState = readSheetUpdateState_(skipSheet);
+      const applications = readConfirmedApplications_(ss);
+      const pwSheet = requiredSheet_(ss, settings.PW_SHEET_NAME || CONFIG.DEFAULT_PW_SHEET);
+      const pwResult = readPwRows_(pwSheet, settings);
+      const checkSheet = requiredSheet_(ss, CONFIG.CHECK_SHEET);
+      const checkRows = readObjects_(checkSheet);
+      const prior = objectMapBy_(checkRows, 'checkKey');
+      const ledgerMap = buildLedgerMap_(readObjects_(requiredSheet_(ss, CONFIG.LEDGER_SHEET)));
+      const gameSheet = requiredSheet_(ss, CONFIG.GAME_ID_CHECK_SHEET);
+      const gameState = readSheetUpdateState_(gameSheet);
+      const targetApplications = {};
+      const skipRowByApplicationKey = {};
+      const errors = [];
+      const now = new Date();
+      const actor = activeUserEmail_();
+
+      skipState.objects.forEach(row => {
+        if (text_(row['状態']) === '追加済み') return;
+        const rawCorrectedGameId = text_(row['修正Game ID']);
+        const correctedGameId = normalizeGameId_(row['修正Game ID']);
+        if (!rawCorrectedGameId) return;
+        if (!correctedGameId) {
+          setSkipCorrectionResult_(skipState, row, 'エラー', '修正Game IDは8桁で入力してください', now, actor);
+          errors.push((row.__rowNo || '?') + '行: 修正Game IDが不正');
+          return;
+        }
+        const applicationKey = text_(row['申請キー']);
+        const app = applications[applicationKey];
+        if (!app) {
+          setSkipCorrectionResult_(skipState, row, 'エラー', '確定済みGame ID CHECKに対応する申請がありません', now, actor);
+          errors.push((row.__rowNo || '?') + '行: 対応する確定済み申請なし');
+          return;
+        }
+        const matchingPwRows = (pwResult.byGameId[correctedGameId] || [])
+          .filter(pw => pwMatchesApplicationPeriod_(pw, app));
+        if (!matchingPwRows.length) {
+          setSkipCorrectionResult_(skipState, row, 'PW未一致', '修正Game ID・対象期間に一致するPW明細がありません', now, actor);
+          return;
+        }
+        const sameGameIdRows = gameState.objects.filter(other =>
+          text_(other['申請キー']) !== applicationKey &&
+          normalizeGameId_(other['Game ID']) === correctedGameId
+        );
+        const hasUnresolvedSameGameId = sameGameIdRows.some(other => !isGameIdCheckRowResolved_(other));
+        const conflictingIdentity = sameGameIdRows.some(other =>
+          isGameIdCheckRowResolved_(other) &&
+          (compact_(other['確定本名']) !== compact_(app.name) ||
+            text_(other['確定メールアドレス']).toLowerCase() !== text_(app.email).toLowerCase())
+        ) || Object.keys(targetApplications).some(otherKey => {
+          const other = targetApplications[otherKey];
+          return other.gameId === correctedGameId &&
+            (compact_(other.name) !== compact_(app.name) ||
+              text_(other.email).toLowerCase() !== text_(app.email).toLowerCase());
+        });
+        if (hasUnresolvedSameGameId || conflictingIdentity) {
+          const reason = hasUnresolvedSameGameId
+            ? '同じ修正Game IDに未確定のGame ID CHECK行があります'
+            : '同じ修正Game IDに別の本名またはメールがあります';
+          setSkipCorrectionResult_(skipState, row, '人工確認必要', reason, now, actor);
+          errors.push((row.__rowNo || '?') + '行: ' + reason);
+          return;
+        }
+        targetApplications[applicationKey] = Object.assign({}, app, { gameId: correctedGameId });
+        skipRowByApplicationKey[applicationKey] = row;
+      });
+
+      const targetKeys = Object.keys(targetApplications);
+      if (!targetKeys.length) {
+        writeSheetUpdateState_(skipSheet, skipState);
+        alert_(
+          '追加対象はありませんでした。\n\n修正Game IDを入力し、3aで取得したPW TSVを「' +
+          (settings.PW_SHEET_NAME || CONFIG.DEFAULT_PW_SHEET) + '」へ貼り付けてください。' +
+          (errors.length ? '\n\nエラー:\n' + errors.slice(0, 20).join('\n') : '')
+        );
+        return;
+      }
+
+      const newRows = buildReceiptCheckRows_(targetApplications, pwResult, ledgerMap, prior, settings, false);
+      const generatedByApplicationKey = {};
+      newRows.forEach(row => {
+        const applicationKey = text_(row[CHECK_HEADERS.indexOf('申請キー')]);
+        if (!generatedByApplicationKey[applicationKey]) generatedByApplicationKey[applicationKey] = 0;
+        generatedByApplicationKey[applicationKey]++;
+      });
+
+      const gameRowsByApplicationKey = objectMapBy_(gameState.objects, '申請キー');
+      targetKeys.forEach(applicationKey => {
+        const skipRow = skipRowByApplicationKey[applicationKey];
+        const generated = generatedByApplicationKey[applicationKey] || 0;
+        if (!generated) {
+          setSkipCorrectionResult_(skipState, skipRow, 'PW未一致', '領収書対象となるPW明細を生成できませんでした', now, actor);
+          return;
+        }
+        const gameRow = gameRowsByApplicationKey[applicationKey];
+        if (!gameRow) {
+          setSkipCorrectionResult_(skipState, skipRow, 'エラー', 'Game ID CHECKの対象行が見つかりません', now, actor);
+          errors.push((skipRow.__rowNo || '?') + '行: Game ID CHECK対象行なし');
+          return;
+        }
+        const correctedGameId = targetApplications[applicationKey].gameId;
+        const originalGameId = normalizeGameId_(gameRow['Game ID']);
+        setUpdateStateValue_(gameState, gameRow, 'Game ID', correctedGameId);
+        setUpdateStateValue_(gameState, gameRow, '判定', 'OK');
+        setUpdateStateValue_(gameState, gameRow, '確認内容', 'SKIP修正でGame ID変更: ' + originalGameId + ' → ' + correctedGameId);
+        setUpdateStateValue_(gameState, gameRow, '確認状態', '確定済み');
+        setUpdateStateValue_(gameState, gameRow, 'confirmedHash', gameIdFinalHash_({
+          sourceHash: gameRow.sourceHash,
+          gameId: correctedGameId,
+          finalName: gameRow['確定本名'],
+          finalEmail: gameRow['確定メールアドレス'],
+          finalRecipient: gameRow['確定宛名'],
+          policy: gameRow['処理方針']
+        }));
+        setUpdateStateValue_(gameState, gameRow, '確認OK', false);
+        setUpdateStateValue_(gameState, gameRow, '確認日時', now);
+        setUpdateStateValue_(gameState, gameRow, '確認者', actor);
+        setSkipCorrectionResult_(skipState, skipRow, '追加済み', generated + '明細を領収書CHECKへ追加', now, actor);
+      });
+
+      const successfulKeys = new Set(Object.keys(generatedByApplicationKey).filter(key => {
+        const row = skipRowByApplicationKey[key];
+        return row && text_(row['状態']) === '追加済み';
+      }));
+      const successfulRows = newRows.filter(row =>
+        successfulKeys.has(text_(row[CHECK_HEADERS.indexOf('申請キー')]))
+      );
+      const mergedRows = mergeReceiptCheckRows_(checkRows, successfulRows);
+      writeManagedRows_(checkSheet, CHECK_HEADERS, mergedRows, [28, 37]);
+      formatReceiptCheckSheet_(checkSheet, mergedRows.length);
+      const mailState = readSheetUpdateState_(checkSheet);
+      const mailGroups = groupCheckRowsForDraft_(
+        mailState.objects.filter(row => text_(row['処理方針']) === '新規発行')
+      );
+      const affectedGameIds = new Set(successfulRows.map(row =>
+        normalizeGameId_(row[CHECK_HEADERS.indexOf('Game ID')])
+      ).filter(Boolean));
+      affectedGameIds.forEach(gameId => {
+        if (!mailGroups[gameId]) return;
+        normalizeMailGroupDisplay_(mailState, mailGroups[gameId]);
+        applyMailGroupConflictToCheck_(mailState, mailGroups[gameId]);
+      });
+      writeSheetUpdateState_(checkSheet, mailState);
+      formatMailGroupControls_(checkSheet, mailGroups);
+      writeSheetUpdateState_(gameSheet, gameState);
+      writeSheetUpdateState_(skipSheet, skipState);
+      formatGameIdCheckSheet_(gameSheet, gameState.objects.length);
+      formatSkipCorrectionSheet_(skipSheet, skipState.objects.length);
+      alert_(
+        'SKIP修正者の追加が完了しました。\n\n対象申請: ' + successfulKeys.size +
+        '件\n追加・更新明細: ' + successfulRows.length + '件' +
+        (errors.length ? '\n\n人工確認・エラー:\n' + errors.slice(0, 20).join('\n') : '')
+      );
+    } finally {
+      releaseDocumentLock_(lock);
+    }
+  }
+
+  function setSkipCorrectionResult_(state, row, status, result, updatedAt, updatedBy) {
+    setUpdateStateValue_(state, row, '状態', status);
+    setUpdateStateValue_(state, row, '最終処理結果', result);
+    setUpdateStateValue_(state, row, '更新日時', updatedAt);
+    setUpdateStateValue_(state, row, '更新者', updatedBy);
+  }
+
+  function mergeReceiptCheckRows_(existingRows, incomingRows) {
+    const rows = (existingRows || []).map(row => CHECK_HEADERS.map(header =>
+      row[header] === undefined ? '' : row[header]
+    ));
+    const checkKeyColumn = CHECK_HEADERS.indexOf('checkKey');
+    const indexByCheckKey = {};
+    rows.forEach((row, index) => {
+      const key = text_(row[checkKeyColumn]);
+      if (key) indexByCheckKey[key] = index;
+    });
+    (incomingRows || []).forEach(row => {
+      const key = text_(row[checkKeyColumn]);
+      if (key && Object.prototype.hasOwnProperty.call(indexByCheckKey, key)) {
+        rows[indexByCheckKey[key]] = row;
+      } else {
+        if (key) indexByCheckKey[key] = rows.length;
+        rows.push(row);
+      }
+    });
+    return rows;
+  }
+
   function makeReceiptCheckRow_(params) {
     const app = params.application || {};
     const pw = params.pw || {};
@@ -802,8 +1116,7 @@ const RSE = (() => {
   }
 
   function confirmReceiptCheck() {
-    const lock = LockService.getDocumentLock();
-    lock.waitLock(30000);
+    const lock = acquireDocumentLock_('5. 領収書CHECK勾選行を確定');
     try {
       const ss = SpreadsheetApp.getActiveSpreadsheet();
       const sheet = requiredSheet_(ss, CONFIG.CHECK_SHEET);
@@ -880,13 +1193,12 @@ const RSE = (() => {
         (errors.length ? '\n\nエラー:\n' + errors.slice(0, 20).join('\n') : '')
       );
     } finally {
-      lock.releaseLock();
+      releaseDocumentLock_(lock);
     }
   }
 
   function assignReceiptNumbers() {
-    const lock = LockService.getDocumentLock();
-    lock.waitLock(30000);
+    const lock = acquireDocumentLock_('6. 未採番行へ領収書番号を採番');
     try {
       const ss = SpreadsheetApp.getActiveSpreadsheet();
       const sheet = requiredSheet_(ss, CONFIG.CHECK_SHEET);
@@ -915,13 +1227,12 @@ const RSE = (() => {
         '件\n未確定Game IDスキップ行: ' + scope.skippedRows + '件'
       );
     } finally {
-      lock.releaseLock();
+      releaseDocumentLock_(lock);
     }
   }
 
   function prepareSelectedPdfRegeneration() {
-    const lock = LockService.getDocumentLock();
-    lock.waitLock(30000);
+    const lock = acquireDocumentLock_('7a. 選択行のPDFを再生成対象にする');
     try {
       const ss = SpreadsheetApp.getActiveSpreadsheet();
       const sheet = ss.getActiveSheet();
@@ -977,7 +1288,7 @@ const RSE = (() => {
         '続けてメニュー7を実行してください。新PDF保存成功後に旧PDFをゴミ箱へ移動します。'
       );
     } finally {
-      lock.releaseLock();
+      releaseDocumentLock_(lock);
     }
   }
 
@@ -1125,8 +1436,7 @@ const RSE = (() => {
     if (!selectedRowNos.length) throw new Error('「再生成」がONの行がありません');
     promptForMissingUsdtRates_(ss, selectedRowNos);
 
-    const lock = LockService.getDocumentLock();
-    lock.waitLock(30000);
+    const lock = acquireDocumentLock_('7c. 勾選PDFをGSで再生成');
     try {
       const checkSheet = requiredSheet_(ss, CONFIG.CHECK_SHEET);
       const checkState = readSheetUpdateState_(checkSheet);
@@ -1162,13 +1472,13 @@ const RSE = (() => {
         );
       }
     } finally {
-      lock.releaseLock();
+      releaseDocumentLock_(lock);
     }
 
     const scriptProperties = PropertiesService.getScriptProperties();
     scriptProperties.setProperty('RSE_PDF_SPREADSHEET_ID', ss.getId());
     scriptProperties.setProperty('RSE_PDF_TARGET_ROW_NOS', JSON.stringify(selectedRowNos));
-    const result = generatePendingFilesServerBatch_(ss, true, selectedRowNos);
+    const result = generatePendingFilesServerBatch_(ss, true, selectedRowNos, '7c. 勾選PDFをGSで再生成');
     if (result.stoppedByTime && result.eligibleRemaining > 0) {
       schedulePdfContinuation_();
     } else {
@@ -1188,7 +1498,7 @@ const RSE = (() => {
     const scriptProperties = PropertiesService.getScriptProperties();
     scriptProperties.setProperty('RSE_PDF_SPREADSHEET_ID', ss.getId());
     scriptProperties.deleteProperty('RSE_PDF_TARGET_ROW_NOS');
-    const result = generatePendingFilesServerBatch_(ss, true, null);
+    const result = generatePendingFilesServerBatch_(ss, true, null, '7. GSで未生成PDFを生成');
     if (result.stoppedByTime && result.eligibleRemaining > 0) {
       schedulePdfContinuation_();
     } else if (!result.totalRemaining) {
@@ -1210,7 +1520,7 @@ const RSE = (() => {
     } catch (_) {
       targetRowNos = null;
     }
-    const result = generatePendingFilesServerBatch_(ss, false, targetRowNos);
+    const result = generatePendingFilesServerBatch_(ss, false, targetRowNos, '7. PDF自動続行');
     if (result.stoppedByTime && result.eligibleRemaining > 0) {
       schedulePdfContinuation_();
     } else {
@@ -1220,9 +1530,8 @@ const RSE = (() => {
     Logger.log(pdfGenerationSummary_(result));
   }
 
-  function generatePendingFilesServerBatch_(ss, retryErrors, targetRowNos) {
-    const lock = LockService.getDocumentLock();
-    lock.waitLock(30000);
+  function generatePendingFilesServerBatch_(ss, retryErrors, targetRowNos, operationName) {
+    const lock = acquireDocumentLock_(operationName || '7. GSで未生成PDFを生成');
     try {
       const startedAt = Date.now();
       const settings = readSettings_(ss);
@@ -1403,7 +1712,7 @@ const RSE = (() => {
         limit
       };
     } finally {
-      lock.releaseLock();
+      releaseDocumentLock_(lock);
     }
   }
 
@@ -1447,247 +1756,6 @@ const RSE = (() => {
     PropertiesService.getScriptProperties().deleteProperty('RSE_PDF_TARGET_ROW_NOS');
   }
 
-  function getRenderBatch(options) {
-    const lock = LockService.getDocumentLock();
-    lock.waitLock(30000);
-    try {
-      const ss = SpreadsheetApp.getActiveSpreadsheet();
-      const settings = readSettings_(ss);
-      validateGenerationSettings_(settings);
-      const sheet = requiredSheet_(ss, CONFIG.CHECK_SHEET);
-      const ledgerSheet = requiredSheet_(ss, CONFIG.LEDGER_SHEET);
-      const folder = getFolder_(settings.RECEIPT_FOLDER_URL);
-      const ledgerMap = buildLedgerMap_(readObjects_(ledgerSheet));
-      const checkState = readSheetUpdateState_(sheet);
-      const rows = checkState.objects;
-      const scope = receiptProcessingScope_(rows);
-      const usdtRateState = readUsdtRateState_(ss);
-      const limit = optionalPositiveIntegerSetting_(settings.MAX_RECEIPTS_PER_RUN);
-      const fetchBatchSize = boundedIntegerSetting_(settings.PDF_FETCH_BATCH_SIZE, 200, 1, 500);
-      const uploadBatchSize = boundedIntegerSetting_(settings.PDF_UPLOAD_BATCH_SIZE, 10, 1, 50);
-      const requested = positiveIntegerSetting_(options && options.maxJobs, fetchBatchSize);
-      const batchSize = Math.min(requested, fetchBatchSize, limit || fetchBatchSize);
-      const excludedPdfKeys = new Set(
-        (Array.isArray(options && options.excludePdfKeys) ? options.excludePdfKeys : [])
-          .slice(0, 500)
-          .map(text_)
-          .filter(Boolean)
-      );
-      const pendingBefore = rows.filter(row =>
-        scope.eligibleRowNos.has(row.__rowNo) && text_(row['処理方針']) === '新規発行' &&
-        text_(row['領収書No']) && !text_(row.PDF_FILE_ID)
-      ).length;
-      const jobs = [];
-      const ledgerRowsToAppend = [];
-      let checkChanged = false;
-
-      for (let index = 0; index < rows.length; index++) {
-        const row = rows[index];
-        const rowNo = row.__rowNo;
-        if (!scope.eligibleRowNos.has(rowNo)) continue;
-        if (text_(row['処理方針']) !== '新規発行') continue;
-        if (text_(row.PDF_FILE_ID)) continue;
-        const receiptNo = text_(row['領収書No']);
-        if (!receiptNo) continue;
-
-        const data = prepareReceiptDisplayData_(receiptDataFromCheckRow_(row, settings), usdtRateState);
-        data.receiptNo = receiptNo;
-        const paymentKey = makePaymentKey_({
-          gameId: data.gameId, tournament: data.tournament,
-          purchaseTime: data.purchaseTime, type: data.type, total: data.total
-        });
-        const pdfKey = makePdfKey_(paymentKey, data.recipient);
-        if (paymentKey !== text_(row.paymentKey) || pdfKey !== text_(row.pdfKey)) {
-          throw new Error(rowNo + '行: CHECK確定後にpaymentKey/pdfKeyが変化しています');
-        }
-        if (excludedPdfKeys.has(pdfKey)) continue;
-
-        const replacement = text_(row['判定']) === '差替';
-        const existing = ledgerMap.byPdfKey[pdfKey];
-        if (!replacement && existing && text_(existing.PDF_FILE_ID)) {
-          const file = DriveApp.getFileById(text_(existing.PDF_FILE_ID));
-          applyRenderedFileToCheckState_(checkState, row, file, pdfKey);
-          checkChanged = true;
-          continue;
-        }
-
-        const fileName = makeReceiptFileName_(data, settings);
-        const namedFile = replacement ? null : findSingleFileByName_(folder, fileName);
-        if (namedFile) {
-          applyRenderedFileToCheckState_(checkState, row, namedFile, pdfKey);
-          ledgerRowsToAppend.push(makeLedgerRowArray_({
-            pdfKey, paymentKey, receiptNo, data, file: namedFile,
-            status: 'PDF作成済み', applicationKey: text_(row['申請キー']), note: '既存ファイル再登録'
-          }));
-          ledgerMap.byPdfKey[pdfKey] = { PDF_FILE_ID: namedFile.getId() };
-          checkChanged = true;
-          continue;
-        }
-
-        setUpdateStateValue_(checkState, row, 'ファイル状態', 'ブラウザ生成待ち');
-        checkChanged = true;
-        jobs.push({
-          rowNo,
-          pdfKey,
-          paymentKey,
-          receiptNo,
-          fileName,
-          html: buildReceiptHtml_(data, settings)
-        });
-        if (jobs.length >= batchSize) break;
-      }
-
-      if (checkChanged) writeSheetUpdateState_(sheet, checkState);
-      if (ledgerRowsToAppend.length) appendLedgerRows_(ledgerSheet, ledgerRowsToAppend);
-      return {
-        done: jobs.length === 0,
-        pending: pendingBefore,
-        limit,
-        fetchBatchSize,
-        uploadBatchSize,
-        jobs
-      };
-    } finally {
-      lock.releaseLock();
-    }
-  }
-
-  function saveRenderedPdfBatch(payload) {
-    const lock = LockService.getDocumentLock();
-    lock.waitLock(30000);
-    try {
-      const ss = SpreadsheetApp.getActiveSpreadsheet();
-      const settings = readSettings_(ss);
-      validateGenerationSettings_(settings);
-      const sheet = requiredSheet_(ss, CONFIG.CHECK_SHEET);
-      const ledgerSheet = requiredSheet_(ss, CONFIG.LEDGER_SHEET);
-      const items = Array.isArray(payload && payload.items) ? payload.items : [];
-      const uploadBatchSize = boundedIntegerSetting_(settings.PDF_UPLOAD_BATCH_SIZE, 10, 1, 50);
-      if (!items.length || items.length > uploadBatchSize) {
-        throw new Error('PDF保存バッチは1～' + uploadBatchSize + '件で指定してください');
-      }
-      const checkState = readSheetUpdateState_(sheet);
-      const scope = receiptProcessingScope_(checkState.objects);
-      const ledgerMap = buildLedgerMap_(readObjects_(ledgerSheet));
-      const folder = getFolder_(settings.RECEIPT_FOLDER_URL);
-      const ledgerRowsToAppend = [];
-      const results = [];
-      const replacementsToArchive = [];
-
-      items.forEach(item => {
-        const rowNo = Math.floor(Number(item && item.rowNo));
-        const row = checkState.objects[rowNo - 2];
-        try {
-          if (!row || row.__rowNo !== rowNo) throw new Error('対象CHECK行が見つかりません');
-          if (!scope.eligibleRowNos.has(rowNo)) {
-            throw new Error('未確定または同一Game ID内に未確定行があるため保存をスキップしました');
-          }
-          if (text_(row.PDF_FILE_ID)) {
-            results.push({ rowNo, ok: true, reused: true });
-            return;
-          }
-          const data = receiptDataFromCheckRow_(row, settings);
-          data.receiptNo = text_(row['領収書No']);
-          const paymentKey = makePaymentKey_({
-            gameId: data.gameId, tournament: data.tournament,
-            purchaseTime: data.purchaseTime, type: data.type, total: data.total
-          });
-          const pdfKey = makePdfKey_(paymentKey, data.recipient);
-          if (pdfKey !== text_(item.pdfKey) || pdfKey !== text_(row.pdfKey)) {
-            throw new Error('pdfKeyが一致しません。CHECKを更新してください');
-          }
-
-          const replacement = text_(row['判定']) === '差替';
-          const existing = ledgerMap.byPdfKey[pdfKey];
-          if (!replacement && existing && text_(existing.PDF_FILE_ID)) {
-            const existingFile = DriveApp.getFileById(text_(existing.PDF_FILE_ID));
-            applyRenderedFileToCheckState_(checkState, row, existingFile, pdfKey);
-            results.push({ rowNo, ok: true, reused: true });
-            return;
-          }
-
-          const base64 = String(item.base64 || '').replace(/^data:application\/pdf;base64,/, '');
-          if (!base64) throw new Error('PDFデータが空です');
-          const fileName = makeReceiptFileName_(data, settings);
-          const file = folder.createFile(
-            Utilities.newBlob(Utilities.base64Decode(base64), MimeType.PDF, fileName)
-          ).setName(fileName);
-          applyRenderedFileToCheckState_(checkState, row, file, pdfKey);
-          ledgerRowsToAppend.push(makeLedgerRowArray_({
-            pdfKey, paymentKey, receiptNo: data.receiptNo, data, file,
-            status: 'PDF作成済み', applicationKey: text_(row['申請キー']), note: 'ブラウザ一括生成'
-          }));
-          ledgerMap.byPdfKey[pdfKey] = { PDF_FILE_ID: file.getId() };
-          if (replacement) {
-            replacementsToArchive.push({
-              paymentKey,
-              activeFileId: file.getId(),
-              oldRows: ledgerMap.byPaymentKeyRows[paymentKey] || []
-            });
-          }
-          results.push({ rowNo, ok: true, fileId: file.getId(), fileUrl: file.getUrl(), fileName });
-        } catch (error) {
-          if (row) {
-            setUpdateStateValue_(checkState, row, 'ファイル状態', '生成エラー');
-            setUpdateStateValue_(checkState, row, '確認内容', error.message || String(error));
-          }
-          results.push({ rowNo, ok: false, error: error.message || String(error) });
-        }
-      });
-
-      writeSheetUpdateState_(sheet, checkState);
-      if (ledgerRowsToAppend.length) appendLedgerRows_(ledgerSheet, ledgerRowsToAppend);
-      replacementsToArchive.forEach(item => {
-        trashSupersededDriveFiles_(item.oldRows, item.activeFileId);
-      });
-      deleteSupersededGmailDrafts_(
-        replacementsToArchive.reduce((rows, item) => rows.concat(item.oldRows || []), [])
-      );
-      return {
-        ok: results.every(result => result.ok),
-        saved: results.filter(result => result.ok).length,
-        errors: results.filter(result => !result.ok).length,
-        results
-      };
-    } finally {
-      lock.releaseLock();
-    }
-  }
-
-  function recordRenderErrors(payload) {
-    const lock = LockService.getDocumentLock();
-    lock.waitLock(30000);
-    try {
-      const ss = SpreadsheetApp.getActiveSpreadsheet();
-      const sheet = requiredSheet_(ss, CONFIG.CHECK_SHEET);
-      const items = Array.isArray(payload && payload.items) ? payload.items.slice(0, 500) : [];
-      if (!items.length) return { recorded: 0 };
-      const checkState = readSheetUpdateState_(sheet);
-      const scope = receiptProcessingScope_(checkState.objects);
-      let recorded = 0;
-
-      items.forEach(item => {
-        const rowNo = Math.floor(Number(item && item.rowNo));
-        const row = checkState.objects[rowNo - CONFIG.DATA_START_ROW];
-        if (!row || row.__rowNo !== rowNo) return;
-        if (!scope.eligibleRowNos.has(rowNo)) return;
-        if (text_(row.pdfKey) !== text_(item.pdfKey)) return;
-        setUpdateStateValue_(checkState, row, 'ファイル状態', '生成エラー');
-        setUpdateStateValue_(
-          checkState,
-          row,
-          '確認内容',
-          'PDF生成エラー: ' + text_(item.error || '詳細不明')
-        );
-        recorded++;
-      });
-      if (recorded) writeSheetUpdateState_(sheet, checkState);
-      return { recorded };
-    } finally {
-      lock.releaseLock();
-    }
-  }
-
   function applyRenderedFileToCheckState_(state, row, file, pdfKey) {
     setUpdateStateValue_(state, row, 'pdfKey', pdfKey);
     setUpdateStateValue_(state, row, 'PDF_FILE_ID', file.getId());
@@ -1697,8 +1765,7 @@ const RSE = (() => {
   }
 
   function createPendingDrafts() {
-    const lock = LockService.getDocumentLock();
-    lock.waitLock(30000);
+    const lock = acquireDocumentLock_('8. 未作成Gmail草稿を生成');
     try {
       const startedAt = Date.now();
       const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1866,14 +1933,13 @@ const RSE = (() => {
         (stoppedByTime ? '\n自主停止時間に達したため、再度同じボタンを実行してください。' : '')
       );
     } finally {
-      lock.releaseLock();
+      releaseDocumentLock_(lock);
     }
   }
 
 
   function sendApproved() {
-    const lock = LockService.getDocumentLock();
-    lock.waitLock(30000);
+    const lock = acquireDocumentLock_('9. 送信OK → 承認済み草稿を送信');
 
     try {
       const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1999,7 +2065,7 @@ const RSE = (() => {
         (stoppedByTime ? '\n実行時間の安全上限に達しました。もう一度メニュー9を実行してください。' : '')
       );
     } finally {
-      lock.releaseLock();
+      releaseDocumentLock_(lock);
     }
   }
 
@@ -3189,6 +3255,14 @@ ${usdtBreakdownHtml}
     sheet.getRange(2, 15, rowCount, 1).setDataValidation(validation);
   }
 
+  function formatSkipCorrectionSheet_(sheet, rowCount) {
+    sheet.setFrozenRows(1);
+    if (!rowCount) return;
+    sheet.getRange(2, 3, rowCount, 1).setNumberFormat('@');
+    sheet.getRange(2, 9, rowCount, 1).setNumberFormat('@').setBackground('#d9ead3');
+    sheet.getRange(2, 13, rowCount, 1).setNumberFormat('@');
+  }
+
   function formatReceiptCheckSheet_(sheet, rowCount) {
     if (!rowCount) return;
     sheet.getRange(2, 10, rowCount, 1).setNumberFormat('@');
@@ -3633,13 +3707,59 @@ ${usdtBreakdownHtml}
     }
   }
 
+  function acquireDocumentLock_(operationName) {
+    const lock = LockService.getDocumentLock();
+    if (!lock.tryLock(5000)) {
+      const raw = PropertiesService.getDocumentProperties().getProperty(CONFIG.RUNNING_OPERATION_PROPERTY);
+      let running = null;
+      try {
+        running = raw ? JSON.parse(raw) : null;
+      } catch (_) {
+        running = null;
+      }
+      const details = running && running.name
+        ? '\n実行中: ' + running.name +
+          (running.startedAt ? '\n開始: ' + running.startedAt : '') +
+          (running.user ? '\n実行者: ' + running.user : '')
+        : '';
+      throw new Error(
+        '別の領収書処理が実行中です。完了後にもう一度実行してください。' + details +
+        '\n長時間終わらない場合はApps Scriptの「実行数」で実行中タスクを確認してください。'
+      );
+    }
+    try {
+      PropertiesService.getDocumentProperties().setProperty(
+        CONFIG.RUNNING_OPERATION_PROPERTY,
+        JSON.stringify({
+          name: operationName || '領収書処理',
+          startedAt: Utilities.formatDate(new Date(), CONFIG.TIME_ZONE, 'yyyy-MM-dd HH:mm:ss'),
+          user: activeUserEmail_()
+        })
+      );
+    } catch (error) {
+      lock.releaseLock();
+      throw error;
+    }
+    return lock;
+  }
+
+  function releaseDocumentLock_(lock) {
+    try {
+      PropertiesService.getDocumentProperties().deleteProperty(CONFIG.RUNNING_OPERATION_PROPERTY);
+    } finally {
+      if (lock && lock.hasLock()) lock.releaseLock();
+    }
+  }
+
   return {
     addMenu,
     setup,
     refreshGameIdCheck,
     confirmGameIdCheck,
     buildPwInput,
+    buildSkipPwInput,
     refreshReceiptCheck,
+    appendSkipCorrections,
     confirmReceiptCheck,
     assignReceiptNumbers,
     prepareSelectedPdfRegeneration,
@@ -3647,9 +3767,6 @@ ${usdtBreakdownHtml}
     regenerateCheckedMissingPdfs,
     generatePendingFiles,
     continuePendingFiles,
-    getRenderBatch,
-    saveRenderedPdfBatch,
-    recordRenderErrors,
     createPendingDrafts,
     sendApproved,
     _test: {
@@ -3659,6 +3776,7 @@ ${usdtBreakdownHtml}
       unresolvedGameIdSet_, receiptProcessingScope_, heldReceiptCheckRow_,
       makeReceiptCheckRow_, buildReceiptCheckRows_, groupCheckRowsForDraft_,
       completedApplicationKeysFromCheckRows_, receiptIntersectionStats_,
+      findUnmatchedApplications_, mergeReceiptCheckRows_,
       readApplications_, readFormEventNameByApplicationKey_, buildPwInputData_, pwInputPeriodFromApplicationKey_,
       normalizeIsoDate_, parseApplicationKey_, pwMatchesApplicationPeriod_,
       readLedgerUpdateState_, mutateLedgerFieldsForPdfKeys_, markReplacedLedgerState_,
@@ -3695,8 +3813,16 @@ function RSE_buildPwInput() {
   RSE.buildPwInput();
 }
 
+function RSE_buildSkipPwInput() {
+  RSE.buildSkipPwInput();
+}
+
 function RSE_refreshReceiptCheck() {
   RSE.refreshReceiptCheck();
+}
+
+function RSE_appendSkipCorrections() {
+  RSE.appendSkipCorrections();
 }
 
 function RSE_confirmReceiptCheck() {
@@ -3725,18 +3851,6 @@ function RSE_generatePendingFiles() {
 
 function RSE_continuePendingFiles() {
   RSE.continuePendingFiles();
-}
-
-function RSE_getRenderBatch(options) {
-  return RSE.getRenderBatch(options);
-}
-
-function RSE_saveRenderedPdfBatch(payload) {
-  return RSE.saveRenderedPdfBatch(payload);
-}
-
-function RSE_recordRenderErrors(payload) {
-  return RSE.recordRenderErrors(payload);
 }
 
 function RSE_createPendingDrafts() {
