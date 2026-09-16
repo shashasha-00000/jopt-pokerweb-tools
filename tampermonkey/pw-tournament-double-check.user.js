@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW Tournament DC 表照合
 // @namespace    pw-tournament-double-check
-// @version      3.0.1
+// @version      3.0.2
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-double-check.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-double-check.user.js
 // @description  大会管理表を基準にPokerWeb OPEN大会の名称・開始時刻・Chips・Fee・上限・Settingsを読取専用で照合し、TSVを出力する。
@@ -16,7 +16,7 @@
   "use strict";
 
   const APP = {
-    version: "3.0.0",
+    version: "3.0.2",
     openListPath: "/torneio/abertos",
     pageLength: 100,
     waitMs: 25000,
@@ -454,13 +454,16 @@
   function cacheOpenEntry(entry, pageNo) {
     if (!entry.actualName || !entry.tournamentId) return;
     const cache = readCache();
-    cache[`${entry.actualName}||${entry.tournamentId}`] = {
+    const key = `${entry.actualName}||${entry.tournamentId}`;
+    const previous = cache[key] || {};
+    cache[key] = {
       name: entry.actualName,
       tournamentId: entry.tournamentId,
       url: entry.url,
       painelUrl: entry.url,
       actualName: entry.actualName,
       matchedRow: entry.matchedRow,
+      sameNameStatus: previous.sameNameStatus || "",
       savedAt: nowText(),
       source: `tournament-dc-OPEN-p${pageNo}`
     };
@@ -772,7 +775,7 @@
         <div><button id="pw-dc-v3-min">Min</button> <button id="pw-dc-v3-close">x</button></div>
       </div>
       <div id="pw-dc-v3-body">
-        <div style="font-size:11px;color:#cbd5e1;line-height:1.45;margin:7px 0;">大会管理表を基準にOPEN大会だけを読取専用で照合します。Ticket LinkはPW Ticket Link Semi Auto側で確認します。00:00–05:59は表の赛事日から翌日へ換算します。</div>
+        <div style="font-size:11px;color:#cbd5e1;line-height:1.45;margin:7px 0;">大会管理表を基準にOPEN大会だけを読取専用で照合します。同名候補が複数ある場合は自動選択せず、Candidatesへ全TournamentIdを表示して要人工確認にします。Ticket LinkはPW Ticket Link Semi Auto側で確認します。00:00–05:59は表の赛事日から翌日へ換算します。</div>
         <div style="font-weight:bold;margin-top:6px;">1. 総大会名</div>
         <input id="pw-dc-v3-prefix" placeholder="【SPADIE OSAKA 1st】" style="width:100%;box-sizing:border-box;background:#020617;color:#fff;border:1px solid #475569;padding:8px;">
         <div style="font-weight:bold;margin-top:8px;">2. 大会管理表</div>

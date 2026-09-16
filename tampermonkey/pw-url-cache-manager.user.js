@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW URL Cache Manager
 // @namespace    pw-shared-url-cache-manager
-// @version      0.7.4
+// @version      0.8.0
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-url-cache-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-url-cache-manager.user.js
 // @description  PW大会URL共用Cache管理ツール。大会名リスト検索 / イベントPrefix全ページ収集 / 汚染チェック・修復 / Sheet用TSV出力・整庫置換。
@@ -17,6 +17,7 @@
   "use strict";
 
   const SHARED_CACHE_KEY = "PW_SHARED_TOURNAMENT_URL_CACHE_V1";
+  const VALID_DUPLICATE_STATUS = "VALID_DUPLICATE";
   const RESOLVE_REQUEST_KEY = "PW_URL_MANAGER_RESOLVE_REQUEST_V1";
   const RESOLVE_RESPONSE_KEY = "PW_URL_MANAGER_RESOLVE_RESPONSE_V1";
 
@@ -109,14 +110,14 @@
   }
 
   function setStatus(text) {
-    console.log("[PW-URL-CACHE-v0.7]", text);
+    console.log("[PW-URL-CACHE-v0.8.0]", text);
     const box = document.querySelector("#pw-url-cache-status");
     if (box) box.textContent = text;
   }
 
   function appendReport(type, msg) {
     const line = `[${nowText()}] ${type}  ${msg}`;
-    console.log("[PW-URL-CACHE-v0.7]", line);
+    console.log("[PW-URL-CACHE-v0.8.0]", line);
 
     const box = document.querySelector("#pw-url-cache-report");
     if (box) {
@@ -179,6 +180,44 @@
     });
   }
 
+  function markSameNameGroupValid(name) {
+    const cleanName = cleanTournamentName(name);
+    const cache = loadCache();
+    let updated = 0;
+
+    for (const item of Object.values(cache)) {
+      if (
+        cleanTournamentName(item?.name || "") === cleanName ||
+        cleanTournamentName(item?.actualName || "") === cleanName
+      ) {
+        item.sameNameStatus = VALID_DUPLICATE_STATUS;
+        updated++;
+      }
+    }
+
+    saveCache(cache);
+    return updated;
+  }
+
+  function clearSameNameGroupStatus(name) {
+    const cleanName = cleanTournamentName(name);
+    const cache = loadCache();
+    let updated = 0;
+
+    for (const item of Object.values(cache)) {
+      if (
+        cleanTournamentName(item?.name || "") === cleanName ||
+        cleanTournamentName(item?.actualName || "") === cleanName
+      ) {
+        delete item.sameNameStatus;
+        updated++;
+      }
+    }
+
+    saveCache(cache);
+    return updated;
+  }
+
   function renderManualReview() {
     const box = document.querySelector("#pw-url-cache-review");
     if (!box) return;
@@ -205,13 +244,37 @@
 
     box.style.color = "#fff";
     for (const [name, rows] of conflicts) {
+      const isValidDuplicate = rows.every(row => row.Same_Name_Status === VALID_DUPLICATE_STATUS);
       const card = document.createElement("div");
-      card.style.cssText = "border:1px solid #955;background:#2b2020;padding:7px;margin-top:6px;";
+      card.style.cssText = isValidDuplicate
+        ? "border:1px solid #598;background:#20302b;padding:7px;margin-top:6px;"
+        : "border:1px solid #955;background:#2b2020;padding:7px;margin-top:6px;";
 
       const title = document.createElement("div");
       title.style.fontWeight = "bold";
       title.textContent = name;
       card.appendChild(title);
+
+      const groupAction = document.createElement("button");
+      groupAction.style.cssText = "margin-top:5px;background:#bff0c2;border:1px solid #7a8;padding:4px 7px;";
+      if (isValidDuplicate) {
+        groupAction.textContent = "合法同名：全部保留（点击取消标记，不删除）";
+        groupAction.onclick = () => {
+          if (!confirm(`取消合法同名标记吗？记录不会删除，将恢复为待确认状态。\n\n${name}`)) return;
+          const updated = clearSameNameGroupStatus(name);
+          appendReport("VALID_DUPLICATE_CLEAR", `${name} / ${updated} 件取消标记`);
+          showCache(prefix);
+        };
+      } else {
+        groupAction.textContent = "标记为合法同名・全部保留";
+        groupAction.onclick = () => {
+          if (!confirm(`这些记录都是不同的真实比赛，将全部保留。\n\n${name}\nTournamentId: ${rows.map(row => row.TournamentId).join(", ")}\n\n以后其他工具遇到这个名称时仍会停止并要求本次选择。继续吗？`)) return;
+          const updated = markSameNameGroupValid(name);
+          appendReport("VALID_DUPLICATE", `${name} / ${updated} 件保留`);
+          showCache(prefix);
+        };
+      }
+      card.appendChild(groupAction);
 
       for (const row of rows) {
         const line = document.createElement("div");
@@ -227,7 +290,7 @@
         line.appendChild(open);
 
         const adopt = document.createElement("button");
-        adopt.textContent = `采用 ${row.TournamentId} 并清除其他记录`;
+        adopt.textContent = `污染修复：采用 ${row.TournamentId} 并清除其他记录`;
         adopt.onclick = () => {
           if (!confirm(`采用这个URL并清除同名其他记录吗？\n\n${name}\n${row.URL}`)) return;
           replaceCacheForName(name, {
@@ -256,6 +319,7 @@
 
     const key = `${cleanName}||${id}`;
     const cache = loadCache();
+    const previous = cache[key] || {};
 
     cache[key] = {
       name: cleanName,
@@ -263,6 +327,7 @@
       url,
       actualName: cleanTournamentName(data.actualName || data.name || cleanName),
       matchedRow: String(data.matchedRow || ""),
+      sameNameStatus: String(data.sameNameStatus || previous.sameNameStatus || ""),
       savedAt: nowText(),
       source: String(data.source || "url-cache-v0.6")
     };
@@ -306,7 +371,8 @@
         Actual_Name: x.actualName || "",
         Source: x.source || "",
         SavedAt: x.savedAt || "",
-        Matched_Row: x.matchedRow || ""
+        Matched_Row: x.matchedRow || "",
+        Same_Name_Status: x.sameNameStatus || ""
       }));
   }
 
@@ -320,7 +386,7 @@
   function cacheToFullTsv(prefix) {
     return rowsToTsv(
       cacheToRows(prefix),
-      ["Name", "TournamentId", "URL", "Actual_Name", "Source", "SavedAt", "Matched_Row"]
+      ["Name", "TournamentId", "URL", "Actual_Name", "Source", "SavedAt", "Matched_Row", "Same_Name_Status"]
     );
   }
 
@@ -429,6 +495,7 @@
       const iUrl = idx("URL", "Url");
       const iActual = idx("Actual_Name", "ActualName", "PW_Name");
       const iMatched = idx("Matched_Row", "MatchedRow");
+      const iSameNameStatus = idx("Same_Name_Status", "SameNameStatus");
 
       const rows = lines.slice(1).map((line) => {
         const cols = line.split("\t");
@@ -439,6 +506,7 @@
           url: iUrl >= 0 ? norm(cols[iUrl]) : "",
           actualName: iActual >= 0 ? norm(cols[iActual]) : "",
           matchedRow: iMatched >= 0 ? norm(cols[iMatched]) : "",
+          sameNameStatus: iSameNameStatus >= 0 ? norm(cols[iSameNameStatus]) : "",
           rawLine: line
         };
       }).filter((r) => r.name || r.url || r.tournamentId);
@@ -457,6 +525,7 @@
       url: "",
       actualName: "",
       matchedRow: "",
+      sameNameStatus: "",
       rawLine: line
     })).filter((r) => r.name);
 
@@ -514,6 +583,7 @@
         url,
         actualName: r.actualName || name,
         matchedRow: r.matchedRow || "",
+        sameNameStatus: r.sameNameStatus || "",
         source: "import-v0.6"
       });
 
@@ -570,6 +640,7 @@
           url: finalUrl,
           actualName,
           matchedRow: String(r.matchedRow || ""),
+          sameNameStatus: String(r.sameNameStatus || ""),
           savedAt: nowText(),
       source: String(r.source || "replace-tsv-v0.7.3")
         }
@@ -1336,15 +1407,24 @@
       const ids = Array.from(nameToIds[name]);
       if (ids.length <= 1) return;
 
+      const related = Object.values(cache).filter(item => {
+        const itemName = cleanTournamentName(item?.name || "");
+        return itemName === name && ids.includes(String(item?.tournamentId || "").trim());
+      });
+      const isValidDuplicate = related.length >= ids.length &&
+        related.every(item => item.sameNameStatus === VALID_DUPLICATE_STATUS);
+
       issues.push({
         level: "WARN",
-        type: "DUPLICATE_NAME",
+        type: isValidDuplicate ? "VALID_DUPLICATE_NAME" : "DUPLICATE_NAME",
         key: "",
         name,
         tournamentId: ids.join(","),
         url: "",
         actualName: "",
-        message: "同じ Name に複数 TournamentId があります。v0.6では保持します。"
+        message: isValidDuplicate
+          ? "合法同名として確認済みです。全記録を保持し、使用時はTournamentIdを指定します。"
+          : "同じ Name に複数 TournamentId があります。削除せず、合法同名か污染かを人工確認してください。"
       });
     });
 
@@ -2004,7 +2084,7 @@
       panel.style.gap = "8px";
       panel.style.borderRadius = "8px";
       panel.style.maxHeight = "94vh";
-    if (title) title.textContent = "PW URL Cache Manager v0.7.3";
+    if (title) title.textContent = "PW URL Cache Manager v0.8.0";
     }
 
     localStorage.setItem(CONFIG.collapsedKey, collapsed ? "1" : "0");
@@ -2045,7 +2125,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <div id="pw-url-cache-title" style="font-weight:bold;white-space:nowrap;">PW URL Cache Manager v0.7.3</div>
+        <div id="pw-url-cache-title" style="font-weight:bold;white-space:nowrap;">PW URL Cache Manager v0.8.0</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-url-cache-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-url-cache-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>

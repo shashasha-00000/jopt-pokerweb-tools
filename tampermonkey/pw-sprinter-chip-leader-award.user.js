@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW Sprinter・Chip Leader 追加
 // @namespace    https://japanopt.bt.pokerweb.com.br/
-// @version      0.2.3
+// @version      0.2.4
 // @description  Sprinter / Chip Leader の特殊賞を既存Prize末尾に追加・確認します。
 // @match        https://japanopt.bt.pokerweb.com.br/*
 // @match        https://japanopt.pokerweb.com.br/*
@@ -796,14 +796,14 @@
   }
 
   function itemCardHtml(item) {
-    const options = ['<option value="">候補なし</option>']
+    const options = ['<option value="">本次のみ使用する候補を選択（Cache変更なし）</option>']
       .concat((item.candidates || []).map(entry => `<option value="${escapeHtml(entry.tournamentId)}" ${String(entry.tournamentId) === String(item.tournamentId) ? 'selected' : ''}>${escapeHtml(candidateLabel(entry))}</option>`))
       .join('');
     const rows = item.awards.map(award => `<div class="pwap-row"><span>${escapeHtml(award.desc)}</span><b>${escapeHtml(yen(award.amount))}</b></div>`).join('');
     return `
       <div class="pwap-card">
         <div class="pwap-title">${escapeHtml(item.inputName)}</div>
-        <label>PokerWeb大会</label>
+        <label>PokerWeb大会（選択は本次のみ・Shared Cache変更なし）</label>
         <select data-tournament-select="${escapeHtml(item.id)}">${options}</select>
         <div style="display:flex;gap:6px;margin-top:6px;">
           <input data-manual-url="${escapeHtml(item.id)}" placeholder="PokerWeb ID または URL" value="">

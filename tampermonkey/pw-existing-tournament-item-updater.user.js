@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW 既存大会 Item 更新 人工確認版
 // @namespace    pw-existing-tournament-item-updater-ui
-// @version      0.6.7
+// @version      0.6.8
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js
 // @description  既存大会URLをPreview/Resolveで人工確認してから、USDT販売許可ON、任意数の販売項目を更新する。作成・時間変更・Ticket Linkなし。
@@ -472,7 +472,8 @@
         actualName: actualName || name,
         matchedRow: String(item.matchedRow || item.rowText || ''),
         savedAt: String(item.savedAt || ''),
-        source: String(item.source || 'shared-cache')
+        source: String(item.source || 'shared-cache'),
+        sameNameStatus: String(item.sameNameStatus || item.Same_Name_Status || '')
       }
     };
   }
@@ -500,7 +501,13 @@
     });
 
     if (valid.length > 1) {
-      return { ok: false, status: 'URL_AMBIGUOUS', reason: `${cleanName}: cache has ${valid.length} valid rows`, matches: valid };
+      const validDuplicate = valid.every(item => item.sameNameStatus === 'VALID_DUPLICATE');
+      return {
+        ok: false,
+        status: validDuplicate ? 'URL_VALID_DUPLICATE' : 'URL_AMBIGUOUS',
+        reason: `${cleanName}: ${validDuplicate ? '合法同名' : '同名未分类'} / candidates=${valid.map(item => item.tournamentId).join(',')}`,
+        matches: valid
+      };
     }
 
     if (valid.length === 1) {
@@ -1043,6 +1050,7 @@
       'URL_NOT_FOUND',
       'URL_CACHE_BAD_ROW',
       'URL_AMBIGUOUS',
+      'URL_VALID_DUPLICATE',
       'AMBIGUOUS',
       'URL_INPUT_INVALID',
       'CACHE_ID_MISMATCH',
@@ -2343,7 +2351,7 @@
 panel.innerHTML = `
   <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
     <div style="font-weight:bold;">
-      PW 既存大会 Item 更新 人工確認版 v0.6.6
+      PW 既存大会 Item 更新 人工確認版 v0.6.8
     </div>
     <div style="display:flex;gap:4px;">
       <button id="pw-item-update-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
@@ -2408,7 +2416,7 @@ panel.innerHTML = `
         ※ Item_Update_Mode: 空白/position=既存項目順に上書き、name=名前/Siglas一致<br>
         ※ 同名/同Siglasの既存項目があれば編集、なければ新增<br>
         ※ 旧 EN/RE/Ticket 表頭もまだ読み込み可能<br>
-        ※ URL未解決 / AMBIGUOUS / bad cache が残る場合 START禁止<br>
+        ※ URL未解決 / 合法同名 / AMBIGUOUS / bad cache が残る場合 START禁止。Candidatesへ本次使用するTournamentId/URLを明示してください。<br>
         ※ URL冲突请先在 URL Manager 的人工核查中确认
       </div>
 

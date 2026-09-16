@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW 領収書 Manual Check
 // @namespace    pw-receipt-manual-check
-// @version      1.6.20
+// @version      1.7.0
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js
 // @description  Manual receipt check. Per-application Game ID, keyword, and date-range TSV with strict URL Cache verification and payment TSV output.
@@ -125,11 +125,11 @@
   }
 
   function log(...args) {
-    console.log("[PW-MANUAL-v1.5]", ...args);
+    console.log("[PW-MANUAL-v1.7.0]", ...args);
   }
 
   function warn(...args) {
-    console.warn("[PW-MANUAL-v1.5]", ...args);
+    console.warn("[PW-MANUAL-v1.7.0]", ...args);
   }
 
   function setStatus(text) {
@@ -267,7 +267,8 @@
       tournamentId: finalId,
       url: finalUrl,
       matchedRow: item.matchedRow || item.Matched_Row || "",
-      source: item.source || item.Source || "shared-cache"
+      source: item.source || item.Source || "shared-cache",
+      sameNameStatus: item.sameNameStatus || item.Same_Name_Status || ""
     };
   }
 
@@ -316,6 +317,7 @@
 
     const cache = loadSharedCache();
     const key = `${cleanName}||${id}`;
+    const previous = cache[key] || {};
 
     cache[key] = {
       name: cleanName,
@@ -323,6 +325,7 @@
       url,
       actualName: cleanTournamentName(data.actualName || data.name || cleanName),
       matchedRow: String(data.matchedRow || ""),
+      sameNameStatus: String(data.sameNameStatus || previous.sameNameStatus || ""),
       savedAt: nowText(),
       source: String(data.source || "manual-v1.5")
     };
@@ -413,10 +416,12 @@
     }
 
     if (unique.length > 1) {
+      const validDuplicate = unique.every(item => item.sameNameStatus === "VALID_DUPLICATE");
       return {
-        status: "URL_AMBIGUOUS",
+        status: validDuplicate ? "URL_VALID_DUPLICATE" : "URL_AMBIGUOUS",
         row: null,
-        reason: `${unique.length} cache rows matched: ${unique.map(x => x.tournamentId).join(",")}`
+        matches: unique,
+        reason: `${validDuplicate ? "合法同名" : "同名未分类"}: ${unique.length} cache rows matched: ${unique.map(x => x.tournamentId).join(",")}`
       };
     }
 
@@ -781,6 +786,12 @@
                 reason: `Shared Cache污染疑い: player page=${row.tournamentId} / cache=${sharedCacheResult.row.tournamentId}`
               };
             }
+          } else if (row.tournamentId && sharedCacheResult.status === "URL_VALID_DUPLICATE") {
+            cacheResult = {
+              status: "URL_VALID_DUPLICATE",
+              row: { tournamentId: row.tournamentId, url: row.url },
+              reason: `合法同名: player page=${row.tournamentId} / ${sharedCacheResult.reason} / 请仅为本次确认`
+            };
           } else if (row.tournamentId && sharedCacheResult.status === "URL_AMBIGUOUS") {
             cacheResult = {
               status: "URL_CACHE_POLLUTION_SUSPECT",
@@ -1268,6 +1279,7 @@
   const MANUAL_REVIEW_STATUSES = new Set([
     "URL_CACHE_POLLUTION_SUSPECT",
     "URL_AMBIGUOUS",
+    "URL_VALID_DUPLICATE",
     "URL_CACHE_BAD_ROW",
     "URL未解決",
     "URL_NOT_FOUND",
@@ -1292,6 +1304,24 @@
       row["理由"] = reason || "";
     }
     setCandidateRows(rows);
+  }
+
+  function useUrlForCurrentRun(name, tournamentId, url, sourceLabel) {
+    const id = norm(tournamentId);
+    const finalUrl = normalizeCacheUrl(id, url);
+    if (!id || !finalUrl || extractTournamentIdFromUrl(finalUrl) !== id) {
+      alert("TournamentId / URL が不正です。");
+      return;
+    }
+
+    applyConfirmedUrlToCandidates(
+      name,
+      id,
+      finalUrl,
+      "OK_THIS_RUN",
+      `仅本次使用，不修改Shared Cache: ${sourceLabel}`
+    );
+    setStatus(`本次URL採用: ${name} → ${id}（Shared Cache未変更）`);
   }
 
   function confirmAndRepairCache(name, tournamentId, url, sourceLabel) {
@@ -1356,6 +1386,7 @@
     const labels = {
       URL_CACHE_POLLUTION_SUSPECT: "发现历史URL冲突，需要确认",
       URL_AMBIGUOUS: "同名比赛存在多个历史URL",
+      URL_VALID_DUPLICATE: "合法同名比赛存在多个URL，请仅为本次选择",
       URL_CACHE_BAD_ROW: "历史URL记录异常",
       URL未解決: "尚未取得比赛URL",
       URL_NOT_FOUND: "未找到比赛URL",
@@ -1400,7 +1431,7 @@
     const existing = rows.filter(row => row["判定"] === "OK_PLAYER_PAGE_CACHE_MATCH" || row["判定"] === "OK_CACHE").length;
     const added = rows.filter(row => row["判定"] === "OK_PLAYER_PAGE").length;
     const pollution = rows.filter(row => row["判定"] === "URL_CACHE_POLLUTION_SUSPECT").length;
-    const conflicts = rows.filter(row => ["URL_AMBIGUOUS", "AMBIGUOUS"].includes(row["判定"])).length;
+    const conflicts = rows.filter(row => ["URL_AMBIGUOUS", "URL_VALID_DUPLICATE", "AMBIGUOUS"].includes(row["判定"])).length;
     const unresolved = reviewRows.length - pollution - conflicts;
 
     summary.textContent =
@@ -1448,9 +1479,15 @@
         open.onclick = () => window.open(playerUrl, "_blank");
         actions.appendChild(open);
 
+        const useOnce = document.createElement("button");
+        useOnce.textContent = `仅本次使用 ${playerId}`;
+        useOnce.style.background = "#bff0c2";
+        useOnce.onclick = () => useUrlForCurrentRun(name, playerId, playerUrl, "player-page");
+        actions.appendChild(useOnce);
+
         const adopt = document.createElement("button");
-        adopt.textContent = `采用 ${playerId} 并清除旧记录`;
-        adopt.style.background = "#bff0c2";
+        adopt.textContent = `污染修复：采用 ${playerId} 并清除旧记录`;
+        adopt.style.background = "#ffcf70";
         adopt.onclick = () => confirmAndRepairCache(name, playerId, playerUrl, "player-page");
         actions.appendChild(adopt);
       }
@@ -1463,8 +1500,14 @@
         open.onclick = () => window.open(cached.url, "_blank");
         actions.appendChild(open);
 
+        const useOnce = document.createElement("button");
+        useOnce.textContent = `仅本次使用 Cache ${cached.tournamentId}`;
+        useOnce.style.background = "#bff0c2";
+        useOnce.onclick = () => useUrlForCurrentRun(name, cached.tournamentId, cached.url, "shared-cache");
+        actions.appendChild(useOnce);
+
         const adopt = document.createElement("button");
-        adopt.textContent = `采用Cache ${cached.tournamentId}`;
+        adopt.textContent = `污染修复：采用Cache ${cached.tournamentId}`;
         adopt.onclick = () => confirmAndRepairCache(name, cached.tournamentId, cached.url, "shared-cache");
         actions.appendChild(adopt);
       }
@@ -1475,8 +1518,14 @@
         open.onclick = () => window.open(candidate.url, "_blank");
         actions.appendChild(open);
 
+        const useOnce = document.createElement("button");
+        useOnce.textContent = `仅本次使用候補 ${candidate.tournamentId}`;
+        useOnce.style.background = "#bff0c2";
+        useOnce.onclick = () => useUrlForCurrentRun(name, candidate.tournamentId, candidate.url, "search-candidate");
+        actions.appendChild(useOnce);
+
         const adopt = document.createElement("button");
-        adopt.textContent = `采用候補 ${candidate.tournamentId}`;
+        adopt.textContent = `污染修复：采用候補 ${candidate.tournamentId}`;
         adopt.style.background = "#d9ecff";
         adopt.onclick = () => confirmAndRepairCache(name, candidate.tournamentId, candidate.url, "search-candidate");
         actions.appendChild(adopt);
@@ -1512,7 +1561,7 @@
     }
 
     const candidates = parseTsv(getCandidateText());
-    const unresolvedStatuses = ["URL未解決", "URL_NOT_FOUND", "URL_CACHE_BAD_ROW", "URL_AMBIGUOUS", "AMBIGUOUS"];
+    const unresolvedStatuses = ["URL未解決", "URL_NOT_FOUND", "URL_CACHE_BAD_ROW", "URL_AMBIGUOUS", "URL_VALID_DUPLICATE", "AMBIGUOUS"];
     const targets = candidates.filter(row =>
       row["大会名"] &&
       (!row["TournamentId"] || !row["URL"] || unresolvedStatuses.includes(row["判定"]))
@@ -2342,7 +2391,7 @@
       const existingCount = candidates.filter(r => ["OK_CACHE", "OK_PLAYER_PAGE_CACHE_MATCH"].includes(r["判定"])).length;
       const addedCount = candidates.filter(r => r["判定"] === "OK_PLAYER_PAGE").length;
       const pollutionCount = candidates.filter(r => r["判定"] === "URL_CACHE_POLLUTION_SUSPECT").length;
-      const conflictCount = candidates.filter(r => ["URL_AMBIGUOUS", "AMBIGUOUS"].includes(r["判定"])).length;
+      const conflictCount = candidates.filter(r => ["URL_AMBIGUOUS", "URL_VALID_DUPLICATE", "AMBIGUOUS"].includes(r["判定"])).length;
       const reviewCount = getManualReviewRows(candidates).length;
 
       alert(
@@ -2556,7 +2605,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-      <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.6.19</div>
+      <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.7.0</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-manual-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-manual-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>

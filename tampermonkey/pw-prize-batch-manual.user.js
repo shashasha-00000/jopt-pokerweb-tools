@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW Prize Plan 書込・確認
 // @namespace    https://japanopt.bt.pokerweb.com.br/
-// @version      2.0.5
+// @version      2.0.6
 // @description  大会Prize表からPLANを作成し、PokerWebへの書込または読取確認を行います。
 // @match        https://japanopt.bt.pokerweb.com.br/*
 // @match        https://japanopt.pokerweb.com.br/*
@@ -15,7 +15,7 @@
 
   const APP = {
     name: 'PW-PRIZE-PLAN',
-    version: '2.0.4',
+    version: '2.0.6',
     panelId: 'pw-prize-plan-panel',
     stateKey: 'PW_PRIZE_PLAN_STATE_V3',
     urlCacheKey: 'PW_SHARED_TOURNAMENT_URL_CACHE_V1',
@@ -1407,7 +1407,7 @@
         <div class="pwpp-title">${escapeHtml(item.inputName)} ${item.manual ? '<span class="warn">人工修正</span>' : ''}</div>
         <label>PokerWeb大会</label>
         <select data-action="url" data-id="${escapeHtml(item.id)}">
-          <option value="">${urlCandidates.length ? `候補を選択してください（${urlCandidates.length}件）` : '候補なし'}</option>
+          <option value="">${urlCandidates.length ? `本次のみ使用する候補を選択（Cache変更なし・${urlCandidates.length}件）` : '候補なし'}</option>
           ${urlCandidates.map(c => `<option value="${escapeHtml(c.tournamentId)}" ${String(c.tournamentId) === String(item.tournamentId) ? 'selected' : ''}>${escapeHtml(c.actualName)} / ${c.tournamentId}${c.sourceLabel ? ` / ${escapeHtml(c.sourceLabel)}` : ''}</option>`).join('')}
         </select>
         ${showManualUrl ? `<div style="display:flex;gap:6px;margin-top:6px;">

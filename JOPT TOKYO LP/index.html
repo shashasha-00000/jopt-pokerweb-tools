@@ -574,6 +574,8 @@
   .schedule-item-time { display:block; color:#5d697b; font-size:0.83rem; margin-top:0.15rem; }
   .schedule-item-fee { flex-shrink:0; display:flex; flex-direction:column; align-items:center; gap:1px; padding:5px 13px; border-radius:14px; background:linear-gradient(135deg,#f2c25c,var(--jopt-accent)); color:#5c3d00; font-size:0.76rem; font-weight:700; text-align:center; white-space:nowrap; }
   .schedule-item-fee-note { font-size:0.65rem; font-weight:600; opacity:0.8; }
+  .entry-fee-row { display:flex; align-items:center; gap:0.7rem; margin:0 0 1.5rem; }
+  .entry-fee-label { font-size:0.75rem; font-weight:700; color:#8090a8; letter-spacing:0.05em; text-transform:uppercase; }
   .tournament-story { margin:0 0 1.5rem; padding:1.5rem; border-left:4px solid var(--jopt-accent); background:#fffaf0; border-radius:0 12px 12px 0; }
   .tournament-story h2 { margin:0 0 0.7rem; color:var(--jopt-blue-dark); font-size:1.2rem; line-height:1.5; }
   .tournament-story p { margin:0; color:#556; font-size:0.92rem; line-height:1.85; }
@@ -1188,6 +1190,10 @@
     <p id="lineup-detail-eyebrow" class="detail-eyebrow"></p>
     <h1 id="lineup-detail-title" class="detail-title"></h1>
     <p id="lineup-detail-intro" class="detail-intro"></p>
+    <div id="lineup-detail-entry-fee" class="entry-fee-row" style="display:none;">
+      <span class="entry-fee-label">报名费</span>
+      <span id="lineup-detail-entry-fee-badge" class="schedule-item-fee"></span>
+    </div>
     <a id="lineup-detail-more-link" class="players-guide-entry" data-overseas-guide style="display:none;"><span class="players-guide-icon">🛂</span><span class="players-guide-title">海外玩家特别赞助参赛指南</span><span class="players-guide-status">即将上线</span></a>
 
     <figure id="lineup-detail-hero" class="tournament-hero">
@@ -1707,21 +1713,23 @@
     main: {
       eyebrow: 'Tokyo #03 · Core Event',
       title: 'NLH Main Event',
-      intro: 'JOPT 系列最受关注的核心赛事，起始筹码 50,000，可用 3 张日本国内主赛票＋8,000日元报名参赛。短期赴日的海外玩家如未持有门票，也可在会场办理"特别赞助"手续，受邀获得本赛事参赛资格。四组 Day 1 依次开赛，晋级选手进入 Day 2、Day 3 决出冠军。',
+      intro: 'JOPT 系列最受关注的核心赛事，起始筹码 50,000。短期赴日的海外玩家如未持有门票，也可在会场办理"特别赞助"手续，受邀获得本赛事参赛资格。四组 Day 1 依次开赛，晋级选手进入 Day 2、Day 3 决出冠军。',
       showOverseasGuide: true,
+      entryFee: { text: '3张门票＋¥8,000 or 海外赞助', note: '金额待定' },
       schedule: [
-        { name: '#01 NLH Main Event / Day 1A', time: '10月9日 11:00', fee: { text: '3张门票＋¥8,000 or 海外赞助', note: '金额待定' } },
-        { name: '#01 NLH Main Event / Day 1B', time: '10月9日 18:00', fee: { text: '3张门票＋¥8,000 or 海外赞助', note: '金额待定' } },
-        { name: '#01 NLH Main Event / Day 1C', time: '10月10日 11:00', fee: { text: '3张门票＋¥8,000 or 海外赞助', note: '金额待定' } },
-        { name: '#01 NLH Main Event / Day 1D Turbo', time: '10月10日 18:00', fee: { text: '3张门票＋¥8,000 or 海外赞助', note: '金额待定' } },
-        { name: '#01 NLH Main Event / Day 2', time: '10月11日 11:00', fee: { text: '3张门票＋¥8,000 or 海外赞助', note: '金额待定' } },
-        { name: '#01 NLH Main Event / Day 3', time: '10月12日 11:00', fee: { text: '3张门票＋¥8,000 or 海外赞助', note: '金额待定' } }
+        { name: '#01 NLH Main Event / Day 1A', time: '10月9日 11:00' },
+        { name: '#01 NLH Main Event / Day 1B', time: '10月9日 18:00' },
+        { name: '#01 NLH Main Event / Day 1C', time: '10月10日 11:00' },
+        { name: '#01 NLH Main Event / Day 1D Turbo', time: '10月10日 18:00' },
+        { name: '#01 NLH Main Event / Day 2', time: '10月11日 11:00' },
+        { name: '#01 NLH Main Event / Day 3', time: '10月12日 11:00' }
       ]
     },
     millions: {
       eyebrow: 'Tokyo #03 · Multiday',
       title: 'NLH Millions',
-      intro: 'JOPT 具有代表性的大型赛事之一，起始筹码 50,000，可用 1 张日本国内主赛票＋8,000日元报名参赛。三组 Day 1 结束后，晋级选手于 Day 2 决出冠军。',
+      intro: 'JOPT 具有代表性的大型赛事之一，起始筹码 50,000。三组 Day 1 结束后，晋级选手于 Day 2 决出冠军。',
+      entryFee: '1张门票＋¥8,000',
       schedule: [
         { name: '#03 NLH Millions / Day 1A', time: '10月8日 18:00' },
         { name: '#03 NLH Millions / Day 1B', time: '10月8日 21:00' },
@@ -1732,7 +1740,8 @@
     ppc: {
       eyebrow: 'Tokyo #03 · All-round',
       title: 'NLH Poker Players Championship',
-      intro: '考验全面实力的综合性赛事，报名费 40,000日元，起始筹码 50,000。四组 Day 1 结束后，晋级选手于 Day 2 决出冠军。',
+      intro: '考验全面实力的综合性赛事，起始筹码 50,000。四组 Day 1 结束后，晋级选手于 Day 2 决出冠军。',
+      entryFee: '¥40,000',
       schedule: [
         { name: '#47 NLH Poker Players Championship / Day 1A Turbo', time: '10月10日 23:00' },
         { name: '#47 NLH Poker Players Championship / Day 1B', time: '10月11日 11:00' },
@@ -1856,6 +1865,26 @@
     }
   };
 
+  function buildFeeBadge(fee) {
+    const el = document.createElement('span');
+    el.className = 'schedule-item-fee';
+    if (typeof fee === 'object') {
+      const feeMain = document.createElement('span');
+      feeMain.className = 'schedule-item-fee-main';
+      feeMain.textContent = fee.text;
+      el.append(feeMain);
+      if (fee.note) {
+        const feeNote = document.createElement('span');
+        feeNote.className = 'schedule-item-fee-note';
+        feeNote.textContent = fee.note;
+        el.append(feeNote);
+      }
+    } else {
+      el.textContent = fee;
+    }
+    return el;
+  }
+
   function showLineupDetail(key) {
     const data = lineupDetails[key];
     if (!data) return;
@@ -1864,6 +1893,13 @@
     document.getElementById('lineup-detail-title').textContent = data.title;
     document.getElementById('lineup-detail-intro').textContent = data.intro;
     document.getElementById('lineup-detail-more-link').style.display = data.showOverseasGuide ? 'flex' : 'none';
+    const entryFeeRow = document.getElementById('lineup-detail-entry-fee');
+    if (data.entryFee) {
+      entryFeeRow.style.display = 'flex';
+      document.getElementById('lineup-detail-entry-fee-badge').replaceWith(Object.assign(buildFeeBadge(data.entryFee), { id: 'lineup-detail-entry-fee-badge' }));
+    } else {
+      entryFeeRow.style.display = 'none';
+    }
     document.getElementById('lineup-detail-hero').hidden = !data.image || Boolean(data.champions);
     const image = document.getElementById('lineup-detail-image');
     if (data.image) {
@@ -1893,23 +1929,7 @@
       text.append(name, time);
       body.append(text);
       if (item.fee) {
-        const fee = document.createElement('span');
-        fee.className = 'schedule-item-fee';
-        if (typeof item.fee === 'object') {
-          const feeMain = document.createElement('span');
-          feeMain.className = 'schedule-item-fee-main';
-          feeMain.textContent = item.fee.text;
-          fee.append(feeMain);
-          if (item.fee.note) {
-            const feeNote = document.createElement('span');
-            feeNote.className = 'schedule-item-fee-note';
-            feeNote.textContent = item.fee.note;
-            fee.append(feeNote);
-          }
-        } else {
-          fee.textContent = item.fee;
-        }
-        body.append(fee);
+        body.append(buildFeeBadge(item.fee));
       }
       row.append(dot, line, body);
       return row;

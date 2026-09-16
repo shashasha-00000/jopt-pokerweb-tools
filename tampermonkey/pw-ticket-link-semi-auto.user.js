@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW Ticket Link Semi Auto
 // @namespace    pw-ticket-link-semi-auto
-// @version      1.3.3
+// @version      1.4.0
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
 // @description  Ticketルール表から計画を作成し、確認済み大会へLinkした後にPokerWeb実状態を再取得してAudit TSVを出力する。
@@ -130,13 +130,13 @@
   }
 
   function log(...args) {
-    console.log("[PW-TICKET-LINK-v1.3.2]", ...args);
+    console.log("[PW-TICKET-LINK-v1.4.0]", ...args);
     const el = document.querySelector("#pw-ticket-link-status");
     if (el) el.textContent = args.map(String).join(" ");
   }
 
   function warn(...args) {
-    console.warn("[PW-TICKET-LINK-v1.3.2]", ...args);
+    console.warn("[PW-TICKET-LINK-v1.4.0]", ...args);
     const el = document.querySelector("#pw-ticket-link-status");
     if (el) el.textContent = "⚠ " + args.map(String).join(" ");
   }
@@ -522,6 +522,7 @@
 
     const cache = loadSharedCache();
     const key = `${cleanName}||${id}`;
+    const previous = cache[key] || {};
 
     cache[key] = {
       name: cleanName,
@@ -529,6 +530,7 @@
       url: normalizeCacheUrl(id, url),
       actualName: cleanTournamentName(data.actualName || data.name || cleanName),
       matchedRow: String(data.matchedRow || ""),
+      sameNameStatus: String(data.sameNameStatus || previous.sameNameStatus || ""),
       savedAt: nowText(),
       source: String(data.source || "ticket-link-v1.0")
     };
@@ -581,7 +583,8 @@
       tournamentId: finalId,
       url: finalUrl,
       matchedRow: item.matchedRow || item.Matched_Row || "",
-      source: item.source || item.Source || "shared-cache"
+      source: item.source || item.Source || "shared-cache",
+      sameNameStatus: item.sameNameStatus || item.Same_Name_Status || ""
     };
   }
 
@@ -631,10 +634,11 @@
     }
 
     if (unique.length > 1) {
+      const validDuplicate = unique.every(item => item.sameNameStatus === "VALID_DUPLICATE");
       return {
-        status: "URL_AMBIGUOUS",
+        status: validDuplicate ? "URL_VALID_DUPLICATE" : "URL_AMBIGUOUS",
         row: null,
-        reason: `${unique.length} cache rows matched: ${unique.map(x => x.tournamentId).join(",")}`
+        reason: `${validDuplicate ? "合法同名" : "同名未分类"}: ${unique.length} cache rows matched: ${unique.map(x => x.tournamentId).join(",")}`
       };
     }
 
@@ -1247,7 +1251,7 @@
       `SKIP：${skippedRows.length}\n` +
       `URL解決済み：${rows.filter(r => r["判定"] === "OK_CACHE").length}\n` +
       `URL未解決：${rows.filter(r => r["判定"] === "URL未解決").length}\n` +
-      `URL同名複数：${rows.filter(r => r["判定"] === "URL_AMBIGUOUS").length}\n` +
+      `URL同名複数：${rows.filter(r => ["URL_AMBIGUOUS", "URL_VALID_DUPLICATE"].includes(r["判定"])).length}\n` +
       `URL疑似汚染：${rows.filter(r => r["判定"] === "URL_CACHE_BAD_ROW").length}\n\n` +
       `候補欄を確認してください。`
     );
@@ -1663,7 +1667,7 @@
       !String(row["判定"] || "").startsWith("SKIP_") &&
       (!row["TournamentId"] ||
         !row["URL"] ||
-        ["URL未解決", "URL_NOT_FOUND", "URL_CACHE_BAD_ROW", "URL_AMBIGUOUS", "AMBIGUOUS"].includes(row["判定"]))
+        ["URL未解決", "URL_NOT_FOUND", "URL_CACHE_BAD_ROW", "URL_AMBIGUOUS", "URL_VALID_DUPLICATE", "AMBIGUOUS"].includes(row["判定"]))
     );
 
     if (!targets.length) {
@@ -1735,7 +1739,7 @@
         if (!row["大会名"]) continue;
         if (String(row["判定"] || "").startsWith("SKIP_")) continue;
 
-        if (row["TournamentId"] && row["URL"] && !["URL未解決", "URL_NOT_FOUND", "URL_CACHE_BAD_ROW", "URL_AMBIGUOUS", "AMBIGUOUS"].includes(row["判定"])) {
+        if (row["TournamentId"] && row["URL"] && !["URL未解決", "URL_NOT_FOUND", "URL_CACHE_BAD_ROW", "URL_AMBIGUOUS", "URL_VALID_DUPLICATE", "AMBIGUOUS"].includes(row["判定"])) {
           continue;
         }
 
@@ -1828,7 +1832,7 @@
     return { rows, errors };
   }
 
-  async function forceSetTournamentUrls() {
+  async function forceSetTournamentUrls(updateSharedCache) {
     if (running) {
       alert("処理中です");
       return;
@@ -1909,30 +1913,41 @@
       ).join("\n\n");
 
       if (!confirm(
-        `以下のURLを強制設定します。\nCandidatesを上書きし、同名の旧Shared Cacheを削除して新URLへ置換します。\n\n${details}\n\n続行しますか？`
+        (updateSharedCache
+          ? `以下のURLで污染修復します。\nCandidatesを上書きし、同名の旧Shared Cacheを削除して新URLへ置換します。`
+          : `以下のURLを仅本次使用します。\nCandidatesだけを更新し、Shared Cacheは一切変更しません。`) +
+        `\n\n${details}\n\n続行しますか？`
       )) return;
 
       for (const item of prepared) {
-        const removedIds = replaceSharedCacheItemForName(item.name, {
-          tournamentId: item.tournamentId,
-          url: item.url,
-          actualName: item.actualName,
-          matchedRow: "manual-force-url",
-          source: "ticket-link-v1.0.5-manual-force"
-        });
+        const removedIds = updateSharedCache
+          ? replaceSharedCacheItemForName(item.name, {
+              tournamentId: item.tournamentId,
+              url: item.url,
+              actualName: item.actualName,
+              matchedRow: "manual-force-url",
+              source: "ticket-link-v1.4.0-manual-repair"
+            })
+          : [];
 
         item.row["本次处理"] = "使用";
         item.row["TournamentId"] = item.tournamentId;
         item.row["URL"] = item.url;
-        item.row["判定"] = "OK_MANUAL";
-        item.row["理由"] = `強制URL設定 / 旧Cache ID: ${removedIds.filter(Boolean).join(",") || "なし"}`;
-        appendReportLine(`[FORCE_URL] ${item.name} / ${item.oldTournamentId || "-"} -> ${item.tournamentId} / removed=${removedIds.filter(Boolean).join(",") || "-"}`);
+        item.row["判定"] = updateSharedCache ? "OK_MANUAL_CACHE_REPAIRED" : "OK_MANUAL_THIS_RUN";
+        item.row["理由"] = updateSharedCache
+          ? `污染修復 / 旧Cache ID: ${removedIds.filter(Boolean).join(",") || "なし"}`
+          : "仅本次使用 / Shared Cache未変更";
+        appendReportLine(updateSharedCache
+          ? `[CACHE_REPAIR] ${item.name} / ${item.oldTournamentId || "-"} -> ${item.tournamentId} / removed=${removedIds.filter(Boolean).join(",") || "-"}`
+          : `[USE_THIS_RUN] ${item.name} / ${item.tournamentId} / Shared Cache未変更`);
       }
 
       setCandidateRows(candidates);
       localStorage.setItem(CONFIG.forceUrlInputKey, input);
-      alert(`強制URL設定完了\n\n${prepared.length}件のCandidatesとShared Cacheを更新しました。`);
-      log(`強制URL設定完了: ${prepared.length}件`);
+      alert(updateSharedCache
+        ? `污染修復完了\n\n${prepared.length}件のCandidatesとShared Cacheを更新しました。`
+        : `本次URL設定完了\n\n${prepared.length}件のCandidatesだけを更新しました。Shared Cacheは変更していません。`);
+      log(`${updateSharedCache ? "污染修復" : "本次URL設定"}完了: ${prepared.length}件`);
     } catch (e) {
       console.error(e);
       alert("強制URL設定ERROR: " + (e.message || String(e)));
@@ -3004,7 +3019,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-      <div style="font-weight:bold;">PW Ticket Link Semi Auto v1.3.2</div>
+      <div style="font-weight:bold;">PW Ticket Link Semi Auto v1.4.0</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-ticket-link-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-ticket-link-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>
@@ -3090,12 +3105,15 @@ Satellite	s01"
 
         <div style="font-size:12px;font-weight:bold;color:#ffcf70;margin-top:6px;">強制URL設定 / 强制设置URL</div>
         <div style="font-size:11px;color:#ccc;line-height:1.35;margin-bottom:3px;">
-          比赛名[TAB]URL。Candidatesが1行だけならURLのみでも可。页面核对后覆盖Candidate并修正Shared Cache。
+          比赛名[TAB]URL。Candidatesが1行だけならURLのみでも可。通常は仅本次使用；错误记录を确认した場合だけ污染修復します。
         </div>
         <textarea id="pw-ticket-link-force-url"
           placeholder="例：&#10;【SPADIE Season 41st】#01 NLH Main Event Day 1A&#9;https://japanopt.bt.pokerweb.com.br/torneio/painel/12345"
           style="width:100%;height:58px;background:#111;color:#fff;border:1px solid #b87920;padding:8px;font-family:Consolas,monospace;font-size:12px;"></textarea>
-        <button id="pw-ticket-link-force-url-button" style="width:100%;padding:7px;cursor:pointer;background:#ffcf70;border:1px solid #b87920;margin-top:4px;">强制设置URL并修正库</button>
+        <div style="display:flex;gap:6px;margin-top:4px;">
+          <button id="pw-ticket-link-use-url-once-button" style="flex:1;padding:7px;cursor:pointer;background:#bff0c2;border:1px solid #7a8;">仅本次使用（不清库）</button>
+          <button id="pw-ticket-link-force-url-button" style="flex:1;padding:7px;cursor:pointer;background:#ffcf70;border:1px solid #b87920;">污染修复（替换库）</button>
+        </div>
 
         <div style="font-size:12px;font-weight:bold;margin-top:6px;">Report</div>
         <textarea id="pw-ticket-link-report"
@@ -3143,7 +3161,8 @@ Satellite	s01"
 
     document.querySelector("#pw-ticket-link-build").onclick = () => previewBuildCandidates();
     document.querySelector("#pw-ticket-link-resolve").onclick = () => resolveUrlForCandidates();
-    document.querySelector("#pw-ticket-link-force-url-button").onclick = () => forceSetTournamentUrls();
+    document.querySelector("#pw-ticket-link-use-url-once-button").onclick = () => forceSetTournamentUrls(false);
+    document.querySelector("#pw-ticket-link-force-url-button").onclick = () => forceSetTournamentUrls(true);
     document.querySelector("#pw-ticket-link-execute").onclick = () => startExecuteLink();
     document.querySelector("#pw-ticket-link-stop").onclick = () => stopRun();
     document.querySelector("#pw-ticket-link-audit-last").onclick = () => auditLastTicketPlan();

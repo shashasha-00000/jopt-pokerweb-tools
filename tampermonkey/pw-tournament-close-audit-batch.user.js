@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW Tournament CLOSE + AUDIT Background Batch
 // @namespace    xhpc007-pw-close-audit-batch-private
-// @version      1.0.4
+// @version      1.0.5
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-close-audit-batch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-close-audit-batch.user.js
 // @description  PW比赛批量 CLOSE / 監査。读取TSV、用Shared Cache / URL pool补全URL、分开执行CLOSE与監査。
@@ -32,7 +32,7 @@
 
   const APP = {
     name: 'PW-CLOSE-AUDIT-BATCH',
-    version: '1.0.1',
+    version: '1.0.5',
 
     // 沿用你之前 URL Manager 的共享 Cache Key
     sharedCacheKey: 'PW_SHARED_TOURNAMENT_URL_CACHE_V1',
@@ -274,6 +274,7 @@
 
     const cache = loadCache();
     const key = `${cleanName}||${id}`;
+    const previous = cache[key] || {};
 
     cache[key] = {
       name: cleanName,
@@ -281,6 +282,7 @@
       url: url.startsWith('http') ? new URL(url).pathname : url,
       actualName: norm(data.actualName || data.name || cleanName).replace(/\s*監査(?:済み|待ち)\s*$/g, ''),
       matchedRow: String(data.matchedRow || ''),
+      sameNameStatus: String(data.sameNameStatus || previous.sameNameStatus || ''),
       savedAt: nowText(),
       source: String(data.source || 'unknown')
     };
@@ -944,7 +946,10 @@
       };
     }
 
-    if (unique.length > 1) return { status: 'AMBIGUOUS', candidates: unique };
+    if (unique.length > 1) {
+      const validDuplicate = unique.every(item => item.sameNameStatus === 'VALID_DUPLICATE');
+      return { status: validDuplicate ? 'VALID_DUPLICATE_AMBIGUOUS' : 'AMBIGUOUS', candidates: unique };
+    }
     return { status: 'NOT_FOUND' };
   }
 
@@ -1894,8 +1899,11 @@
           resultMap.set(name, cacheFound);
           appendReport('URL_CACHE_OK', `${name} → ${cacheFound.url}`);
         } else {
-          if (cacheFound.status === 'AMBIGUOUS') {
-            appendReport('URL_CACHE_AMBIGUOUS', `${name} / ${cacheFound.candidates.length} candidates`);
+          if (['AMBIGUOUS', 'VALID_DUPLICATE_AMBIGUOUS'].includes(cacheFound.status)) {
+            appendReport(
+              cacheFound.status === 'VALID_DUPLICATE_AMBIGUOUS' ? 'URL_CACHE_VALID_DUPLICATE' : 'URL_CACHE_AMBIGUOUS',
+              `${name} / candidates=${cacheFound.candidates.map(item => item.tournamentId || extractIdFromUrlLike(item.url)).join(',')} / 请在本次TSV指定TournamentId或URL`
+            );
           }
           unresolvedForPool.push(name);
         }
@@ -2589,7 +2597,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-      <div style="font-weight:700;">PW CLOSE/AUDIT Batch v1.0.3</div>
+      <div style="font-weight:700;">PW CLOSE/AUDIT Batch v1.0.5</div>
         <div style="display:flex;gap:4px;">
           <button id="pwca-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pwca-close-panel" style="font-size:11px;padding:2px 6px;cursor:pointer;">×</button>
