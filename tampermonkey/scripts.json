@@ -72,15 +72,6 @@
         "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-gameid-check.user.js"
     },
     {
-        "file":  "pw-receipt-full-auto.user.js",
-        "name":  "PW 領収書 Full Auto",
-        "version":  "7.0.1",
-        "description":  "申請管理から申請キー単位で読み、システム設定のreceiverUrlへ送信する正式版",
-        "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-full-auto.user.js",
-        "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-full-auto.user.js",
-        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-full-auto.user.js"
-    },
-    {
         "file":  "pw-receipt-manual-check.user.js",
         "name":  "PW 領収書 Manual Check",
         "version":  "1.6.20",
