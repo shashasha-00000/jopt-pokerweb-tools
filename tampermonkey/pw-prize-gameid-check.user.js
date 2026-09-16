@@ -1,9 +1,10 @@
 // ==UserScript==
 // @name         PW・シーズン プライズGameID照合
 // @namespace    https://japanopt.bt.pokerweb.com.br/
-// @version      0.1.1
+// @version      0.1.2
 // @description  読み取り専用：PWプライズ行のGameIDをシーズンDBと照合します。
 // @match        https://japanopt.bt.pokerweb.com.br/*
+// @match        https://japanopt.pokerweb.com.br/*
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-gameid-check.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-gameid-check.user.js
 // @grant        GM_setClipboard

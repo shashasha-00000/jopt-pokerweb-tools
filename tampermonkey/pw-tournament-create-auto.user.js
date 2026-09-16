@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         PW 大会作成 Auto
 // @namespace    pw-tournament-create-auto
-// @version      0.4.3
+// @version      0.4.4
 // @description  API-first tournament create flow from fixed TSV with one sequential tournament worker.
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js
 // @author       xhpc007 + ChatGPT
 // @match        https://japanopt.bt.pokerweb.com.br/*
+// @match        https://japanopt.pokerweb.com.br/*
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==

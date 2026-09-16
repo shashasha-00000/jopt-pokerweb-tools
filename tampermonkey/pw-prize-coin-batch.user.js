@@ -1,9 +1,10 @@
 // ==UserScript==
 // @name         PW Prize Coin Batch
 // @namespace    https://japanopt.bt.pokerweb.com.br/
-// @version      0.4.1
+// @version      0.4.2
 // @description  TSVを唯一の支払基準として、複数大会の未払いPrizeを照合しPW Coinを一件ずつ付与します。
 // @match        https://japanopt.bt.pokerweb.com.br/*
+// @match        https://japanopt.pokerweb.com.br/*
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-coin-batch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-coin-batch.user.js
 // @grant        none

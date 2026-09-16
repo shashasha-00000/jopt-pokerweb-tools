@@ -562,11 +562,18 @@
   .tournament-fact { padding:1rem 1.1rem; border-radius:12px; background:#f4f8ff; border:1px solid #dce5f2; }
   .tournament-fact-label { display:block; color:#718096; font-size:0.72rem; line-height:1.4; margin-bottom:0.3rem; }
   .tournament-fact-value { display:block; color:var(--jopt-blue-dark); font-size:0.92rem; font-weight:700; line-height:1.55; }
-  .schedule-list { display:flex; flex-direction:column; gap:0.7rem; margin:0 0 2rem; }
-  .schedule-item { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:0.3rem 1rem; padding:1rem 1.2rem; border-radius:12px; background:#f4f8ff; border:1px solid #dce5f2; }
-  .schedule-item-name { color:var(--jopt-blue-dark); font-size:0.95rem; font-weight:700; }
-  .schedule-item-meta { color:#5d697b; font-size:0.88rem; }
-  .schedule-item-meta b { color:var(--jopt-blue-dark); font-weight:700; }
+  .schedule-list { position:relative; margin:0 0 2rem; padding:1.4rem 1.4rem 1.4rem 0; border-radius:14px; background:#f9fbff; border:1px solid #e4eaf3; }
+  .schedule-item { position:relative; display:flex; gap:1rem; padding:0 0 1.3rem 2.6rem; }
+  .schedule-item:last-child { padding-bottom:0; }
+  .schedule-item-dot { position:absolute; left:1.4rem; top:0.3rem; width:10px; height:10px; border-radius:50%; background:var(--jopt-blue-mid); box-shadow:0 0 0 3px #dfe9fa; z-index:2; }
+  .schedule-item-line { position:absolute; left:1.4rem; top:0.9rem; bottom:-0.4rem; width:2px; margin-left:4px; background:#dbe3f0; }
+  .schedule-item:last-child .schedule-item-line { display:none; }
+  .schedule-item-body { flex:1; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:0.3rem 0.9rem; }
+  .schedule-item-text { min-width:0; }
+  .schedule-item-name { display:block; color:var(--jopt-blue-dark); font-size:0.95rem; font-weight:700; }
+  .schedule-item-time { display:block; color:#5d697b; font-size:0.83rem; margin-top:0.15rem; }
+  .schedule-item-fee { flex-shrink:0; display:flex; flex-direction:column; align-items:center; gap:1px; padding:5px 13px; border-radius:14px; background:linear-gradient(135deg,#f2c25c,var(--jopt-accent)); color:#5c3d00; font-size:0.76rem; font-weight:700; text-align:center; white-space:nowrap; }
+  .schedule-item-fee-note { font-size:0.65rem; font-weight:600; opacity:0.8; }
   .tournament-story { margin:0 0 1.5rem; padding:1.5rem; border-left:4px solid var(--jopt-accent); background:#fffaf0; border-radius:0 12px 12px 0; }
   .tournament-story h2 { margin:0 0 0.7rem; color:var(--jopt-blue-dark); font-size:1.2rem; line-height:1.5; }
   .tournament-story p { margin:0; color:#556; font-size:0.92rem; line-height:1.85; }
@@ -1101,6 +1108,7 @@
       <details class="faq-item"><summary>Game ID 的姓名应该怎么填写？</summary><div class="faq-answer">必须使用英文填写，不支持汉字或其他输入方式。</div></details>
       <details class="faq-item"><summary>Game ID 无法注册或不会注册怎么办？</summary><div class="faq-answer">可以前往一楼大厅右侧的国际服务窗口，请认准 International Counter 指示牌。现场工作人员可以协助确认。</div></details>
       <details class="faq-item"><summary>参加比赛需要提前报名吗？</summary><div class="faq-answer">除少数预约制比赛外，其他比赛均为现场报名。如需了解预约制比赛详情，可以咨询官方微信客服。</div></details>
+      <details class="faq-item"><summary>主赛（Main Event）可以直接买入吗？</summary><div class="faq-answer">Main Event 目前没有传统意义上的现场直接买入（DBI）。短期赴日、未持有门票的海外玩家，可在会场办理"特别赞助"手续：出示护照核实资格、确认并签署《赞助同意书》、支付赞助金额后，将受邀获得本赛事的 Main Event 参赛资格，再凭资格前往主赛报名处完成报名。具体赞助金额、支付方式以赛事现场说明为准；资格仅限本人使用，不可转让、出借或退款。<a class="players-guide-entry" data-overseas-guide style="margin-top:0.75rem;"><span class="players-guide-icon">🛂</span><span class="players-guide-title">海外玩家特别赞助参赛指南</span><span class="players-guide-status">即将上线</span></a></div></details>
       <details class="faq-item"><summary>报名窗口怎么找？</summary><div class="faq-answer">先确认要参加的赛事名称，再查看报名窗口指南和现场指示牌，前往对应窗口排队。</div></details>
       <details class="faq-item"><summary>赛场可以用人民币兑换日元吗？</summary><div class="faq-answer">赛场不提供人民币兑换日元服务。如需兑换日元，请前往银行或正规的外币兑换机构办理。</div></details>
       <details class="faq-item"><summary>报名支持哪些支付方式？</summary><div class="faq-answer">现场支持微信、支付宝、银联、Visa、Mastercard 等支付方式。带有银联标志的中国银行卡可以使用。使用现金时仅支持日元，不接受人民币现金。</div></details>
@@ -1180,6 +1188,7 @@
     <p id="lineup-detail-eyebrow" class="detail-eyebrow"></p>
     <h1 id="lineup-detail-title" class="detail-title"></h1>
     <p id="lineup-detail-intro" class="detail-intro"></p>
+    <a id="lineup-detail-more-link" class="players-guide-entry" data-overseas-guide style="display:none;"><span class="players-guide-icon">🛂</span><span class="players-guide-title">海外玩家特别赞助参赛指南</span><span class="players-guide-status">即将上线</span></a>
 
     <figure id="lineup-detail-hero" class="tournament-hero">
       <img id="lineup-detail-image" src="" alt="" onclick="lightbox(this.src)">
@@ -1673,6 +1682,17 @@
     });
   }
 
+  // 海外玩家特别赞助参赛指南正式链接确定后，只需在这里填写 URL。
+  const overseasSponsorGuideUrl = '';
+  if (overseasSponsorGuideUrl) {
+    document.querySelectorAll('[data-overseas-guide]').forEach(link => {
+      link.href = overseasSponsorGuideUrl;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      link.querySelector('.players-guide-status').textContent = '查看指南 →';
+    });
+  }
+
   const observer = new IntersectionObserver((entries) => {
     entries.forEach(e => {
       if (e.isIntersecting) {
@@ -1687,27 +1707,26 @@
     main: {
       eyebrow: 'Tokyo #03 · Core Event',
       title: 'NLH Main Event',
-      intro: 'JOPT 系列最受关注的核心赛事，起始筹码 50,000，可用 3 张日本国内主赛票＋8,000日元报名参赛；海外玩家另有现场直接买入通道。四组 Day 1 依次开赛，晋级选手进入 Day 2、Day 3 决出冠军。',
+      intro: 'JOPT 系列最受关注的核心赛事，起始筹码 50,000，可用 3 张日本国内主赛票＋8,000日元报名参赛。短期赴日的海外玩家如未持有门票，也可在会场办理"特别赞助"手续，受邀获得本赛事参赛资格。四组 Day 1 依次开赛，晋级选手进入 Day 2、Day 3 决出冠军。',
+      showOverseasGuide: true,
       schedule: [
-        { name: '#01 NLH Main Event / Day 1A', meta: ['10月9日 11:00'] },
-        { name: '#01 NLH Main Event / Day 1B', meta: ['10月9日 18:00'] },
-        { name: '#01 NLH Main Event / Day 1C', meta: ['10月10日 11:00'] },
-        { name: '#01 NLH Main Event / Day 1D Turbo', meta: ['10月10日 18:00'] },
-        { name: '#01 NLH Main Event / Day 2', meta: ['10月11日 11:00'] },
-        { name: '#01 NLH Main Event / Day 3', meta: ['10月12日 11:00'] },
-        { name: '海外玩家现场买入', meta: ['金额待定'] }
+        { name: '#01 NLH Main Event / Day 1A', time: '10月9日 11:00', fee: { text: '3张门票＋¥8,000 or 海外赞助', note: '金额待定' } },
+        { name: '#01 NLH Main Event / Day 1B', time: '10月9日 18:00', fee: { text: '3张门票＋¥8,000 or 海外赞助', note: '金额待定' } },
+        { name: '#01 NLH Main Event / Day 1C', time: '10月10日 11:00', fee: { text: '3张门票＋¥8,000 or 海外赞助', note: '金额待定' } },
+        { name: '#01 NLH Main Event / Day 1D Turbo', time: '10月10日 18:00', fee: { text: '3张门票＋¥8,000 or 海外赞助', note: '金额待定' } },
+        { name: '#01 NLH Main Event / Day 2', time: '10月11日 11:00', fee: { text: '3张门票＋¥8,000 or 海外赞助', note: '金额待定' } },
+        { name: '#01 NLH Main Event / Day 3', time: '10月12日 11:00', fee: { text: '3张门票＋¥8,000 or 海外赞助', note: '金额待定' } }
       ]
     },
     millions: {
       eyebrow: 'Tokyo #03 · Multiday',
       title: 'NLH Millions',
-      intro: 'JOPT 具有代表性的大型赛事之一，起始筹码 50,000，可用 1 张日本国内主赛票＋8,000日元报名参赛；海外玩家另有现场直接买入通道。三组 Day 1 结束后，晋级选手于 Day 2 决出冠军。',
+      intro: 'JOPT 具有代表性的大型赛事之一，起始筹码 50,000，可用 1 张日本国内主赛票＋8,000日元报名参赛。三组 Day 1 结束后，晋级选手于 Day 2 决出冠军。',
       schedule: [
-        { name: '#03 NLH Millions / Day 1A', meta: ['10月8日 18:00'] },
-        { name: '#03 NLH Millions / Day 1B', meta: ['10月8日 21:00'] },
-        { name: '#03 NLH Millions / Day 1C Turbo', meta: ['10月9日 10:00'] },
-        { name: '#03 NLH Millions / Day 2', meta: ['10月9日 14:00'] },
-        { name: '海外玩家现场买入', meta: ['金额待定'] }
+        { name: '#03 NLH Millions / Day 1A', time: '10月8日 18:00' },
+        { name: '#03 NLH Millions / Day 1B', time: '10月8日 21:00' },
+        { name: '#03 NLH Millions / Day 1C Turbo', time: '10月9日 10:00' },
+        { name: '#03 NLH Millions / Day 2', time: '10月9日 14:00' }
       ]
     },
     ppc: {
@@ -1715,11 +1734,11 @@
       title: 'NLH Poker Players Championship',
       intro: '考验全面实力的综合性赛事，报名费 40,000日元，起始筹码 50,000。四组 Day 1 结束后，晋级选手于 Day 2 决出冠军。',
       schedule: [
-        { name: '#47 NLH Poker Players Championship / Day 1A Turbo', meta: ['10月10日 23:00'] },
-        { name: '#47 NLH Poker Players Championship / Day 1B', meta: ['10月11日 11:00'] },
-        { name: '#47 NLH Poker Players Championship / Day 1C', meta: ['10月11日 17:00'] },
-        { name: '#47 NLH Poker Players Championship / Day 1D Turbo', meta: ['10月11日 23:00'] },
-        { name: '#47 NLH Poker Players Championship / Day 2', meta: ['10月12日 11:00'] }
+        { name: '#47 NLH Poker Players Championship / Day 1A Turbo', time: '10月10日 23:00' },
+        { name: '#47 NLH Poker Players Championship / Day 1B', time: '10月11日 11:00' },
+        { name: '#47 NLH Poker Players Championship / Day 1C', time: '10月11日 17:00' },
+        { name: '#47 NLH Poker Players Championship / Day 1D Turbo', time: '10月11日 23:00' },
+        { name: '#47 NLH Poker Players Championship / Day 2', time: '10月12日 11:00' }
       ]
     },
     highroller: {
@@ -1729,8 +1748,8 @@
       image: 'photos/lineup-crown-ziwenliu.jpg',
       imageAlt: '中国选手 Liu Ziwen 获得 JOPT NLH Crown 冠军',
       schedule: [
-        { name: '#39 NLH Platinum Sponsored by APT', meta: ['10月10日 16:00', '报名费 500,000日元'] },
-        { name: '#56 NLH Crown Sponsored by APT', meta: ['10月11日 16:00', '报名费 300,000日元'] }
+        { name: '#39 NLH Platinum Sponsored by APT', time: '10月10日 16:00', fee: '¥500,000' },
+        { name: '#56 NLH Crown Sponsored by APT', time: '10月11日 16:00', fee: '¥300,000' }
       ],
       champions: [{
         event: 'JOPT 2026 Sapporo #01 · #17 NLH Crown',
@@ -1748,7 +1767,7 @@
       image: 'photos/lineup-team-china.jpg',
       imageAlt: 'JOPT 2026 Tokyo #02 NLH Tag Team 冠军細胞与 LYQ 的官方优胜照片',
       schedule: [
-        { name: '#06 NLH 3on3', meta: ['10月8日 19:00', '报名费 30,000日元／20,000×3筹码'] }
+        { name: '#06 NLH 3on3', time: '10月8日 19:00', fee: '¥30,000／20,000×3筹码' }
       ],
       champions: [{
         event: 'JOPT 2026 Tokyo #02 · #25 NLH Tag Team Sponsored by BrewDog',
@@ -1828,11 +1847,11 @@
       title: '赏金赛 Bounty',
       intro: '从中途翻倍到全场狙击，赏金赛为对局增加额外奖励，让每一次淘汰都更有价值。',
       schedule: [
-        { name: '#14 NLH Bounty Hyper', meta: ['10月9日 02:00（10/8夜场延续）', '报名费 10,000日元'] },
-        { name: '#40 NLH Mystery Bounty', meta: ['10月10日 18:00', '报名费 30,000日元'] },
-        { name: '#51 NLH Bounty Hyper', meta: ['10月11日 02:00（10/10夜场延续）', '报名费 10,000日元'] },
-        { name: '#57 NLH Progressive Bounty', meta: ['10月11日 18:00', '报名费 30,000日元'] },
-        { name: '#71 NLH Super Heavy Bounty', meta: ['10月12日 12:00', '报名费 150,000日元'] }
+        { name: '#14 NLH Bounty Hyper', time: '10月9日 02:00（10/8夜场延续）', fee: '¥10,000' },
+        { name: '#40 NLH Mystery Bounty', time: '10月10日 18:00', fee: '¥30,000' },
+        { name: '#51 NLH Bounty Hyper', time: '10月11日 02:00（10/10夜场延续）', fee: '¥10,000' },
+        { name: '#57 NLH Progressive Bounty', time: '10月11日 18:00', fee: '¥30,000' },
+        { name: '#71 NLH Super Heavy Bounty', time: '10月12日 12:00', fee: '¥150,000' }
       ]
     }
   };
@@ -1844,6 +1863,7 @@
     document.getElementById('lineup-detail-eyebrow').textContent = data.eyebrow;
     document.getElementById('lineup-detail-title').textContent = data.title;
     document.getElementById('lineup-detail-intro').textContent = data.intro;
+    document.getElementById('lineup-detail-more-link').style.display = data.showOverseasGuide ? 'flex' : 'none';
     document.getElementById('lineup-detail-hero').hidden = !data.image || Boolean(data.champions);
     const image = document.getElementById('lineup-detail-image');
     if (data.image) {
@@ -1851,16 +1871,47 @@
       image.alt = data.imageAlt || '';
     }
     const facts = document.getElementById('lineup-detail-facts');
-    facts.replaceChildren(...(data.schedule || []).map(item => {
+    const scheduleItems = data.schedule || [];
+    facts.hidden = scheduleItems.length === 0;
+    facts.replaceChildren(...scheduleItems.map(item => {
       const row = document.createElement('div');
       row.className = 'schedule-item';
+      const dot = document.createElement('span');
+      dot.className = 'schedule-item-dot';
+      const line = document.createElement('span');
+      line.className = 'schedule-item-line';
+      const body = document.createElement('div');
+      body.className = 'schedule-item-body';
+      const text = document.createElement('div');
+      text.className = 'schedule-item-text';
       const name = document.createElement('span');
       name.className = 'schedule-item-name';
       name.textContent = item.name;
-      const meta = document.createElement('span');
-      meta.className = 'schedule-item-meta';
-      meta.textContent = item.meta.join(' · ');
-      row.append(name, meta);
+      const time = document.createElement('span');
+      time.className = 'schedule-item-time';
+      time.textContent = item.time;
+      text.append(name, time);
+      body.append(text);
+      if (item.fee) {
+        const fee = document.createElement('span');
+        fee.className = 'schedule-item-fee';
+        if (typeof item.fee === 'object') {
+          const feeMain = document.createElement('span');
+          feeMain.className = 'schedule-item-fee-main';
+          feeMain.textContent = item.fee.text;
+          fee.append(feeMain);
+          if (item.fee.note) {
+            const feeNote = document.createElement('span');
+            feeNote.className = 'schedule-item-fee-note';
+            feeNote.textContent = item.fee.note;
+            fee.append(feeNote);
+          }
+        } else {
+          fee.textContent = item.fee;
+        }
+        body.append(fee);
+      }
+      row.append(dot, line, body);
       return row;
     }));
     const storyCard = document.getElementById('lineup-detail-story-card');

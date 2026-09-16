@@ -1,12 +1,13 @@
 ﻿// ==UserScript==
 // @name         PW 領収書 Manual Check
 // @namespace    pw-receipt-manual-check
-// @version      1.6.19
+// @version      1.6.20
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js
 // @description  Manual receipt check. Per-application Game ID, keyword, and date-range TSV with strict URL Cache verification and payment TSV output.
 // @author       xhpc007 + ChatGPT
 // @match        https://japanopt.bt.pokerweb.com.br/*
+// @match        https://japanopt.pokerweb.com.br/*
 // @grant        GM_setClipboard
 // @run-at       document-idle
 // ==/UserScript==

@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         PW キャッシャーチケット Check
 // @namespace    pw-cashier-ticket-check
-// @version      0.1.1
+// @version      0.1.2
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-cashier-ticket-check.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-cashier-ticket-check.user.js
 // @description  Quick read-only Main Event ticket check from the PokerWeb tournament cashier page.
 // @author       xhpc007 + Codex
 // @match        https://japanopt.bt.pokerweb.com.br/*
+// @match        https://japanopt.pokerweb.com.br/*
 // @grant        GM_setClipboard
 // @run-at       document-idle
 // ==/UserScript==

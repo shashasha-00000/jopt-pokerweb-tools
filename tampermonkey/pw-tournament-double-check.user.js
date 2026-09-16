@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         PW Tournament DC 表照合
 // @namespace    pw-tournament-double-check
-// @version      3.0.0
+// @version      3.0.1
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-double-check.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-double-check.user.js
 // @description  大会管理表を基準にPokerWeb OPEN大会の名称・開始時刻・Chips・Fee・上限・Settingsを読取専用で照合し、TSVを出力する。
 // @author       xhpc007 + ChatGPT
 // @match        https://japanopt.bt.pokerweb.com.br/*
+// @match        https://japanopt.pokerweb.com.br/*
 // @grant        GM_setClipboard
 // @run-at       document-idle
 // ==/UserScript==

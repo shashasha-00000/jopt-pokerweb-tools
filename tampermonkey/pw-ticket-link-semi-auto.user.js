@@ -1,12 +1,13 @@
 ﻿// ==UserScript==
 // @name         PW Ticket Link Semi Auto
 // @namespace    pw-ticket-link-semi-auto
-// @version      1.3.2
+// @version      1.3.3
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
 // @description  Ticketルール表から計画を作成し、確認済み大会へLinkした後にPokerWeb実状態を再取得してAudit TSVを出力する。
 // @author       xhpc007 + ChatGPT
 // @match        https://japanopt.bt.pokerweb.com.br/*
+// @match        https://japanopt.pokerweb.com.br/*
 // @grant        GM_setClipboard
 // @run-at       document-idle
 // ==/UserScript==

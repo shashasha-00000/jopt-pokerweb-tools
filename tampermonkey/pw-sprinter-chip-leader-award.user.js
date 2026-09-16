@@ -1,9 +1,10 @@
 // ==UserScript==
 // @name         PW Sprinter・Chip Leader 追加
 // @namespace    https://japanopt.bt.pokerweb.com.br/
-// @version      0.2.2
+// @version      0.2.3
 // @description  Sprinter / Chip Leader の特殊賞を既存Prize末尾に追加・確認します。
 // @match        https://japanopt.bt.pokerweb.com.br/*
+// @match        https://japanopt.pokerweb.com.br/*
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-sprinter-chip-leader-award.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-sprinter-chip-leader-award.user.js
 // @grant        none

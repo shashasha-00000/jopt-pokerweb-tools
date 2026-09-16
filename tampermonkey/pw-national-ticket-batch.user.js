@@ -1,14 +1,15 @@
 // ==UserScript==
 // @name         PW ナショナルチケット Batch
 // @namespace    pw-national-ticket-batch-safe
-// @version      1.3.8
+// @version      1.3.10
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
 // @description  任意のPokerWeb管理画面からGameID・チケット名TSVを厳密検証し、ナショナルチケットを安全に一件ずつ付与する正式版
 // @author       xhpc007 + Codex
 // @match        https://japanopt.bt.pokerweb.com.br/*
+// @match        https://japanopt.pokerweb.com.br/*
 // @match        https://formanager.bt.pokerweb.com.br/*
-// @match        https://formanager.pokerweb.com.br/cb/*
+// @match        https://formanager.pokerweb.com.br/*
 // @grant        GM_setClipboard
 // @run-at       document-idle
 // ==/UserScript==
@@ -16,21 +17,21 @@
 (() => {
   'use strict';
 
-  const IS_BT_SITE = [
-    'japanopt.bt.pokerweb.com.br',
-    'formanager.bt.pokerweb.com.br'
-  ].includes(location.hostname);
-
   const APP = {
     inputKey: 'PW_NATIONAL_TICKET_BATCH_V10_INPUT',
     previewKey: 'PW_NATIONAL_TICKET_BATCH_V10_PREVIEW',
     logKey: 'PW_NATIONAL_TICKET_BATCH_V10_LOG',
     ledgerKey: 'PW_NATIONAL_TICKET_BATCH_V10_LEDGER',
     ticketListUrlKey: 'PW_NATIONAL_TICKET_BATCH_TICKET_LIST_URL',
-    emitUrl: IS_BT_SITE ? '/vagas/emitir_ticket' : '/cb/vagas/emitir_ticket',
-    ticketHistoryUrl: IS_BT_SITE ? '/vagas/historico_ticket' : '/cb/vagas/historico_ticket',
-    playerSearchUrl: IS_BT_SITE ? '/jogadores_cb/search' : '/cb/jogadores/search',
-    defaultStoreName: 'JOPT - Japan Open Poker Tour',
+    emitUrl: '/vagas/emitir_ticket',
+    ticketHistoryUrl: '/vagas/historico_ticket',
+    playerSearchUrl: '/jogadores_cb/search',
+    defaultStoreName: [
+      'japanopt.bt.pokerweb.com.br',
+      'japanopt.pokerweb.com.br'
+    ].includes(location.hostname)
+      ? 'JOPT - Japan Open Poker Tour'
+      : '',
     groupPathPattern: /\/painel_grupo_tickets\/(\d+)/,
     ticketListTextPattern: /ナショナル\s*チケット|national\s*ticket/i,
     minDelayMs: 30,
@@ -495,12 +496,14 @@
     const row = ticketElement.closest('tr');
     if (!row) return '';
     const cells = [...row.querySelectorAll('td, th')];
-    const statusIndex = cells.findIndex(cell => norm(cell.textContent) === '未発行');
+    const statusIndex = cells.findIndex(cell =>
+      /^(未発行|Não emitido|Nao emitido|Disponível|Disponivel|Pendente)$/i.test(norm(cell.textContent))
+    );
     if (statusIndex > 0) return norm(cells[statusIndex - 1].textContent);
 
     const table = row.closest('table');
     const headers = [...(table?.querySelectorAll('thead th') || [])].map(th => norm(th.textContent));
-    const storeIndex = headers.findIndex(header => header === '店舗');
+    const storeIndex = headers.findIndex(header => /^(店舗|Loja|Clube|Store)$/i.test(header));
     return storeIndex >= 0 && cells[storeIndex] ? norm(cells[storeIndex].textContent) : '';
   }
 
@@ -516,7 +519,7 @@
       const grupo = norm(el.getAttribute('data-grupo'));
       const href = norm(el.getAttribute('href'));
       const text = norm(el.textContent);
-      const looksUnissued = href.includes('modal_emitir_ticket') || text === '発行';
+      const looksUnissued = href.includes('modal_emitir_ticket') || /^(発行|Emitir)$/i.test(text);
 
       if (ticketId && looksUnissued && (!grupo || grupo === String(expectedGrupo))) {
         ticketIds.push(ticketId);
@@ -554,6 +557,50 @@
         htmlLength: String(html || '').length
       }
     };
+  }
+
+  function applyStoreSelection(inventory, selectedStoreName) {
+    const eligibleTicketIds = inventory.ticketIds.filter(ticketId =>
+      inventory.ticketStores.get(ticketId) === selectedStoreName
+    );
+    inventory.eligibleTicketIds = eligibleTicketIds;
+    inventory.diagnostics.selectedStoreName = selectedStoreName;
+    inventory.diagnostics.eligibleSelectedStoreTicketIds = eligibleTicketIds.length;
+    return inventory;
+  }
+
+  function resolveAutomaticStore(inventoryMap, neededCounts) {
+    const detectedStores = new Set();
+    inventoryMap.forEach(inventory => {
+      inventory.ticketStores.forEach(store => {
+        if (store && store !== 'UNKNOWN') detectedStores.add(store);
+      });
+    });
+
+    const eligibleStores = [...detectedStores].filter(store =>
+      [...neededCounts.entries()].every(([ticketName, count]) => {
+        const inventory = inventoryMap.get(ticketName);
+        const available = inventory.ticketIds.filter(ticketId =>
+          inventory.ticketStores.get(ticketId) === store
+        ).length;
+        return available >= count;
+      })
+    );
+
+    if (eligibleStores.length === 1) return eligibleStores[0];
+
+    const storeDetails = [...inventoryMap.entries()].map(([ticketName, inventory]) =>
+      `${ticketName}: ${JSON.stringify(inventory.diagnostics.storeCounts)}`
+    ).join('\n');
+    if (!detectedStores.size) {
+      throw new Error(
+        `発行店舗を自動判定できません。店舗列を読み取れませんでした。\n${storeDetails}`
+      );
+    }
+    throw new Error(
+      `発行店舗を一意に自動判定できません。発行店舗名を候補から入力して再実行してください。` +
+      `\n候補=${JSON.stringify([...detectedStores])}\n${storeDetails}`
+    );
   }
 
   function extractCodbloq(doc, html) {
@@ -708,8 +755,7 @@
 
     try {
       const input = document.querySelector('#pwnt-input')?.value || '';
-      const selectedStoreName = norm(document.querySelector('#pwnt-store-name')?.value);
-      if (!selectedStoreName) throw new Error('発行店舗名を入力してください。');
+      let selectedStoreName = norm(document.querySelector('#pwnt-store-name')?.value);
       localStorage.setItem(APP.inputKey, input);
       const tasks = parseInput(input);
       state.tasks = tasks;
@@ -725,13 +771,6 @@
         const group = groupMap.get(name);
         inventoryMap.set(name, await fetchGroupPage(group, true, selectedStoreName));
       }
-
-      const inventorySummary = neededNames.map(name => {
-        const diagnostics = inventoryMap.get(name).diagnostics;
-        return `${name}: 選択店舗=${selectedStoreName}, ` +
-          `使用可能=${diagnostics.eligibleSelectedStoreTicketIds}, ` +
-          `店舗別=${JSON.stringify(diagnostics.storeCounts)}`;
-      }).join('\n');
 
       const playerMap = new Map();
       const gameIdResolution = new Map();
@@ -767,6 +806,20 @@
         if (gameIdResolution.get(task.gameId) === null) return;
         neededCounts.set(task.ticketName, (neededCounts.get(task.ticketName) || 0) + 1);
       });
+      if (!selectedStoreName) {
+        selectedStoreName = resolveAutomaticStore(inventoryMap, neededCounts);
+        const storeInput = document.querySelector('#pwnt-store-name');
+        if (storeInput) storeInput.value = selectedStoreName;
+      }
+      inventoryMap.forEach(inventory => applyStoreSelection(inventory, selectedStoreName));
+
+      const inventorySummary = neededNames.map(name => {
+        const diagnostics = inventoryMap.get(name).diagnostics;
+        return `${name}: 選択店舗=${selectedStoreName}, ` +
+          `使用可能=${diagnostics.eligibleSelectedStoreTicketIds}, ` +
+          `店舗別=${JSON.stringify(diagnostics.storeCounts)}`;
+      }).join('\n');
+
       neededCounts.forEach((count, name) => {
         const inventory = inventoryMap.get(name);
         const stock = inventory?.eligibleTicketIds.length || 0;
@@ -1206,15 +1259,15 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <strong>PW ナショナルチケット一括付与 正式版 v1.3.8</strong>
+        <strong>PW ナショナルチケット一括付与 正式版 v1.3.9</strong>
         <div><button id="pwnt-min">Min</button> <button id="pwnt-close">x</button></div>
       </div>
       <div id="pwnt-body" style="overflow:auto;margin-top:8px;">
         <div style="font-size:11px;color:#f6d365;line-height:1.45;margin-bottom:8px;">
           任意のPokerWeb管理画面で使用できます。チケット一覧はバックグラウンドで取得します。正式付与はDRY RUN成功後に有効になります。
         </div>
-        <div style="font-weight:bold;">発行店舗名（この店舗だけを使用）</div>
-        <input id="pwnt-store-name" type="text" value="${APP.defaultStoreName}" style="width:100%;box-sizing:border-box;margin:4px 0 8px;background:#111;color:#fff;border:1px solid #555;padding:7px;">
+        <div style="font-weight:bold;">発行店舗名（JOPTは既定、FMは在庫から自動判定）</div>
+        <input id="pwnt-store-name" type="text" value="${APP.defaultStoreName}" placeholder="FMでは空欄のままDRY RUNすると自動判定" style="width:100%;box-sizing:border-box;margin:4px 0 8px;background:#111;color:#fff;border:1px solid #555;padding:7px;">
         <div style="font-weight:bold;">入力TSV: GameID+チケット名 / Game ID+付与内容+枚数</div>
         <textarea id="pwnt-input" style="width:100%;box-sizing:border-box;height:115px;background:#111;color:#fff;border:1px solid #555;padding:8px;font-family:Consolas,monospace;"></textarea>
         <div style="display:flex;gap:6px;margin-top:8px;">

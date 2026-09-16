@@ -1,9 +1,10 @@
 // ==UserScript==
 // @name         PW Prize Plan 書込・確認
 // @namespace    https://japanopt.bt.pokerweb.com.br/
-// @version      2.0.4
+// @version      2.0.5
 // @description  大会Prize表からPLANを作成し、PokerWebへの書込または読取確認を行います。
 // @match        https://japanopt.bt.pokerweb.com.br/*
+// @match        https://japanopt.pokerweb.com.br/*
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-batch-manual.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-batch-manual.user.js
 // @grant        none

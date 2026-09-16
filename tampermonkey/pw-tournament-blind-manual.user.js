@@ -1,11 +1,12 @@
 // ==UserScript==
 // @name         PW ブラインド設定 Manual（現行可・改善予定）
 // @namespace    pw-tournament-blind-manual
-// @version      1.2.1
+// @version      1.2.2
 // @description  PokerWeb blind backend direct tool with external saved settings UI and four internal blind structures.
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-blind-manual.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-blind-manual.user.js
 // @match        https://japanopt.bt.pokerweb.com.br/*
+// @match        https://japanopt.pokerweb.com.br/*
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==
