@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW 領収書 Manual Check
 // @namespace    pw-receipt-manual-check
-// @version      1.7.0
+// @version      1.7.1
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js
 // @description  Manual receipt check. Per-application Game ID, keyword, and date-range TSV with strict URL Cache verification and payment TSV output.
@@ -16,7 +16,6 @@
   "use strict";
 
   const CONFIG = {
-    eventYear: 2026,
     defaultDateRange: "02/01/2025 - 31/12/2026",
     fetchInformacoes: true,
     betweenPlayerMs: 300,
@@ -277,18 +276,44 @@
     return m ? Number(m[1]) : "";
   }
 
-  function parsePurchaseDateParts(timeText) {
-    const m = String(timeText || "").match(/(\d{1,2})\/(\d{1,2})/);
-    if (!m) return { 年: CONFIG.eventYear, 月: "", 日: "" };
+  function parsePurchaseDateParts(timeText, participationDates = []) {
+    const text = String(timeText || "").trim();
+    const m = text.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?(?=\s|$)/);
+    const unresolved = { 年: "", 月: "", 日: "" };
+    if (!m) return unresolved;
 
-    return { 年: CONFIG.eventYear, 月: Number(m[2]), 日: Number(m[1]) };
+    const day = Number(m[1]);
+    const month = Number(m[2]);
+    function validYear(year) {
+      const date = new Date(Date.UTC(year, month - 1, day));
+      return year >= 1000 && date.getUTCFullYear() === year &&
+        date.getUTCMonth() + 1 === month && date.getUTCDate() === day;
+    }
+
+    // A full purchase date is authoritative. Never replace an invalid explicit year.
+    if (m[3]) {
+      const year = Number(m[3]);
+      return validYear(year) ? { 年: year, 月: month, 日: day } : unresolved;
+    }
+
+    // Yearless cash records require an exact day/month match for this player/tournament.
+    const years = new Set();
+    for (const value of participationDates) {
+      const match = String(value || "").trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      if (match && Number(match[1]) === day && Number(match[2]) === month && validYear(Number(match[3]))) {
+        years.add(Number(match[3]));
+      }
+    }
+    return years.size === 1 ? { 年: [...years][0], 月: month, 日: day } : unresolved;
   }
 
-  function parseTimeSortValue(timeText) {
-    const m = String(timeText || "").match(/(\d{1,2})\/(\d{1,2})\s*-\s*(\d{1,2}):(\d{2})/);
-    if (!m) return 999999999999;
+  function parseTimeSortValue(timeText, participationDates = []) {
+    const parts = parsePurchaseDateParts(timeText, participationDates);
+    const m = String(timeText || "").match(/\s*-\s*(\d{1,2}):(\d{2})\s*$/);
+    if (!parts.年 || (m && (Number(m[1]) > 23 || Number(m[2]) > 59))) return Number.MAX_SAFE_INTEGER;
 
-    return new Date(CONFIG.eventYear, Number(m[2]) - 1, Number(m[1]), Number(m[3]), Number(m[4])).getTime();
+    // PokerWeb business time is Asia/Tokyo (UTC+09:00), independent of browser timezone.
+    return Date.UTC(parts.年, parts.月 - 1, parts.日, m ? Number(m[1]) : 0, m ? Number(m[2]) : 0) - 9 * 60 * 60 * 1000;
   }
 
   function loadSharedCache() {
@@ -1967,7 +1992,7 @@
   }
 
   function classifyDetailToOutput(detail) {
-    const dateParts = parsePurchaseDateParts(detail.time);
+    const dateParts = parsePurchaseDateParts(detail.time, detail.participationDates);
     const cols = makeColsFromFinanceRows(detail.financeRows || []);
     const knownPaymentTotal = Number(cols["現金"] || 0) + Number(cols["クレジットカード"] || 0) + Number(cols["ポイント"] || 0) + Number(cols["USDT"] || 0);
 
@@ -1984,7 +2009,7 @@
       "ポイント": cols["ポイント"],
       "USDT": cols["USDT"],
       __targetIndex: detail.targetIndex,
-      __sortTime: parseTimeSortValue(detail.time),
+      __sortTime: parseTimeSortValue(detail.time, detail.participationDates),
       __sortTournamentNo: detail.tournamentNo,
       __tournamentId: detail.tournamentId,
       __unique_key: `${detail.raw_game_id}_${detail.tournamentId}_${detail.id_venda || detail.time || ""}`
@@ -1997,6 +2022,10 @@
     }
 
     if (knownPaymentTotal <= 0) return { kind: "IGNORE", reason: "領収書対象支払いなし", row: base };
+
+    if (!dateParts.年) {
+      return { kind: "NEED_CHECK", reason: "購入日確認", message: `購入年を確定できません。購入時間: ${detail.time || "空白"} / 参加日: ${(detail.participationDates || []).join(", ") || "なし"}`, row: base };
+    }
 
     return { kind: "PASTE", reason: "OK", row: base };
   }
@@ -2157,6 +2186,7 @@
         const details = await fetchDetailsForPlayer(player, tournament, targetIndex);
 
         for (const d of details) {
+          d.participationDates = Array.from(tournament.participationDatesByGameId?.get(normalizeGameId(d.raw_game_id)) || []);
           if (d.status === "IGNORE_NON_PURCHASE") {
             result.ignoredRows++;
             continue;
@@ -2177,7 +2207,7 @@
               __tournamentId: d.tournamentId,
               __unique_key: `${d.raw_game_id}_${d.tournamentId}_${d.id_venda || d.time || d.status}`,
               __targetIndex: d.targetIndex,
-              __sortTime: parseTimeSortValue(d.time),
+              __sortTime: parseTimeSortValue(d.time, d.participationDates),
               __sortTournamentNo: d.tournamentNo
             });
             continue;
@@ -2197,7 +2227,7 @@
               __tournamentId: d.tournamentId,
               __unique_key: `${d.raw_game_id}_${d.tournamentId}_${d.id_venda || d.time || classified.reason}`,
               __targetIndex: d.targetIndex,
-              __sortTime: parseTimeSortValue(d.time),
+              __sortTime: parseTimeSortValue(d.time, d.participationDates),
               __sortTournamentNo: d.tournamentNo
             });
           } else {
@@ -2485,12 +2515,20 @@
             name,
             fullName: name,
             url,
-            targetGameIds: new Set()
+            targetGameIds: new Set(),
+            participationDatesByGameId: new Map()
           });
         }
 
         const targetGameId = normalizeGameId(row["Game ID"]);
-        if (targetGameId) tournamentMap.get(tournamentId).targetGameIds.add(targetGameId);
+        if (targetGameId) {
+          const tournament = tournamentMap.get(tournamentId);
+          tournament.targetGameIds.add(targetGameId);
+          if (!tournament.participationDatesByGameId.has(targetGameId)) {
+            tournament.participationDatesByGameId.set(targetGameId, new Set());
+          }
+          if (norm(row["参加日"])) tournament.participationDatesByGameId.get(targetGameId).add(norm(row["参加日"]));
+        }
 
         setSharedCacheItem(name, {
           tournamentId,
