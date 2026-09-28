@@ -917,35 +917,40 @@
     return found;
   }
 
-  async function resolveNamesByExactSearch(openWin, closedWin, names) {
+  async function resolveNamesByListScan(openWin, closedWin, names) {
     const resultMap = new Map();
+    const unresolved = new Set(names);
     const windows = [
       { win: openWin, label: 'open' },
       { win: closedWin, label: 'closed' }
     ];
 
-    for (const name of names) {
-      if (stopSearchRequested) break;
+    for (const target of windows) {
+      if (!unresolved.size || stopSearchRequested) break;
 
-      const candidates = [];
-      for (const target of windows) {
-        try {
-          const rows = await collectUrlPoolInWindow(target.win, target.label, name);
-          candidates.push(...rows);
-        } catch (e) {
-          appendReport('EXACT_SEARCH_ERROR', `${target.label}: ${name} / ${e.message || e}`);
+      try {
+        const rows = await collectUrlPoolInWindow(target.win, target.label, '');
+        appendReport('LIST_SCAN_COLLECTED', `${target.label}: ${rows.length} 件`);
+
+        for (const name of [...unresolved]) {
+          const found = matchUrlPoolByName(rows, name);
+          resultMap.set(name, found);
+          if (found.status === 'OK') {
+            unresolved.delete(name);
+            appendReport('LIST_SCAN_OK', `${name} → ${found.url} / source=${target.label}`);
+          } else if (found.status === 'AMBIGUOUS') {
+            unresolved.delete(name);
+            appendReport('LIST_SCAN_AMBIGUOUS', `${name} / ${found.candidates.length} candidates / source=${target.label}`);
+          }
         }
+      } catch (e) {
+        appendReport('LIST_SCAN_ERROR', `${target.label}: ${e.message || e}`);
       }
+    }
 
-      const found = matchUrlPoolByName(candidates, name);
-      resultMap.set(name, found);
-      if (found.status === 'OK') {
-        appendReport('EXACT_SEARCH_OK', `${name} → ${found.url}`);
-      } else if (found.status === 'AMBIGUOUS') {
-        appendReport('EXACT_SEARCH_AMBIGUOUS', `${name} / ${found.candidates.length} candidates`);
-      } else {
-        appendReport('EXACT_SEARCH_NOT_FOUND', name);
-      }
+    for (const name of unresolved) {
+      resultMap.set(name, { status: 'NOT_FOUND' });
+      appendReport('LIST_SCAN_NOT_FOUND', name);
     }
 
     return resultMap;
@@ -991,7 +996,8 @@
     const target = compact(name);
     const matches = (pool || []).filter(item =>
       compact(item.actualName || '') === target ||
-      compact(item.name || '') === target
+      compact(item.name || '') === target ||
+      compact(item.matchedRow || '').includes(target)
     );
 
     const seen = new Map();
@@ -1958,7 +1964,7 @@
             setStatusForBackground('OPEN / CLOSED を大会名ごとに検索しています...');
             closedWin = await openTournamentListWindow('/torneio/fechados', 'closed_exact');
             openWin = await openTournamentListWindow('/torneio/abertos', 'open_exact');
-            const exactResults = await resolveNamesByExactSearch(openWin, closedWin, unresolvedForPool);
+            const exactResults = await resolveNamesByListScan(openWin, closedWin, unresolvedForPool);
             for (const name of unresolvedForPool) resultMap.set(name, exactResults.get(name));
           } else {
             appendReport('EXACT_SEARCH_CANCEL', `${unresolvedForPool.length} 件`);
