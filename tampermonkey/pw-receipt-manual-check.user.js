@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW 領収書 Manual Check
 // @namespace    pw-receipt-manual-check
-// @version      1.7.1
+// @version      1.7.2
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js
 // @description  Manual receipt check. Per-application Game ID, keyword, and date-range TSV with strict URL Cache verification and payment TSV output.
@@ -296,13 +296,25 @@
       return validYear(year) ? { 年: year, 月: month, 日: day } : unresolved;
     }
 
-    // Yearless cash records require an exact day/month match for this player/tournament.
+    // Use this player's tournament date as the year anchor, not as the purchase date.
+    // Purchases may precede the event, occur after midnight, or span a merchandise event.
     const years = new Set();
     for (const value of participationDates) {
       const match = String(value || "").trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-      if (match && Number(match[1]) === day && Number(match[2]) === month && validYear(Number(match[3]))) {
-        years.add(Number(match[3]));
-      }
+      if (!match) return unresolved;
+      const anchorDay = Number(match[1]);
+      const anchorMonth = Number(match[2]);
+      const anchorYear = Number(match[3]);
+      const anchor = new Date(Date.UTC(anchorYear, anchorMonth - 1, anchorDay));
+      if (anchorYear < 1000 || anchor.getUTCFullYear() !== anchorYear ||
+          anchor.getUTCMonth() + 1 !== anchorMonth || anchor.getUTCDate() !== anchorDay) return unresolved;
+
+      let year = anchorYear;
+      // December purchases for January events belong to the preceding year, and vice versa.
+      if (anchorMonth === 1 && month === 12) year--;
+      else if (anchorMonth === 12 && month === 1) year++;
+      if (!validYear(year)) return unresolved;
+      years.add(year);
     }
     return years.size === 1 ? { 年: [...years][0], 月: month, 日: day } : unresolved;
   }
