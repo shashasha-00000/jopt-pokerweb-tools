@@ -917,6 +917,40 @@
     return found;
   }
 
+  async function resolveNamesByExactSearch(openWin, closedWin, names) {
+    const resultMap = new Map();
+    const windows = [
+      { win: openWin, label: 'open' },
+      { win: closedWin, label: 'closed' }
+    ];
+
+    for (const name of names) {
+      if (stopSearchRequested) break;
+
+      const candidates = [];
+      for (const target of windows) {
+        try {
+          const rows = await collectUrlPoolInWindow(target.win, target.label, name);
+          candidates.push(...rows);
+        } catch (e) {
+          appendReport('EXACT_SEARCH_ERROR', `${target.label}: ${name} / ${e.message || e}`);
+        }
+      }
+
+      const found = matchUrlPoolByName(candidates, name);
+      resultMap.set(name, found);
+      if (found.status === 'OK') {
+        appendReport('EXACT_SEARCH_OK', `${name} → ${found.url}`);
+      } else if (found.status === 'AMBIGUOUS') {
+        appendReport('EXACT_SEARCH_AMBIGUOUS', `${name} / ${found.candidates.length} candidates`);
+      } else {
+        appendReport('EXACT_SEARCH_NOT_FOUND', name);
+      }
+    }
+
+    return resultMap;
+  }
+
   function findCacheMatchByName(name) {
     const target = compact(name);
     const matches = Object.values(loadCache()).filter(item => {
@@ -1914,7 +1948,21 @@
         const prefixes = getPrefixesForUrlPool(prefixRows);
 
         if (!prefixes.length) {
-          appendReport('URL_POOL_SKIP', 'Event Prefix がないため URL pool 検索不可');
+          const ok = confirm(
+            `Event Prefix がないため、OPEN / CLOSED を大会名ごとに検索します。\n\n` +
+            `対象: ${unresolvedForPool.length} 件\n` +
+            `検索方式: 大会名の完全一致\n\n続行しますか？`
+          );
+
+          if (ok) {
+            setStatusForBackground('OPEN / CLOSED を大会名ごとに検索しています...');
+            closedWin = await openTournamentListWindow('/torneio/fechados', 'closed_exact');
+            openWin = await openTournamentListWindow('/torneio/abertos', 'open_exact');
+            const exactResults = await resolveNamesByExactSearch(openWin, closedWin, unresolvedForPool);
+            for (const name of unresolvedForPool) resultMap.set(name, exactResults.get(name));
+          } else {
+            appendReport('EXACT_SEARCH_CANCEL', `${unresolvedForPool.length} 件`);
+          }
         } else {
           const ok = confirm(
             `URL未解決を URL pool 方式で補完します。\n\n` +
