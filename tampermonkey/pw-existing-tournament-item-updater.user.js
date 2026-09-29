@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         PW 既存大会 Item 更新 人工確認版
 // @namespace    pw-existing-tournament-item-updater-ui
-// @version      0.6.9
+// @version      0.7.4
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js
-// @description  既存大会URLをPreview/Resolveで人工確認してから、任意数の販売項目更新と大会名修正を行う。作成・時間変更・Ticket Linkなし。
+// @description  OPEN/CLOSED URL poolを后台一括取得して人工確認後、販売項目の全体更新、后台局部更新と大会名修正を行う。
 // @author       xhpc007 + ChatGPT
 // @match        https://japanopt.bt.pokerweb.com.br/*
 // @match        https://japanopt.pokerweb.com.br/*
@@ -189,6 +189,14 @@
     return normalizeText(s).replace(/\s+/g, '');
   }
 
+  function normalizeRenameText(s) {
+    return String(s || '').replace(/\r/g, '').trim();
+  }
+
+  function isExactRenameTarget(currentName, targetName) {
+    return normalizeRenameText(currentName) === normalizeRenameText(targetName);
+  }
+
   function isVisible(el) {
     return !!(el && (el.offsetWidth || el.offsetHeight || el.getClientRects().length));
   }
@@ -346,6 +354,146 @@
     });
 
     return items;
+  }
+
+  const PARTIAL_ITEM_FIELDS = [
+    {
+      group: 'EN', itemNames: ['Entry'], siglas: ['En'], property: 'nome', label: 'EN名称', text: true,
+      aliases: ['EN名称', 'EN_Name', 'EN Name', 'Entry名称', 'Entry_Name', 'Entry Name']
+    },
+    {
+      group: 'EN', itemNames: ['Entry'], siglas: ['En'], property: 'siglas', label: 'EN略称', text: true,
+      aliases: ['EN略称', 'EN_Siglas', 'EN Code', 'Entry略称', 'Entry_Siglas', 'Entry Code']
+    },
+    {
+      group: 'EN', itemNames: ['Entry'], siglas: ['En'], property: 'valor', label: 'EN金額',
+      aliases: ['EN', 'EN金額', 'EN金额', 'EN_Value', 'EN Value', 'EN_Amount', 'EN Amount', 'Entry', 'Entry金額', 'Entry金额', 'Entry_Value', 'Entry Value', 'Entry_Amount', 'Entry Amount']
+    },
+    {
+      group: 'EN', itemNames: ['Entry'], siglas: ['En'], property: 'taxa', label: 'EN手数料',
+      aliases: ['EN_Tax', 'EN Tax', 'EN_Taxa', 'EN手数料', 'EN手续费', 'Entry_Tax', 'Entry Tax', 'Entry手数料', 'Entry手续费']
+    },
+    {
+      group: 'EN', itemNames: ['Entry'], siglas: ['En'], property: 'fichas', label: 'ENチップ数',
+      aliases: ['EN_Chips', 'EN Chips', 'ENチップ数', 'EN筹码', 'Entry_Chips', 'Entry Chips', 'Entryチップ数', 'Entry筹码']
+    },
+    {
+      group: 'EN', itemNames: ['Entry'], siglas: ['En'], property: 'limite', label: 'EN回数',
+      aliases: ['EN回数', 'EN_Limit', 'EN Limit', 'EN上限', 'Entry回数', 'Entry_Limit', 'Entry Limit', 'Entry上限']
+    },
+    {
+      group: 'EN', itemNames: ['Entry'], siglas: ['En'], property: 'reposicionar', label: 'EN再配置',
+      aliases: ['EN_Reposicionar', 'EN_Repo', 'EN Reposicionar', 'EN再配置', 'Entry_Reposicionar', 'Entry_Repo', 'Entry Reposicionar', 'Entry再配置']
+    },
+    {
+      group: 'RE', itemNames: ['Re Entry', 'ReEntry'], siglas: ['Re'], property: 'nome', label: 'RE名称', text: true,
+      aliases: ['RE名称', 'RE_Name', 'RE Name', 'Re Entry名称', 'ReEntry名称', 'Re Entry_Name', 'ReEntry_Name']
+    },
+    {
+      group: 'RE', itemNames: ['Re Entry', 'ReEntry'], siglas: ['Re'], property: 'siglas', label: 'RE略称', text: true,
+      aliases: ['RE略称', 'RE_Siglas', 'RE Code', 'Re Entry略称', 'ReEntry略称', 'Re Entry_Siglas', 'ReEntry_Siglas']
+    },
+    {
+      group: 'RE', itemNames: ['Re Entry', 'ReEntry'], siglas: ['Re'], property: 'valor', label: 'RE金額',
+      aliases: ['RE', 'RE金額', 'RE金额', 'RE_Value', 'RE Value', 'RE_Amount', 'RE Amount', 'Re Entry', 'ReEntry', 'Re Entry金額', 'ReEntry金額', 'Re Entry_Value', 'ReEntry_Value']
+    },
+    {
+      group: 'RE', itemNames: ['Re Entry', 'ReEntry'], siglas: ['Re'], property: 'taxa', label: 'RE手数料',
+      aliases: ['RE_Tax', 'RE Tax', 'RE_Taxa', 'RE手数料', 'RE手续费', 'Re Entry_Tax', 'ReEntry_Tax', 'Re Entry手数料', 'ReEntry手数料']
+    },
+    {
+      group: 'RE', itemNames: ['Re Entry', 'ReEntry'], siglas: ['Re'], property: 'fichas', label: 'REチップ数',
+      aliases: ['RE_Chips', 'RE Chips', 'REチップ数', 'RE筹码', 'Re Entry_Chips', 'ReEntry_Chips', 'Re Entryチップ数', 'ReEntryチップ数']
+    },
+    {
+      group: 'RE', itemNames: ['Re Entry', 'ReEntry'], siglas: ['Re'], property: 'limite', label: 'RE回数',
+      aliases: ['RE回数', 'RE_Limit', 'RE Limit', 'RE上限', 'Re Entry回数', 'ReEntry回数', 'Re Entry_Limit', 'ReEntry_Limit', 'Re Entry上限', 'ReEntry上限']
+    },
+    {
+      group: 'RE', itemNames: ['Re Entry', 'ReEntry'], siglas: ['Re'], property: 'reposicionar', label: 'RE再配置',
+      aliases: ['RE_Reposicionar', 'RE_Repo', 'RE Reposicionar', 'RE再配置', 'Re Entry_Reposicionar', 'ReEntry_Repo', 'Re Entry再配置', 'ReEntry再配置']
+    },
+    {
+      group: 'TE', itemNames: ['Ticket Entry', 'Ticket'], siglas: ['TE', 'Ti', 'TIX'], property: 'nome', label: 'TE名称', text: true,
+      aliases: ['TE名称', 'TE_Name', 'TE Name', 'Ticket名称', 'Ticket Entry名称', 'Ticket_Name', 'Ticket Entry_Name']
+    },
+    {
+      group: 'TE', itemNames: ['Ticket Entry', 'Ticket'], siglas: ['TE', 'Ti', 'TIX'], property: 'siglas', label: 'TE略称', text: true,
+      aliases: ['TE略称', 'TE_Siglas', 'TE Code', 'Ticket略称', 'Ticket Entry略称', 'Ticket_Siglas', 'Ticket Entry_Siglas']
+    },
+    {
+      group: 'TE', itemNames: ['Ticket Entry', 'Ticket'], siglas: ['TE', 'Ti', 'TIX'], property: 'valor', label: 'TE金額',
+      aliases: ['TE', 'TIX', 'Ticket', 'TE金額', 'TE金额', 'TE_Value', 'TE Value', 'Ticket金額', 'Ticket金额', 'Ticket_Value', 'Ticket Value', 'Ticket Entry金額', 'Ticket Entry_Value']
+    },
+    {
+      group: 'TE', itemNames: ['Ticket Entry', 'Ticket'], siglas: ['TE', 'Ti', 'TIX'], property: 'taxa', label: 'TE手数料',
+      aliases: ['TE_Tax', 'TIX_Tax', 'Ticket_Tax', 'TE Tax', 'Ticket Tax', 'TE手数料', 'TE手续费', 'Ticket手数料', 'Ticket手续费']
+    },
+    {
+      group: 'TE', itemNames: ['Ticket Entry', 'Ticket'], siglas: ['TE', 'Ti', 'TIX'], property: 'fichas', label: 'TEチップ数',
+      aliases: ['TE_Chips', 'TIX_Chips', 'Ticket_Chips', 'TE Chips', 'Ticket Chips', 'TEチップ数', 'TE筹码', 'Ticketチップ数', 'Ticket筹码']
+    },
+    {
+      group: 'TE', itemNames: ['Ticket Entry', 'Ticket'], siglas: ['TE', 'Ti', 'TIX'], property: 'limite', label: 'TE回数',
+      aliases: ['TE回数', 'TE_Limit', 'TIX_Limit', 'Ticket回数', 'Ticket_Limit', 'TE Limit', 'Ticket Limit', 'TE上限', 'Ticket上限']
+    },
+    {
+      group: 'TE', itemNames: ['Ticket Entry', 'Ticket'], siglas: ['TE', 'Ti', 'TIX'], property: 'reposicionar', label: 'TE再配置',
+      aliases: ['TE_Reposicionar', 'TIX_Repo', 'Ticket_Reposicionar', 'Ticket_Repo', 'TE再配置', 'Ticket再配置']
+    }
+  ];
+
+  function normalizePartialPatchValue(def, rawValue) {
+    if (def.text) {
+      const value = normalizeText(rawValue);
+      if (!value) throw new Error(`${def.label} cannot be empty`);
+      return value;
+    }
+    const value = ['limite', 'reposicionar'].includes(def.property)
+      ? normalizePlainNumber(rawValue)
+      : normalizeMoneyForPW(rawValue);
+    const plain = String(value || '').replace(/,/g, '');
+    if (!plain || !/^-?\d+$/.test(plain)) {
+      throw new Error(`${def.label} must be numeric: ${rawValue}`);
+    }
+    return value;
+  }
+
+  function buildPartialItemPatchesFromColumns(idx, get) {
+    return sortPartialItemPatches(PARTIAL_ITEM_FIELDS.flatMap(def => {
+      const columnIndex = idx(...def.aliases);
+      const rawValue = get(columnIndex);
+      if (columnIndex < 0 || rawValue === '') return [];
+      return [{ ...def, value: normalizePartialPatchValue(def, rawValue) }];
+    }));
+  }
+
+  function sortPartialItemPatches(patches) {
+    const groupOrder = { EN: 0, RE: 1, TE: 2 };
+    const propertyOrder = { valor: 0, taxa: 1, fichas: 2, limite: 3, reposicionar: 4, nome: 5, siglas: 6 };
+    return [...(patches || [])].sort((a, b) =>
+      (groupOrder[a.group] ?? 99) - (groupOrder[b.group] ?? 99) ||
+      (propertyOrder[a.property] ?? 99) - (propertyOrder[b.property] ?? 99)
+    );
+  }
+
+  function partialPatchesToText(patches) {
+    return (patches || []).map(patch => `${patch.label}=${patch.value}`).join(' | ');
+  }
+
+  function parsePartialPatchesText(text) {
+    const byLabel = new Map(PARTIAL_ITEM_FIELDS.map(def => [def.label, def]));
+    return sortPartialItemPatches(String(text || '')
+      .split('|')
+      .map(part => normalizeText(part))
+      .filter(Boolean)
+      .map(part => {
+        const match = part.match(/^(.+?)=(.*)$/);
+        if (!match) throw new Error(`局部修改格式错误: ${part}`);
+        const def = byLabel.get(normalizeText(match[1]));
+        if (!def) throw new Error(`未知局部修改字段: ${match[1]}`);
+        return { ...def, value: normalizePartialPatchValue(def, match[2]) };
+      }));
   }
 
   function getNoFromName(name) {
@@ -630,6 +778,7 @@
     return dataLines.map((line, lineIndex) => {
       const c = line.split('\t');
       const get = i => (i >= 0 ? normalizeText(c[i]) : '');
+      const getRename = i => (i >= 0 ? normalizeRenameText(c[i]) : '');
 
       const name = get(iName);
       if (!name) return null;
@@ -637,18 +786,20 @@
       const tournamentId = get(iTournamentId);
       const urlRaw = get(iUrl);
       const url = normalizeUrl(urlRaw || tournamentId);
-      const items = buildItemListFromColumns(idx, get, { header, includeLegacy: true });
+      const items = buildItemListFromColumns(idx, get, { header, includeLegacy: false });
+      const itemPatches = buildPartialItemPatchesFromColumns(idx, get);
       const entry = items.find(item => normalizeText(item.siglas) === DEFAULTS.entrySiglas) || {};
       const reEntry = items.find(item => normalizeText(item.siglas) === DEFAULTS.reSiglas) || {};
       const ticketEntry = items.find(item => ['Ti', 'TE', 'TIX'].includes(normalizeText(item.siglas))) || null;
 
       return {
         name,
-        newName: get(iNewName),
+        newName: getRename(iNewName),
         tournamentId,
         url,
         itemUpdateMode: get(iItemUpdateMode),
         items,
+        itemPatches,
         entry,
         reEntry,
         ticketEntry,
@@ -663,8 +814,8 @@
 
     list.forEach((t, i) => {
       if (!t.name) errors.push(`${i + 1}: name empty`);
-      if ((!Array.isArray(t.items) || !t.items.length) && !normalizeText(t.newName)) {
-        errors.push(`${i + 1}: ${t.name} item and 新大会名 both empty`);
+      if ((!Array.isArray(t.items) || !t.items.length) && (!Array.isArray(t.itemPatches) || !t.itemPatches.length) && !normalizeText(t.newName)) {
+        errors.push(`${i + 1}: ${t.name} item, 局部修改 and 新大会名 all empty`);
         return;
       }
 
@@ -738,7 +889,7 @@
     const rowHtml = row.innerHTML || '';
     const rowAll = compactText(rowText + ' ' + rowHtml);
 
-    if (!rowAll.includes(wanted)) {
+    if (wanted && !rowAll.includes(wanted)) {
       return null;
     }
 
@@ -749,7 +900,7 @@
       links.find(a => String(a.href || '').includes('/torneio/painel/'));
 
     const href = painelLink ? (painelLink.getAttribute('href') || painelLink.href) : rowHtml;
-    const m = String(href).match(/\/cb\/torneio\/painel\/(\d+)/);
+    const m = String(href).match(/\/(?:cb\/)?torneio\/painel\/(\d+)/);
 
     if (!m) return null;
 
@@ -862,6 +1013,7 @@
       '判定',
       '理由',
       'Item_Update_Mode',
+      '局部修改',
       ...itemFields
     ];
 
@@ -892,6 +1044,7 @@
         r.urlStatus || '',
         r.statusReason || '',
         r.itemUpdateMode || '',
+        partialPatchesToText(r.itemPatches),
         ...itemValues
       ].map(v => String(v ?? '').replace(/\t/g, ' ')).join('\t'));
     });
@@ -1064,70 +1217,147 @@
     ].includes(normalizeText(c.urlStatus));
   }
 
+  function createTournamentListFrame(path) {
+    return new Promise((resolve, reject) => {
+      const frame = document.createElement('iframe');
+      frame.src = new URL(path, location.origin).href;
+      frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:1200px;height:850px;opacity:0;pointer-events:none;z-index:-1;';
+      const timer = setTimeout(() => {
+        frame.remove();
+        reject(new Error(`URL pool frame timeout: ${path}`));
+      }, CONFIG.searchTimeoutMs);
+      frame.onload = () => {
+        clearTimeout(timer);
+        resolve(frame);
+      };
+      frame.onerror = () => {
+        clearTimeout(timer);
+        frame.remove();
+        reject(new Error(`URL pool frame load failed: ${path}`));
+      };
+      document.body.appendChild(frame);
+    });
+  }
+
+  async function drawDataTablePage(win, dt, pageIndex) {
+    await waitForProcessingGone(win);
+    const drawPromise = waitForNextDraw(win, dt);
+    try { dt.page(pageIndex); } catch (_) {}
+    try { dt.draw(false); } catch (_) { dt.draw(); }
+    await drawPromise;
+    await waitForProcessingGone(win);
+  }
+
+  async function scanTournamentPool(path, sourceLabel) {
+    const frame = await createTournamentListFrame(path);
+    const win = frame.contentWindow;
+    const found = [];
+    try {
+      const dt = await waitForDataTableReadyInWindow(win);
+      await waitForProcessingGone(win);
+
+      let drawPromise = waitForNextDraw(win, dt);
+      try { dt.search(''); } catch (_) {}
+      try { dt.page.len(100); } catch (_) {}
+      try { dt.page(0); } catch (_) {}
+      try { dt.draw(); } catch (_) { dt.draw(false); }
+      await drawPromise;
+      await waitForProcessingGone(win);
+
+      const pageInfo = dt.page.info();
+      const pages = Math.max(1, Number(pageInfo?.pages || 1));
+      for (let page = 0; page < pages; page++) {
+        if (page > 0) await drawDataTablePage(win, dt, page);
+        const tableNode = dt?.table?.().node?.();
+        const rows = [...(tableNode || win.document).querySelectorAll('tbody tr')].filter(rowHasPainelLink);
+        rows.forEach(row => {
+          const entry = extractTournamentFromRow(row, '');
+          if (entry) found.push({ ...entry, sourceLabel });
+        });
+      }
+    } finally {
+      frame.remove();
+    }
+
+    const unique = new Map();
+    found.forEach(entry => unique.set(entry.painelUrl, entry));
+    return [...unique.values()];
+  }
+
+  function matchTournamentFromPool(inputName, pool) {
+    const matches = (pool || []).filter(entry =>
+      isTournamentRowNameMatch(inputName, entry.actualName, entry.rowText)
+    );
+    const exact = matches.filter(entry => isSameTournamentExactSafe(inputName, entry.actualName));
+    if (exact.length === 1) return { status: 'FOUND', match: exact[0] };
+    if (exact.length > 1) return { status: 'AMBIGUOUS', matches: exact };
+    if (matches.length === 1) return { status: 'FOUND', match: matches[0] };
+    if (matches.length > 1) return { status: 'AMBIGUOUS', matches };
+    return { status: 'NOT_FOUND', matches: [] };
+  }
+
   async function resolveUrlForCandidates(rows) {
     const targets = rows.filter(shouldResolveCandidate);
     if (!targets.length) return rows;
 
-    const closedWin = openTournamentListWindow('/torneio/fechados');
-    if (!closedWin) throw new Error('closed tournament window open failed');
-
-    await sleep(800);
-
-    let openWin = null;
-
-    for (const row of targets) {
+    targets.forEach(row => {
       row.use = '';
       row.urlStatus = 'URL_NOT_FOUND';
-      row.statusReason = 'closed/open search not completed';
+      row.statusReason = 'background pool scan pending';
+    });
 
-      let found = await searchTournamentInListWindow(closedWin, row.name, 'CLOSED', 3);
+    log(`OPEN URL pool scan start: ${targets.length} candidates`);
+    const openPool = await scanTournamentPool('/torneio/abertos', 'OPEN');
+    const closedTargets = [];
 
+    targets.forEach(row => {
+      const found = matchTournamentFromPool(row.name, openPool);
       if (found.status === 'AMBIGUOUS') {
         row.urlStatus = 'AMBIGUOUS';
-        row.statusReason = `CLOSED multiple matches: ${found.matches.length}`;
-        continue;
+        row.statusReason = `OPEN pool multiple matches: ${found.matches.length}`;
+      } else if (found.status === 'FOUND') {
+        applyResolvedPoolMatch(row, found.match, 'OK_SEARCH_OPEN');
+      } else {
+        closedTargets.push(row);
       }
+    });
 
-      if (found.status !== 'OK_SEARCH_CLOSED') {
-        if (!openWin) {
-          openWin = openTournamentListWindow('/torneio/abertos');
-          await sleep(800);
+    if (closedTargets.length) {
+      log(`CLOSED URL pool scan start: ${closedTargets.length} OPEN misses`);
+      const closedPool = await scanTournamentPool('/torneio/fechados', 'CLOSED');
+      closedTargets.forEach(row => {
+        const found = matchTournamentFromPool(row.name, closedPool);
+        if (found.status === 'AMBIGUOUS') {
+          row.urlStatus = 'AMBIGUOUS';
+          row.statusReason = `CLOSED pool multiple matches: ${found.matches.length}`;
+        } else if (found.status === 'FOUND') {
+          applyResolvedPoolMatch(row, found.match, 'OK_SEARCH_CLOSED');
+        } else {
+          row.urlStatus = 'URL_NOT_FOUND';
+          row.statusReason = 'OPEN/CLOSED pool not found';
         }
-        if (!openWin) throw new Error('open tournament window open failed');
-        found = await searchTournamentInListWindow(openWin, row.name, 'OPEN', 3);
-      }
-
-      if (found.status === 'AMBIGUOUS') {
-        row.urlStatus = 'AMBIGUOUS';
-        row.statusReason = `OPEN multiple matches: ${found.matches.length}`;
-        continue;
-      }
-
-      if (found.status !== 'OK_SEARCH_CLOSED' && found.status !== 'OK_SEARCH_OPEN') {
-        row.urlStatus = 'URL_NOT_FOUND';
-        row.statusReason = 'closed/open not found';
-        continue;
-      }
-
-      const match = found.match;
-      row.tournamentId = match.tournamentId;
-      row.url = match.painelUrl;
-      row.actualName = match.actualName || '';
-      row.matchedRow = match.rowText || '';
-      row.use = '1';
-      row.urlStatus = found.status;
-      row.statusReason = match.actualName || 'DataTables search';
-
-      setSharedCacheItem(row.name, {
-        tournamentId: row.tournamentId,
-        url: row.url,
-        actualName: row.actualName || row.name,
-        matchedRow: row.matchedRow || '',
-        source: found.status.toLowerCase()
       });
     }
 
     return rows;
+  }
+
+  function applyResolvedPoolMatch(row, match, status) {
+    row.tournamentId = match.tournamentId;
+    row.url = match.painelUrl;
+    row.actualName = match.actualName || '';
+    row.matchedRow = match.rowText || '';
+    row.use = '1';
+    row.urlStatus = status;
+    row.statusReason = `${match.actualName || row.name} / background pool`;
+
+    setSharedCacheItem(row.name, {
+      tournamentId: row.tournamentId,
+      url: row.url,
+      actualName: row.actualName || row.name,
+      matchedRow: row.matchedRow || '',
+      source: status.toLowerCase()
+    });
   }
 
   async function resolveTournamentUrl(t) {
@@ -1149,13 +1379,48 @@
     };
   }
 
+  async function fetchTournamentDocument(painelUrl) {
+    const absolute = new URL(painelUrl, location.origin).href;
+    const res = await fetch(absolute, { credentials: 'same-origin', cache: 'no-store' });
+    if (!res.ok) throw new Error(`BACKGROUND_PANEL_FETCH_FAILED status=${res.status}`);
+    if (/\/login|\/entrar/i.test(res.url || '')) throw new Error(`BACKGROUND_PANEL_LOGIN_REDIRECT: ${res.url}`);
+    const html = await res.text();
+    return new DOMParser().parseFromString(html, 'text/html');
+  }
+
+  function getTournamentTitleFromDocument(doc) {
+    const direct = normalizeText(
+      doc.querySelector('form[action*="/torneio/alterar_nome"] [name="nome_caixa_input"]')?.value ||
+      doc.querySelector('input[name="titulo_torneio"]')?.value ||
+      ''
+    );
+    if (direct) return direct;
+
+    for (const selector of ['h1', 'h2', '.page-title', '.box-title', '.panel-title', '.breadcrumb', '.content-header']) {
+      const text = normalizeText(doc.querySelector(selector)?.textContent || '');
+      if (text.includes('【') && text.includes('】')) return text;
+    }
+    return normalizeText(doc.title || '');
+  }
+
+  function verifyTournamentDocumentMatches(doc, expectedName, alternativeNames = []) {
+    const actualName = getTournamentTitleFromDocument(doc);
+    if (!actualName) throw new Error(`BACKGROUND_TITLE_UNREADABLE: expected=${expectedName}`);
+    const acceptedNames = [expectedName, ...(alternativeNames || [])].filter(normalizeText);
+    if (acceptedNames.some(name => compactText(actualName) === compactText(name))) return actualName;
+    if (sameTournamentByPrefixAndNo(expectedName, actualName)) return actualName;
+    throw new Error(`BACKGROUND_TITLE_MISMATCH: expected=${expectedName} / actual=${actualName}`);
+  }
+
   async function findExistingTournament(t, state) {
     const resolved = await resolveTournamentUrl(t, state);
 
     state.tournamentId = resolved.tournamentId || '';
     state.painelUrl = resolved.painelUrl;
     state.urlSource = resolved.source || '';
-    state.step = (t.items || []).length ? 'VIRTUAL_CURRENCY' : 'RENAME';
+    state.step = (t.items || []).length
+      ? 'VIRTUAL_CURRENCY'
+      : ((t.itemPatches || []).length ? 'ITEM_PATCHES' : 'RENAME');
     setState(state);
 
     location.href = resolved.painelUrl;
@@ -1228,11 +1493,11 @@
   }
 
   async function postTournamentRename(t, state) {
-    const targetName = normalizeText(t.newName);
+    const targetName = normalizeRenameText(t.newName);
     if (!targetName) return { status: 'SKIP', reason: '新大会名 empty' };
 
     const currentName = getCurrentTournamentRenameValue();
-    if (compactText(currentName) === compactText(targetName)) {
+    if (isExactRenameTarget(currentName, targetName)) {
       return { status: 'SKIP', reason: 'already target', currentName, targetName };
     }
 
@@ -1470,8 +1735,8 @@
     return { id_item: '', source: '' };
   }
 
-  function getExistingItemElements() {
-    return [...document.querySelectorAll([
+  function getExistingItemElements(root = document) {
+    return [...root.querySelectorAll([
       'a[href="#modal_item_editar"]',
       'button[href="#modal_item_editar"]',
       '[data-target="#modal_item_editar"]',
@@ -1508,13 +1773,14 @@
     return { nome, siglas, rawText };
   }
 
-  function collectExistingItemsForApi() {
-    return getExistingItemElements().map((el, index) => {
+  function collectExistingItemsForApi(root = document) {
+    return getExistingItemElements(root).map((el, index) => {
       const idInfo = getItemIdInfoFromElement(el);
       const label = parseItemLabelFromElement(el);
 
       return {
         index: index + 1,
+        element: el,
         id_item: idInfo.id_item,
         id_item_source: idInfo.source,
         nome: label.nome,
@@ -1525,10 +1791,10 @@
     });
   }
 
-  function collectItemApiInfo() {
-    const editForm = document.querySelector('#modal_item_editar form');
-    const insertForm = document.querySelector('#modal_item_inserir form');
-    const existingItems = collectExistingItemsForApi();
+  function collectItemApiInfo(root = document) {
+    const editForm = root.querySelector('#modal_item_editar form');
+    const insertForm = root.querySelector('#modal_item_inserir form');
+    const existingItems = collectExistingItemsForApi(root);
 
     return {
       editEndpoint: '/torneio/abas/configuracao/item_editar',
@@ -1539,6 +1805,265 @@
       insertFormFields: formFieldsToObject(insertForm),
       existingItems
     };
+  }
+
+  function findExistingItemForPartialPatch(existingItems, patch) {
+    const siglas = (patch.siglas || []).map(value => normalizeText(value).toLowerCase());
+    const names = (patch.itemNames || []).map(value => compactText(value).toLowerCase());
+    return existingItems.find(item => siglas.includes(normalizeText(item.siglas).toLowerCase())) ||
+      existingItems.find(item => names.includes(compactText(item.nome).toLowerCase())) ||
+      null;
+  }
+
+  function getExistingPartialFieldValue(existing, field) {
+    if (field === 'nome') return normalizeText(existing?.nome);
+    if (field === 'siglas') return normalizeText(existing?.siglas);
+    return getExistingItemDataValue(existing, [field]);
+  }
+
+  function partialFieldValuesEqual(field, left, right) {
+    if (['nome', 'siglas'].includes(field)) return normalizeText(left) === normalizeText(right);
+    return normalizeItemNumberForCompare(left) === normalizeItemNumberForCompare(right);
+  }
+
+  async function postPartialItemPatch(t, state, patch, patchIndex) {
+    await openConfiguracao();
+    const info = collectItemApiInfo();
+    const existing = findExistingItemForPartialPatch(info.existingItems, patch);
+    if (!existing) {
+      throw new Error(`ITEM_PATCH_NOT_FOUND: ${patch.group} / ${patch.label}`);
+    }
+    if (!existing.id_item) {
+      throw new Error(`ITEM_PATCH_ID_MISSING: ${patch.group} / ${existing.nome || existing.siglas}`);
+    }
+
+    const currentValue = getExistingPartialFieldValue(existing, patch.property);
+    if (currentValue && partialFieldValuesEqual(patch.property, currentValue, patch.value)) {
+      return { status: 'SKIP', existing, currentValue };
+    }
+
+    existing.element?.click();
+    await sleep(CONFIG.afterModalOpenMs);
+    const form = document.querySelector('#modal_item_editar form');
+    if (!form) throw new Error(`ITEM_PATCH_FORM_NOT_FOUND: ${patch.group}`);
+
+    const fd = new FormData(form);
+    const requiredExistingFields = ['nome', 'siglas', 'valor', 'taxa', 'fichas', 'limite', 'reposicionar'];
+    const missingFields = requiredExistingFields.filter(field => !fd.has(field));
+    if (missingFields.length) {
+      throw new Error(`ITEM_PATCH_PRESERVE_FIELDS_MISSING: ${patch.group} / ${missingFields.join(',')}`);
+    }
+    const preservedFields = Object.fromEntries(
+      requiredExistingFields
+        .filter(field => field !== patch.property)
+        .map(field => [field, String(fd.get(field) ?? '')])
+    );
+
+    fd.set('id_torneio', state.tournamentId || getTournamentIdFromUrl());
+    fd.set('id_item', existing.id_item);
+    fd.set(patch.property, patch.value);
+
+    state.pendingItemPatchVerification = {
+      index: patchIndex,
+      existingId: existing.id_item,
+      patch: {
+        group: patch.group,
+        itemNames: patch.itemNames,
+        siglas: patch.siglas,
+        property: patch.property,
+        label: patch.label,
+        value: patch.value
+      },
+      preservedFields
+    };
+    state.step = 'ITEM_PATCH_VERIFY';
+    setState(state);
+
+    await postItemApi(formActionPath(form, info.editEndpoint), fd, `${patch.label} 局部更新`);
+    return { status: 'POSTED', existing, currentValue };
+  }
+
+  function verifyPartialItemPatch(existingItems, pending) {
+    const patch = pending.patch;
+    const existing = existingItems.find(item => String(item.id_item || '') === String(pending.existingId || '')) ||
+      findExistingItemForPartialPatch(existingItems, patch);
+    if (!existing) throw new Error(`ITEM_PATCH_VERIFY_NOT_FOUND: ${patch.group}`);
+
+    const actual = getExistingPartialFieldValue(existing, patch.property);
+    if (!actual) throw new Error(`ITEM_PATCH_VERIFY_FIELD_MISSING: ${patch.label}`);
+    if (!partialFieldValuesEqual(patch.property, actual, patch.value)) {
+      throw new Error(`ITEM_PATCH_VERIFY_MISMATCH: ${patch.label} expected=${patch.value} actual=${actual}`);
+    }
+
+    const preservationErrors = [];
+    Object.entries(pending.preservedFields || {}).forEach(([field, expected]) => {
+      const actualPreserved = getExistingPartialFieldValue(existing, field);
+      if (!partialFieldValuesEqual(field, actualPreserved, expected)) {
+        preservationErrors.push(`${field} expected=${expected || '(empty)'} actual=${actualPreserved || '(empty)'}`);
+      }
+    });
+    if (preservationErrors.length) {
+      throw new Error(`ITEM_PATCH_PRESERVE_MISMATCH: ${patch.label} / ${preservationErrors.join(' / ')}`);
+    }
+    return { existing, actual };
+  }
+
+  function readExistingItemField(existing, field) {
+    const wanted = normalizeText(field).toLowerCase().replace(/[_-]/g, '');
+    for (const [key, value] of Object.entries(existing?.data || {})) {
+      const normalizedKey = normalizeText(key)
+        .toLowerCase()
+        .replace(/^data-/, '')
+        .replace(/[_-]/g, '');
+      if (normalizedKey === wanted) return { found: true, value: String(value ?? '') };
+    }
+    if (field === 'nome') return { found: !!existing?.nome, value: String(existing?.nome || '') };
+    if (field === 'siglas') return { found: existing?.siglas !== undefined, value: String(existing?.siglas || '') };
+    return { found: false, value: '' };
+  }
+
+  async function postBackgroundForm(form, fd, fallbackAction, label) {
+    const action = new URL(form?.getAttribute('action') || fallbackAction, location.origin).href;
+    const res = await fetch(action, {
+      method: 'POST',
+      body: fd,
+      credentials: 'same-origin',
+      redirect: 'follow'
+    });
+    if (!res.ok) throw new Error(`${label} failed status=${res.status}: ${(await res.text()).slice(0, 300)}`);
+    if (/\/login|\/entrar/i.test(res.url || '')) throw new Error(`${label} LOGIN_REDIRECT: ${res.url}`);
+    return res;
+  }
+
+  async function applyBackgroundPatchGroup(t, state, doc, patches) {
+    const info = collectItemApiInfo(doc);
+    const existing = findExistingItemForPartialPatch(info.existingItems, patches[0]);
+    if (!existing) throw new Error(`ITEM_PATCH_NOT_FOUND: ${patches[0].group}`);
+    if (!existing.id_item) throw new Error(`ITEM_PATCH_ID_MISSING: ${patches[0].group}`);
+    const form = doc.querySelector('#modal_item_editar form') || doc.querySelector('form[action*="item_editar"]');
+    if (!form) throw new Error(`ITEM_PATCH_FORM_NOT_FOUND: ${patches[0].group}`);
+
+    const allFields = [
+      'nome', 'siglas', 'valor', 'taxa', 'fichas', 'limite', 'reposicionar',
+      'direito_img', 'pts_ranking', 'gameid_bloqueio', 'rake', 'taxa_extras'
+    ];
+    const snapshot = {};
+    const missing = [];
+    allFields.forEach(field => {
+      const read = readExistingItemField(existing, field);
+      if (!read.found) missing.push(field);
+      else snapshot[field] = read.value;
+    });
+    if (missing.length) {
+      throw new Error(`ITEM_PATCH_BACKGROUND_PRESERVE_FIELDS_MISSING: ${patches[0].group} / ${missing.join(',')}`);
+    }
+
+    const changed = patches.filter(patch => !partialFieldValuesEqual(patch.property, snapshot[patch.property], patch.value));
+    if (!changed.length) {
+      appendReportToState(state, 'ITEM_PATCH_SKIP', `${t.name} / ${patches.map(p => `${p.label}=${p.value}`).join(' / ')} already target`);
+      return doc;
+    }
+
+    const fd = new FormData(form);
+    allFields.forEach(field => fd.set(field, snapshot[field]));
+    fd.set('id_torneio', state.tournamentId);
+    fd.set('id_item', existing.id_item);
+    changed.forEach(patch => fd.set(patch.property, patch.value));
+
+    state.pendingBackgroundWrite = {
+      type: 'ITEM_PATCH',
+      tournamentId: state.tournamentId,
+      itemId: existing.id_item,
+      patches: changed.map(p => ({ label: p.label, property: p.property, value: p.value }))
+    };
+    setState(state);
+    await postBackgroundForm(form, fd, info.editEndpoint, `${patches[0].group} background patch`);
+
+    const refreshed = await fetchTournamentDocument(state.painelUrl);
+    verifyTournamentDocumentMatches(refreshed, t.name, [t.newName]);
+    const refreshedItems = collectItemApiInfo(refreshed).existingItems;
+    const saved = refreshedItems.find(item => String(item.id_item || '') === String(existing.id_item)) ||
+      findExistingItemForPartialPatch(refreshedItems, patches[0]);
+    if (!saved) throw new Error(`ITEM_PATCH_BACKGROUND_VERIFY_NOT_FOUND: ${patches[0].group}`);
+
+    const targetProperties = new Set(changed.map(patch => patch.property));
+    const errors = [];
+    changed.forEach(patch => {
+      const actual = readExistingItemField(saved, patch.property);
+      if (!actual.found || !partialFieldValuesEqual(patch.property, actual.value, patch.value)) {
+        errors.push(`${patch.label} expected=${patch.value} actual=${actual.value || '(missing)'}`);
+      }
+    });
+    allFields.filter(field => !targetProperties.has(field)).forEach(field => {
+      const actual = readExistingItemField(saved, field);
+      if (!actual.found || !partialFieldValuesEqual(field, actual.value, snapshot[field])) {
+        errors.push(`${field} changed: before=${snapshot[field] || '(empty)'} after=${actual.value || '(missing)'}`);
+      }
+    });
+    if (errors.length) throw new Error(`ITEM_PATCH_BACKGROUND_VERIFY_MISMATCH: ${errors.join(' / ')}`);
+
+    delete state.pendingBackgroundWrite;
+    appendReportToState(
+      state,
+      'ITEM_PATCH_OK',
+      `${t.name} / background / ${changed.map(p => `${p.label}: ${snapshot[p.property]} -> ${p.value}`).join(' / ')} / id_item=${existing.id_item}`
+    );
+    return refreshed;
+  }
+
+  async function applyBackgroundRename(t, state, doc) {
+    const targetName = normalizeRenameText(t.newName);
+    if (!targetName) return doc;
+    const currentName = getTournamentTitleFromDocument(doc);
+    if (isExactRenameTarget(currentName, targetName)) {
+      appendReportToState(state, 'RENAME_SKIP', `${t.name} / already target`);
+      return doc;
+    }
+
+    const form = doc.querySelector('form[action*="/torneio/alterar_nome"]');
+    if (!form) throw new Error('BACKGROUND_RENAME_FORM_NOT_FOUND');
+    const fd = new FormData(form);
+    fd.set('nome_caixa_input', targetName);
+    fd.set('id_torneio', state.tournamentId);
+    fd.set('painel', fd.get('painel') || '1');
+
+    state.pendingBackgroundWrite = { type: 'RENAME', tournamentId: state.tournamentId, currentName, targetName };
+    setState(state);
+    await postBackgroundForm(form, fd, '/torneio/alterar_nome', 'background rename');
+
+    const refreshed = await fetchTournamentDocument(state.painelUrl);
+    const actualName = getTournamentTitleFromDocument(refreshed);
+    if (!isExactRenameTarget(actualName, targetName)) {
+      throw new Error(`BACKGROUND_RENAME_VERIFY_MISMATCH: expected=${targetName} / actual=${actualName}`);
+    }
+    delete state.pendingBackgroundWrite;
+    appendReportToState(state, 'RENAME_OK', `${currentName} -> ${actualName} / background verified`);
+    appendReportToState(state, 'CACHE_REVIEW_REQUIRED', `大会名変更後のため Shared URL Cache を人工確認: ${currentName} -> ${actualName}`);
+    return refreshed;
+  }
+
+  async function processBackgroundPartialTournament(t, state) {
+    const resolved = await resolveTournamentUrl(t);
+    state.tournamentId = resolved.tournamentId;
+    state.painelUrl = resolved.painelUrl;
+    state.urlSource = resolved.source || '';
+    state.step = 'BACKGROUND_PATCH';
+    setState(state);
+
+    let doc = await fetchTournamentDocument(state.painelUrl);
+    const actualName = verifyTournamentDocumentMatches(doc, t.name, [t.newName]);
+    appendReportToState(state, 'BACKGROUND_OPEN_OK', `${t.name} / ${actualName} / id=${state.tournamentId}`);
+
+    const grouped = new Map();
+    (t.itemPatches || []).forEach(patch => {
+      if (!grouped.has(patch.group)) grouped.set(patch.group, []);
+      grouped.get(patch.group).push(patch);
+    });
+    for (const patches of grouped.values()) {
+      doc = await applyBackgroundPatchGroup(t, state, doc, patches);
+    }
+    doc = await applyBackgroundRename(t, state, doc);
+    appendReportToState(state, 'BACKGROUND_DONE', `${t.name} / page navigationなし`);
   }
 
   function makeApiFormData(templateFields, item, extra = {}) {
@@ -1908,6 +2433,7 @@
     state.urlSource = '';
     state.titleVerified = false;
     state.itemIndex = 0;
+    state.itemPatchIndex = 0;
     setState(state);
 
     const nextTournament = list[nextIndex];
@@ -1949,7 +2475,12 @@
 
       log(`当前比赛 ${Number(state.tournamentIndex || 0) + 1}/${state.tournaments.length}: ${t.name} / step=${state.step}`);
 
-      if (state.step === 'FIND_EXISTING') {
+      if (state.step === 'FIND_EXISTING' || state.step === 'BACKGROUND_PATCH') {
+        if (!(t.items || []).length && ((t.itemPatches || []).length || normalizeText(t.newName))) {
+          await processBackgroundPartialTournament(t, state);
+          await moveToNextTournamentOrDone(state);
+          return;
+        }
         await findExistingTournament(t, state);
         return;
       }
@@ -1989,7 +2520,7 @@
 
         if (!items.length) {
           appendReportToState(state, 'SKIP_ITEMS', `${t.name} / item empty`);
-          state.step = 'RENAME';
+          state.step = 'ITEM_PATCHES';
           setState(state);
           runCurrentStep();
           return;
@@ -2057,7 +2588,59 @@
       }
 
       if (state.step === 'ITEMS_RELOAD') {
-        state.step = 'RENAME';
+        state.step = 'ITEM_PATCHES';
+        setState(state);
+        runCurrentStep();
+        return;
+      }
+
+      if (state.step === 'ITEM_PATCHES') {
+        const patches = t.itemPatches || [];
+        const patchIndex = Number(state.itemPatchIndex || 0);
+        if (patchIndex >= patches.length) {
+          state.step = 'RENAME';
+          setState(state);
+          runCurrentStep();
+          return;
+        }
+
+        const patch = patches[patchIndex];
+        const result = await postPartialItemPatch(t, state, patch, patchIndex);
+        if (result.status === 'SKIP') {
+          appendReportToState(state, 'ITEM_PATCH_SKIP', `${t.name} / ${patch.label} already ${patch.value}`);
+          state.itemPatchIndex = patchIndex + 1;
+          state.step = 'ITEM_PATCHES';
+          setState(state);
+          runCurrentStep();
+          return;
+        }
+
+        appendReportToState(
+          state,
+          'ITEM_PATCH_POSTED',
+          `${t.name} / ${patchIndex + 1}/${patches.length} / ${patch.label}: ${result.currentValue || '(unreadable)'} -> ${patch.value} / reload verification pending`
+        );
+        await sleep(800);
+        location.reload();
+        return;
+      }
+
+      if (state.step === 'ITEM_PATCH_VERIFY') {
+        const pending = state.pendingItemPatchVerification;
+        if (!pending?.patch) throw new Error('ITEM_PATCH_VERIFY_STATE_MISSING');
+
+        await openConfiguracao();
+        const info = collectItemApiInfo();
+        const verified = verifyPartialItemPatch(info.existingItems, pending);
+        appendReportToState(
+          state,
+          'ITEM_PATCH_OK',
+          `${t.name} / ${pending.patch.label}=${verified.actual} / id_item=${verified.existing.id_item} / verified after reload`
+        );
+
+        state.itemPatchIndex = Number(pending.index) + 1;
+        delete state.pendingItemPatchVerification;
+        state.step = 'ITEM_PATCHES';
         setState(state);
         runCurrentStep();
         return;
@@ -2089,7 +2672,7 @@
         if (!pending?.targetName) throw new Error('RENAME_VERIFY_STATE_MISSING');
 
         const actualName = getCurrentTournamentRenameValue();
-        if (compactText(actualName) !== compactText(pending.targetName)) {
+        if (!isExactRenameTarget(actualName, pending.targetName)) {
           throw new Error(`RENAME_VERIFY_MISMATCH: expected=${pending.targetName} / actual=${actualName}`);
         }
 
@@ -2159,25 +2742,28 @@
     const iStatus = idx('判定', 'Status');
     const iReason = idx('理由', 'Reason');
     const iItemUpdateMode = idx('Item_Update_Mode', 'Item Update Mode', 'Update_Mode', '更新模式');
+    const iPartialPatch = idx('局部修改', 'Partial_Patch', 'Partial Patch');
 
     if (iName < 0) throw new Error('候補表里找不到 大会名 列');
 
     return lines.slice(1).map((line, lineIndex) => {
       const c = line.split('\t');
       const get = i => (i >= 0 ? normalizeText(c[i]) : '');
+      const getRename = i => (i >= 0 ? normalizeRenameText(c[i]) : '');
       const name = get(iName);
       if (!name) return null;
 
       const tournamentId = get(iTournamentId);
       const url = normalizeUrl(get(iUrl) || tournamentId);
-      const items = buildItemListFromColumns(idx, get, { header, includeLegacy: true });
+      const items = buildItemListFromColumns(idx, get, { header, includeLegacy: false });
+      const itemPatches = parsePartialPatchesText(get(iPartialPatch));
       const entry = items.find(item => normalizeText(item.siglas) === DEFAULTS.entrySiglas) || {};
       const reEntry = items.find(item => normalizeText(item.siglas) === DEFAULTS.reSiglas) || {};
       const ticketEntry = items.find(item => ['Ti', 'TE', 'TIX'].includes(normalizeText(item.siglas))) || null;
 
       return {
         name,
-        newName: get(iNewName),
+        newName: getRename(iNewName),
         tournamentId,
         url,
         use: ['使用', '1', 'TRUE', 'Y', '〇', '○'].includes(get(iUse).toUpperCase()) ? '1' : '',
@@ -2185,6 +2771,7 @@
         statusReason: get(iReason),
         itemUpdateMode: get(iItemUpdateMode),
         items,
+        itemPatches,
         entry,
         reEntry,
         ticketEntry,
@@ -2260,13 +2847,14 @@
     }
 
     const summary = tournaments.map((t, i) => {
-      return `${i + 1}. ${t.name}\n   URL=${t.urlStatus} ${t.url}\n   Rename=${t.newName || '(なし)'}\n   Mode=${getItemUpdateMode(t)}\n   Items=${itemListText(t.items)}`;
+      return `${i + 1}. ${t.name}\n   URL=${t.urlStatus} ${t.url}\n   Rename=${t.newName || '(なし)'}\n   Partial=${partialPatchesToText(t.itemPatches) || '(なし)'}\n   Mode=${getItemUpdateMode(t)}\n   Items=${itemListText(t.items) || '(なし)'}`;
     }).join('\n\n');
 
     const ok = confirm(
       `确认开始更新既存比赛项目？\n\n` +
       `这版不会创建比赛、不会改时间、不会设置盲注、不会 link ticket。\n` +
-      `有Item时会开启「USDT販売許可 / 仮想通貨販売許可」；有新大会名时最后执行改名。\n\n` +
+      `完整Item会进入既存详情流程；只有局部修改/改名的行会在后台处理，不跳转页面。\n` +
+      `局部修改只更新指定字段；改名最后执行。\n\n` +
       `Shared URL Cache: ${sharedCacheCount()} 件\n` +
       `本次处理: ${tournaments.length} 件\n\n` +
       `${summary}`
@@ -2280,7 +2868,7 @@
     report.push(makeReportLine('START', `开始更新：${tournaments.length} 件 / Cache=${sharedCacheCount()}`));
 
     tournaments.forEach((t, i) => {
-      report.push(`${i + 1}. ${t.name} -> ${t.newName || '(renameなし)'} / ${t.urlStatus}=${t.url} / Mode=${getItemUpdateMode(t)} / Items=${itemListText(t.items)}`);
+      report.push(`${i + 1}. ${t.name} -> ${t.newName || '(renameなし)'} / ${t.urlStatus}=${t.url} / Partial=${partialPatchesToText(t.itemPatches) || '(なし)'} / Mode=${getItemUpdateMode(t)} / Items=${itemListText(t.items) || '(なし)'}`);
     });
 
     const state = {
@@ -2292,6 +2880,7 @@
       urlSource: '',
       titleVerified: false,
       itemIndex: 0,
+      itemPatchIndex: 0,
       tournaments,
       report
     };
@@ -2437,15 +3026,15 @@
     `;
 
     const saved = localStorage.getItem(CONFIG.inputKey) || [
-      'Name\t新大会名\tTournamentId\tURL\tItem_Update_Mode\tItem1_Name\tItem1_Siglas\tItem1_Value\tItem1_Tax\tItem1_Chips\tItem1_Limit\tItem1_Reposicionar\tItem2_Name\tItem2_Siglas\tItem2_Value\tItem2_Tax\tItem2_Chips\tItem2_Limit\tItem2_Reposicionar\tItem3_Name\tItem3_Siglas\tItem3_Value\tItem3_Tax\tItem3_Chips\tItem3_Limit\tItem3_Reposicionar',
-      '【SPADIE season 41st】#02 NLH Emotional Heart\t【SPADIE season 41st】#02 NLH Emotional Heart NEW\t4484\t/torneio/painel/4484\tname\tEntry\tEn\t5,000\t1,000\t30,000\t1\t0\tRe Entry\tRe\t5,000\t0\t30,000\t3\t1',
-      '【物販 SAMPLE】#01 Goods Booth\t\t9999\t/torneio/painel/9999\tposition\tT-Shirt\tTS\t3,000\t0\t0\t0\t0\tHoodie\tHD\t8,000\t0\t0\t0\t0\tSticker\tST\t500\t0\t0\t0\t0'
+      '大会名\t新大会名\tTournamentId\tURL\tEN金額\tItem_Update_Mode\tItem1_Name\tItem1_Siglas\tItem1_Value\tItem1_Tax\tItem1_Chips\tItem1_Limit\tItem1_Reposicionar',
+      '【JOPT 2026 Tokyo #03】#09 NLH Deepstack Sponsored by POKER Q’z\t【JOPT 2026 Tokyo #03】#09 NLH Deepstack Sponsored by POKER Q’z\t\t\t30000\t\t\t\t\t\t\t\t',
+      '【物販 SAMPLE】#01 Goods Booth\t\t9999\t/torneio/painel/9999\t\tposition\tT-Shirt\tTS\t3,000\t0\t0\t0\t0'
     ].join('\n');
 
 panel.innerHTML = `
   <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
     <div style="font-weight:bold;">
-      PW 既存大会 Item 更新 人工確認版 v0.6.9
+      PW 既存大会 Item 更新 人工確認版 v0.7.4
     </div>
     <div style="display:flex;gap:4px;">
       <button id="pw-item-update-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
@@ -2456,9 +3045,9 @@ panel.innerHTML = `
   <div id="pw-item-update-body">
 
       <div style="font-size:11px;color:#ccc;line-height:1.35;">
-        URL取得順：Preview → URL Resolve → 人工確認 → START<br>
+        URL取得順：Preview → 后台OPEN pool一括取得 → OPEN未発見のみCLOSED pool → 人工確認 → START<br>
         Shared Cache key: <code>${SHARED_URL_CACHE_KEY}</code><br>
-        作成・時間変更・盲注設定・Ticket Linkなし / Item更新 + 新大会名
+        作成・時間変更・盲注設定・Ticket Linkなし / 局部更新・改名は后台実行
       </div>
 
       <textarea id="pw-item-update-input"
@@ -2475,7 +3064,7 @@ panel.innerHTML = `
 
       <button id="pw-item-update-resolve"
         style="width:100%;padding:7px;cursor:pointer;background:#d7f5d8;border:1px solid #8a8;">
-        URL Resolve / URL未解決検索
+        URL Resolve / 后台Pool一括照合
       </button>
 
       <button id="pw-item-update-diag-api"
@@ -2507,6 +3096,9 @@ panel.innerHTML = `
 
       <div style="font-size:11px;color:#f6d365;line-height:1.35;">
         ※ Item列は Item1_Name / Item1_Value ... Item2_Name ... の形式<br>
+        ※ 局部更新：EN金額 / Entry金額 / EN_Value など。空欄の既存項目は変更しません<br>
+        ※ 局部更新・新大会名だけの行はページ遷移なし。后台POST後に后台再読込で検証<br>
+        ※ RE / Re Entry、TE / Ticket も同じ形式で金額・手数料・チップ数・上限・再配置に対応<br>
         ※ 新大会名だけの行も実行可能。改名はItem検証後の最後に実行<br>
         ※ Item_Update_Mode: 空白/position=既存項目順に上書き、name=名前/Siglas一致<br>
         ※ 同名/同Siglasの既存項目があれば編集、なければ新增<br>

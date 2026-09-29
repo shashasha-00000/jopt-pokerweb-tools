@@ -11,8 +11,8 @@
     {
         "file":  "pw-existing-tournament-item-updater.user.js",
         "name":  "PW 既存大会 Item 更新 人工確認版",
-        "version":  "0.6.9",
-        "description":  "既存大会URLをPreview/Resolveで人工確認してから、任意数の販売項目更新と大会名修正を行う。作成・時間変更・Ticket Linkなし。",
+        "version":  "0.7.4",
+        "description":  "OPEN/CLOSED URL poolを后台一括取得して人工確認後、販売項目の全体更新、后台局部更新と大会名修正を行う。",
         "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js",
         "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js",
         "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js"
