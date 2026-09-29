@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         PW 既存大会 Item 更新 人工確認版
 // @namespace    pw-existing-tournament-item-updater-ui
-// @version      0.6.8
+// @version      0.6.9
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js
-// @description  既存大会URLをPreview/Resolveで人工確認してから、USDT販売許可ON、任意数の販売項目を更新する。作成・時間変更・Ticket Linkなし。
+// @description  既存大会URLをPreview/Resolveで人工確認してから、任意数の販売項目更新と大会名修正を行う。作成・時間変更・Ticket Linkなし。
 // @author       xhpc007 + ChatGPT
 // @match        https://japanopt.bt.pokerweb.com.br/*
 // @match        https://japanopt.pokerweb.com.br/*
@@ -582,6 +582,8 @@
       firstCols.includes('EN') ||
       firstCols.includes('URL') ||
       firstCols.includes('TournamentId') ||
+      firstCols.includes('新大会名') ||
+      firstCols.includes('New_Name') ||
       firstCols.some(h => /^Item\s*\d+/i.test(h));
 
     const defaultHeader = [
@@ -619,6 +621,7 @@
     const iTournamentId = idx('TournamentId', 'tournamentId', 'ID');
     const iUrl = idx('URL', 'Url');
     const iItemUpdateMode = idx('Item_Update_Mode', 'Item Update Mode', 'Update_Mode', '更新模式');
+    const iNewName = idx('新大会名', 'New_Name', 'New Name', 'New Tournament Name');
 
     if (iName < 0) {
       throw new Error('TSV里找不到 Name 列');
@@ -641,6 +644,7 @@
 
       return {
         name,
+        newName: get(iNewName),
         tournamentId,
         url,
         itemUpdateMode: get(iItemUpdateMode),
@@ -659,8 +663,8 @@
 
     list.forEach((t, i) => {
       if (!t.name) errors.push(`${i + 1}: name empty`);
-      if (!Array.isArray(t.items) || !t.items.length) {
-        errors.push(`${i + 1}: ${t.name} item empty`);
+      if ((!Array.isArray(t.items) || !t.items.length) && !normalizeText(t.newName)) {
+        errors.push(`${i + 1}: ${t.name} item and 新大会名 both empty`);
         return;
       }
 
@@ -852,6 +856,7 @@
     const header = [
       '本次处理',
       '大会名',
+      '新大会名',
       'TournamentId',
       'URL',
       '判定',
@@ -881,6 +886,7 @@
       lines.push([
         normalizeText(r.use) === '1' ? '使用' : '不使用',
         r.name || '',
+        r.newName || '',
         r.tournamentId || '',
         r.url || '',
         r.urlStatus || '',
@@ -1149,7 +1155,7 @@
     state.tournamentId = resolved.tournamentId || '';
     state.painelUrl = resolved.painelUrl;
     state.urlSource = resolved.source || '';
-    state.step = 'VIRTUAL_CURRENCY';
+    state.step = (t.items || []).length ? 'VIRTUAL_CURRENCY' : 'RENAME';
     setState(state);
 
     location.href = resolved.painelUrl;
@@ -1209,6 +1215,51 @@
     }
 
     throw new Error(`CACHE_TITLE_MISMATCH: expected=${expected} / actual=${actualTitle}`);
+  }
+
+  function getTournamentRenameForm() {
+    return document.querySelector('form[action*="/torneio/alterar_nome"]');
+  }
+
+  function getCurrentTournamentRenameValue() {
+    const form = getTournamentRenameForm();
+    const value = normalizeText(form?.querySelector('[name="nome_caixa_input"]')?.value || '');
+    return value || getPageTournamentTitle();
+  }
+
+  async function postTournamentRename(t, state) {
+    const targetName = normalizeText(t.newName);
+    if (!targetName) return { status: 'SKIP', reason: '新大会名 empty' };
+
+    const currentName = getCurrentTournamentRenameValue();
+    if (compactText(currentName) === compactText(targetName)) {
+      return { status: 'SKIP', reason: 'already target', currentName, targetName };
+    }
+
+    const form = getTournamentRenameForm();
+    if (!form) throw new Error('TOURNAMENT_RENAME_FORM_NOT_FOUND');
+
+    const fd = new FormData(form);
+    fd.set('nome_caixa_input', targetName);
+    fd.set('id_torneio', state.tournamentId || getTournamentIdFromUrl());
+    fd.set('painel', fd.get('painel') || '1');
+
+    state.pendingRenameVerification = { currentName, targetName };
+    state.step = 'RENAME_VERIFY';
+    setState(state);
+
+    const res = await fetch(form.action || '/torneio/alterar_nome', {
+      method: 'POST',
+      body: fd,
+      credentials: 'same-origin',
+      redirect: 'follow'
+    });
+
+    if (!res.ok) {
+      throw new Error(`TOURNAMENT_RENAME_FAILED status=${res.status}: ${(await res.text()).slice(0, 300)}`);
+    }
+
+    return { status: 'POSTED', currentName, targetName };
   }
 
   // ============================================================
@@ -1938,7 +1989,9 @@
 
         if (!items.length) {
           appendReportToState(state, 'SKIP_ITEMS', `${t.name} / item empty`);
-          await moveToNextTournamentOrDone(state);
+          state.step = 'RENAME';
+          setState(state);
+          runCurrentStep();
           return;
         }
 
@@ -2004,6 +2057,45 @@
       }
 
       if (state.step === 'ITEMS_RELOAD') {
+        state.step = 'RENAME';
+        setState(state);
+        runCurrentStep();
+        return;
+      }
+
+      if (state.step === 'RENAME') {
+        if (!normalizeText(t.newName)) {
+          appendReportToState(state, 'SKIP_RENAME', `${t.name} / 新大会名 empty`);
+          await moveToNextTournamentOrDone(state);
+          return;
+        }
+
+        const result = await postTournamentRename(t, state);
+        if (result.status === 'SKIP') {
+          appendReportToState(state, 'RENAME_SKIP', `${t.name} / ${result.reason}`);
+          await moveToNextTournamentOrDone(state);
+          return;
+        }
+
+        appendReportToState(state, 'RENAME_POSTED', `${result.currentName} -> ${result.targetName} / reload verification pending`);
+        log(`大会名変更POST完成：${result.currentName} -> ${result.targetName}`);
+        await sleep(800);
+        location.reload();
+        return;
+      }
+
+      if (state.step === 'RENAME_VERIFY') {
+        const pending = state.pendingRenameVerification;
+        if (!pending?.targetName) throw new Error('RENAME_VERIFY_STATE_MISSING');
+
+        const actualName = getCurrentTournamentRenameValue();
+        if (compactText(actualName) !== compactText(pending.targetName)) {
+          throw new Error(`RENAME_VERIFY_MISMATCH: expected=${pending.targetName} / actual=${actualName}`);
+        }
+
+        appendReportToState(state, 'RENAME_OK', `${pending.currentName} -> ${actualName} / verified after reload`);
+        appendReportToState(state, 'CACHE_REVIEW_REQUIRED', `大会名変更後のため Shared URL Cache を人工確認: ${pending.currentName} -> ${actualName}`);
+        delete state.pendingRenameVerification;
         await moveToNextTournamentOrDone(state);
         return;
       }
@@ -2061,6 +2153,7 @@
 
     const iUse = idx('本次处理', 'USE');
     const iName = idx('大会名', 'Name');
+    const iNewName = idx('新大会名', 'New_Name', 'New Name', 'New Tournament Name');
     const iTournamentId = idx('TournamentId', 'ID');
     const iUrl = idx('URL');
     const iStatus = idx('判定', 'Status');
@@ -2084,6 +2177,7 @@
 
       return {
         name,
+        newName: get(iNewName),
         tournamentId,
         url,
         use: ['使用', '1', 'TRUE', 'Y', '〇', '○'].includes(get(iUse).toUpperCase()) ? '1' : '',
@@ -2166,13 +2260,13 @@
     }
 
     const summary = tournaments.map((t, i) => {
-      return `${i + 1}. ${t.name}\n   URL=${t.urlStatus} ${t.url}\n   Mode=${getItemUpdateMode(t)}\n   Items=${itemListText(t.items)}`;
+      return `${i + 1}. ${t.name}\n   URL=${t.urlStatus} ${t.url}\n   Rename=${t.newName || '(なし)'}\n   Mode=${getItemUpdateMode(t)}\n   Items=${itemListText(t.items)}`;
     }).join('\n\n');
 
     const ok = confirm(
       `确认开始更新既存比赛项目？\n\n` +
       `这版不会创建比赛、不会改时间、不会设置盲注、不会 link ticket。\n` +
-      `会开启「USDT販売許可 / 仮想通貨販売許可」。\n\n` +
+      `有Item时会开启「USDT販売許可 / 仮想通貨販売許可」；有新大会名时最后执行改名。\n\n` +
       `Shared URL Cache: ${sharedCacheCount()} 件\n` +
       `本次处理: ${tournaments.length} 件\n\n` +
       `${summary}`
@@ -2186,7 +2280,7 @@
     report.push(makeReportLine('START', `开始更新：${tournaments.length} 件 / Cache=${sharedCacheCount()}`));
 
     tournaments.forEach((t, i) => {
-      report.push(`${i + 1}. ${t.name} / ${t.urlStatus}=${t.url} / Mode=${getItemUpdateMode(t)} / Items=${itemListText(t.items)}`);
+      report.push(`${i + 1}. ${t.name} -> ${t.newName || '(renameなし)'} / ${t.urlStatus}=${t.url} / Mode=${getItemUpdateMode(t)} / Items=${itemListText(t.items)}`);
     });
 
     const state = {
@@ -2343,15 +2437,15 @@
     `;
 
     const saved = localStorage.getItem(CONFIG.inputKey) || [
-      'Name\tTournamentId\tURL\tItem_Update_Mode\tItem1_Name\tItem1_Siglas\tItem1_Value\tItem1_Tax\tItem1_Chips\tItem1_Limit\tItem1_Reposicionar\tItem2_Name\tItem2_Siglas\tItem2_Value\tItem2_Tax\tItem2_Chips\tItem2_Limit\tItem2_Reposicionar\tItem3_Name\tItem3_Siglas\tItem3_Value\tItem3_Tax\tItem3_Chips\tItem3_Limit\tItem3_Reposicionar',
-      '【SPADIE season 41st】#02 NLH Emotional Heart\t4484\t/torneio/painel/4484\tname\tEntry\tEn\t5,000\t1,000\t30,000\t1\t0\tRe Entry\tRe\t5,000\t0\t30,000\t3\t1',
-      '【物販 SAMPLE】#01 Goods Booth\t9999\t/torneio/painel/9999\tposition\tT-Shirt\tTS\t3,000\t0\t0\t0\t0\tHoodie\tHD\t8,000\t0\t0\t0\t0\tSticker\tST\t500\t0\t0\t0\t0'
+      'Name\t新大会名\tTournamentId\tURL\tItem_Update_Mode\tItem1_Name\tItem1_Siglas\tItem1_Value\tItem1_Tax\tItem1_Chips\tItem1_Limit\tItem1_Reposicionar\tItem2_Name\tItem2_Siglas\tItem2_Value\tItem2_Tax\tItem2_Chips\tItem2_Limit\tItem2_Reposicionar\tItem3_Name\tItem3_Siglas\tItem3_Value\tItem3_Tax\tItem3_Chips\tItem3_Limit\tItem3_Reposicionar',
+      '【SPADIE season 41st】#02 NLH Emotional Heart\t【SPADIE season 41st】#02 NLH Emotional Heart NEW\t4484\t/torneio/painel/4484\tname\tEntry\tEn\t5,000\t1,000\t30,000\t1\t0\tRe Entry\tRe\t5,000\t0\t30,000\t3\t1',
+      '【物販 SAMPLE】#01 Goods Booth\t\t9999\t/torneio/painel/9999\tposition\tT-Shirt\tTS\t3,000\t0\t0\t0\t0\tHoodie\tHD\t8,000\t0\t0\t0\t0\tSticker\tST\t500\t0\t0\t0\t0'
     ].join('\n');
 
 panel.innerHTML = `
   <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
     <div style="font-weight:bold;">
-      PW 既存大会 Item 更新 人工確認版 v0.6.8
+      PW 既存大会 Item 更新 人工確認版 v0.6.9
     </div>
     <div style="display:flex;gap:4px;">
       <button id="pw-item-update-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
@@ -2364,7 +2458,7 @@ panel.innerHTML = `
       <div style="font-size:11px;color:#ccc;line-height:1.35;">
         URL取得順：Preview → URL Resolve → 人工確認 → START<br>
         Shared Cache key: <code>${SHARED_URL_CACHE_KEY}</code><br>
-        作成・時間変更・盲注設定・Ticket Linkなし / Item列は Item1, Item2... 無制限
+        作成・時間変更・盲注設定・Ticket Linkなし / Item更新 + 新大会名
       </div>
 
       <textarea id="pw-item-update-input"
@@ -2391,7 +2485,7 @@ panel.innerHTML = `
 
       <button id="pw-item-update-start"
         style="width:100%;padding:7px;cursor:pointer;background:#ffe08a;border:1px solid #c99;">
-        START 更新既存大会 Item
+        START 更新既存大会 Item / 大会名
       </button>
 
       <button id="pw-item-update-stop"
@@ -2413,6 +2507,7 @@ panel.innerHTML = `
 
       <div style="font-size:11px;color:#f6d365;line-height:1.35;">
         ※ Item列は Item1_Name / Item1_Value ... Item2_Name ... の形式<br>
+        ※ 新大会名だけの行も実行可能。改名はItem検証後の最後に実行<br>
         ※ Item_Update_Mode: 空白/position=既存項目順に上書き、name=名前/Siglas一致<br>
         ※ 同名/同Siglasの既存項目があれば編集、なければ新增<br>
         ※ 旧 EN/RE/Ticket 表頭もまだ読み込み可能<br>

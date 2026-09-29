@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW Prize Plan 書込・確認
 // @namespace    https://japanopt.bt.pokerweb.com.br/
-// @version      2.0.6
+// @version      2.0.7
 // @description  大会Prize表からPLANを作成し、PokerWebへの書込または読取確認を行います。
 // @match        https://japanopt.bt.pokerweb.com.br/*
 // @match        https://japanopt.pokerweb.com.br/*
@@ -15,7 +15,7 @@
 
   const APP = {
     name: 'PW-PRIZE-PLAN',
-    version: '2.0.6',
+    version: '2.0.7',
     panelId: 'pw-prize-plan-panel',
     stateKey: 'PW_PRIZE_PLAN_STATE_V3',
     urlCacheKey: 'PW_SHARED_TOURNAMENT_URL_CACHE_V1',
@@ -107,7 +107,57 @@
   }
 
   function splitTsv(raw) {
-    return String(raw || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').map(line => line.split('\t'));
+    const text = String(raw || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const rows = [];
+    let row = [];
+    let value = '';
+    let quoted = false;
+    let fieldStart = true;
+
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+
+      if (ch === '"') {
+        if (quoted) {
+          if (text[i + 1] === '"') {
+            value += '"';
+            i++;
+          } else {
+            quoted = false;
+          }
+        } else if (fieldStart) {
+          quoted = true;
+        } else {
+          value += '"';
+        }
+        fieldStart = false;
+        continue;
+      }
+
+      if (!quoted && ch === '\t') {
+        row.push(value);
+        value = '';
+        fieldStart = true;
+        continue;
+      }
+
+      if (!quoted && ch === '\n') {
+        row.push(value);
+        rows.push(row);
+        row = [];
+        value = '';
+        fieldStart = true;
+        continue;
+      }
+
+      value += ch;
+      fieldStart = false;
+    }
+
+    if (quoted) throw new Error('TSVの引用符が閉じていません。コピー範囲を再確認してください。');
+    row.push(value);
+    rows.push(row);
+    return rows;
   }
 
   function cell(row, col) {
@@ -342,17 +392,25 @@
         }
         const rawTotal = moneyNumber(cell(totalRow, col));
         const sumPrizes = prizes.reduce((sum, row) => sum + row.amount, 0);
-        const statusRaw = blockStatus(statusRow, col, item.col, end);
-        const kind = statusKind(statusRaw);
         const mode = /player/i.test(currency) ? 'player' : /team/i.test(currency) ? 'team' : (/1\s*人分|player/i.test(item.title) ? 'player' : /team|3on3|tag/i.test(item.title) ? 'team' : 'normal');
+        const statusRaw = blockStatus(
+          statusRow,
+          col,
+          mode === 'player' ? Math.max(0, item.col - 2) : item.col,
+          end
+        );
+        const kind = statusKind(statusRaw);
+        const sourceTitle = mode === 'player' && kind === 'upgrade' && detectVersion(item.title) !== 'upgrade'
+          ? `${item.title}アップグレード`
+          : item.title;
         const total = sumPrizes;
         variants.push({
           id: `v${variants.length}`,
           inputName: item.title,
-          sourceTitle: item.title,
-          baseName: stripVersion(item.title),
-          key: prizeGroupKey(item.title),
-          version: detectVersion(item.title),
+          sourceTitle,
+          baseName: stripVersion(sourceTitle),
+          key: prizeGroupKey(sourceTitle),
+          version: detectVersion(sourceTitle),
           status: kind,
           statusRaw,
           mode,
