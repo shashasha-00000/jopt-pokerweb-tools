@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW Prize Plan 書込・確認
 // @namespace    https://japanopt.bt.pokerweb.com.br/
-// @version      2.0.8
+// @version      2.0.9
 // @description  大会Prize表からPLANを作成し、PokerWebへの書込または読取確認を行います。
 // @match        https://japanopt.bt.pokerweb.com.br/*
 // @match        https://japanopt.pokerweb.com.br/*
@@ -48,7 +48,7 @@
 
   const APP = {
     name: 'PW-PRIZE-PLAN',
-    version: '2.0.8',
+    version: '2.0.9',
     panelId: 'pw-prize-plan-panel',
     stateKey: 'PW_PRIZE_PLAN_STATE_V3',
     urlCacheKey: 'PW_SHARED_TOURNAMENT_URL_CACHE_V1',
@@ -1409,19 +1409,11 @@
         await sleep(500);
         const doc2 = await fetchDoc(item.url);
         const res2 = await postPotTotal(item, doc2);
-        await sleep(700);
-        const verifyDoc = await fetchDoc(item.url);
-        const actual = readPrizeFromDoc(verifyDoc);
-        const diff = compareRows(item.rows, actual.rows);
-        const totalOk = Number(item.total || 0) === Number(actual.total || 0);
-        const verifyOk = !diff.length && totalOk;
-        item.writeStatus = verifyOk ? '書込OK' : '書込失敗';
+        item.writeStatus = 'POST完了・未監査';
         item.writeNote = [
           `Prize ${responseLabel(res1)}`,
           `Total ${responseLabel(res2)}`,
-          verifyOk ? 'Verify OK' : '',
-          !totalOk ? `Verify Total ${yen(actual.total)} != ${yen(item.total)}` : '',
-          diff.slice(0, 3).join(' / ')
+          '反查する場合は「反查 / CHECK」を実行'
         ].filter(Boolean).join(' / ');
       } catch (e) {
         item.writeStatus = '書込失敗';
@@ -1432,8 +1424,8 @@
     }
     const text = matrixLog(plan, 'WRITE');
     await copyText(text);
-    setStatus('書込完了。必要に応じて書込コピーを押してください。');
-    alert('書込完了\n\n結果を確認する場合は「書込コピー」を押してください。');
+    setStatus('書込POST完了・未監査。必要な場合だけ「反查 / CHECK」を実行してください。');
+    alert('書込POST完了（未監査）\n\n必要な場合だけ「反查 / CHECK」を実行してください。');
   }
 
   function renderPlan(plan) {
@@ -1670,7 +1662,7 @@
         <div class="actions">
           <button id="pwPrizeBuild" style="background:#2563eb;color:white;">PLAN作成</button>
           <button id="pwPrizeWrite" style="background:#b45309;color:white;">書込開始</button>
-          <button id="pwPrizeCheck" style="background:#16a34a;color:white;">CHECK</button>
+          <button id="pwPrizeCheck" style="background:#16a34a;color:white;">反查 / CHECK</button>
           <button id="pwPrizeCopyPlan" style="background:#334155;color:white;">PLAN COPY</button>
           <button id="pwPrizeCopyCheck" style="background:#334155;color:white;">CHECK COPY</button>
           <button id="pwPrizeCopyWrite" style="background:#334155;color:white;">書込コピー</button>

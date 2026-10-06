@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW ナショナルチケット Batch
 // @namespace    pw-national-ticket-batch-safe
-// @version      1.3.11
+// @version      1.3.12
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js
 // @description  任意のPokerWeb管理画面からGameID・チケット名TSVを厳密検証し、ナショナルチケットを安全に一件ずつ付与する正式版
@@ -1159,7 +1159,7 @@
       `付与予定: ${remaining.length}件\n` +
       `スキップ: ${skipped.length}件${skipped.length ? ` / GameID=${[...new Set(skipped.map(task => task.gameId))].join(',')}` : ''}\n` +
       `間隔: ${APP.minDelayMs}-${APP.maxDelayMs}ms\n\n` +
-      `発行前の ticket_id 確認は逐件行います。発行後の監査は最後にまとめて実行します。実行しますか？`
+      `発行前の ticket_id 確認は逐件行います。発行後の最終監査は自動実行しません。実行しますか？`
     )) return;
 
     state.running = true;
@@ -1174,14 +1174,11 @@
           await sleep(delay);
         }
       }
-      setStatus(`正式付与POST完了: ${remaining.length} 件。最終監査を開始します。`);
-      const auditSummary = await auditPostedTasks(remaining);
-      setStatus(`正式付与+最終監査完了: 監査OK=${auditSummary.ok} / 監査NG=${auditSummary.errors}`);
+      setStatus(`正式付与POST完了・未監査: ${remaining.length} 件。必要な場合だけ「最終監査」を実行してください。`);
       alert(
-        `正式付与と最終監査が完了しました。\n\n` +
+        `正式付与POSTが完了しました（未監査）。\n\n` +
         `POST対象: ${remaining.length}件\n` +
-        `監査OK: ${auditSummary.ok}件\n` +
-        `監査NG: ${auditSummary.errors}件`
+        `必要な場合だけ「最終監査（任意）」を実行してください。`
       );
     } catch (error) {
       const task = remaining.find(item =>
@@ -1196,6 +1193,33 @@
       }
       setStatus(`正式付与失敗・即時停止: ${error.message || error}`, true);
       alert(`正式付与を即時停止しました。\n\n${error.message || error}`);
+    } finally {
+      state.running = false;
+      savePreview();
+      renderPreview();
+      updateButtons();
+    }
+  }
+
+  async function runFinalAudit() {
+    if (state.running) return;
+    const posted = state.tasks.filter(task => task.postResultStatus && task.auditResult !== 'OK');
+    if (!posted.length) {
+      alert('未監査のPOST済みタスクがありません。');
+      return;
+    }
+    if (!confirm(
+      `POST済みタスクの最終監査を実行します。\n\n` +
+      `対象: ${posted.length}件\n` +
+      `1件あたり通常2回の確認リクエストを使用します。\n\n実行しますか？`
+    )) return;
+
+    state.running = true;
+    updateButtons();
+    try {
+      const auditSummary = await auditPostedTasks(posted);
+      setStatus(`最終監査完了: 監査OK=${auditSummary.ok} / 監査NG=${auditSummary.errors}`);
+      alert(`最終監査が完了しました。\n\n監査OK: ${auditSummary.ok}件\n監査NG: ${auditSummary.errors}件`);
     } finally {
       state.running = false;
       savePreview();
@@ -1240,8 +1264,10 @@
   function updateButtons() {
     const dry = document.querySelector('#pwnt-dry-run');
     const all = document.querySelector('#pwnt-run-all');
+    const audit = document.querySelector('#pwnt-final-audit');
     if (dry) dry.disabled = state.running;
     if (all) all.disabled = state.running || !state.dryRunOk;
+    if (audit) audit.disabled = state.running || !state.tasks.some(task => task.postResultStatus && task.auditResult !== 'OK');
   }
 
   function readTsv() {
@@ -1292,7 +1318,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <strong>PW ナショナルチケット一括付与 正式版 v1.3.11</strong>
+        <strong>PW ナショナルチケット一括付与 正式版 v1.3.12</strong>
         <div><button id="pwnt-min">Min</button> <button id="pwnt-close">x</button></div>
       </div>
       <div id="pwnt-body" style="overflow:auto;margin-top:8px;">
@@ -1307,6 +1333,7 @@
           <button id="pwnt-read" style="flex:1;padding:8px;background:#eee;">TSV読取</button>
           <button id="pwnt-dry-run" style="flex:1;padding:8px;background:#ffe08a;">検証・プレビュー / DRY RUN</button>
           <button id="pwnt-run-all" style="flex:1;padding:8px;background:#ff7675;color:#fff;font-weight:bold;">正式付与</button>
+          <button id="pwnt-final-audit" style="flex:1;padding:8px;background:#74b9ff;color:#fff;font-weight:bold;">最終監査（任意）</button>
           <button id="pwnt-output-log" style="flex:1;padding:8px;background:#bff0c2;">ログ出力</button>
         </div>
         <div style="font-weight:bold;margin-top:8px;">プレビュー表</div>
@@ -1327,6 +1354,7 @@
     document.querySelector('#pwnt-store-name').addEventListener('input', invalidatePreparedState);
     document.querySelector('#pwnt-dry-run').onclick = dryRun;
     document.querySelector('#pwnt-run-all').onclick = runAll;
+    document.querySelector('#pwnt-final-audit').onclick = runFinalAudit;
     document.querySelector('#pwnt-output-log').onclick = outputLog;
     document.querySelector('#pwnt-min').onclick = () => {
       const body = document.querySelector('#pwnt-body');
@@ -1346,7 +1374,8 @@
       parseGroupPage,
       searchInternalId,
       dryRun,
-      runAll
+      runAll,
+      runFinalAudit
     };
   }
 

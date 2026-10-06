@@ -1,10 +1,10 @@
 ﻿// ==UserScript==
 // @name         PW Ticket Link Semi Auto
 // @namespace    pw-ticket-link-semi-auto
-// @version      1.4.1
+// @version      1.4.2
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
-// @description  Ticketルール表から計画を作成し、確認済み大会へLinkした後にPokerWeb実状態を再取得してAudit TSVを出力する。
+// @description  Ticketルール表から計画を作成してLinkする。実状態のAuditは独立ボタンで必要時のみ実行する。
 // @author       xhpc007 + ChatGPT
 // @match        https://japanopt.bt.pokerweb.com.br/*
 // @match        https://japanopt.pokerweb.com.br/*
@@ -2820,22 +2820,11 @@
         `RESULT ${context.index + 1}. status=${context.failed ? "ERROR" : context.skipped ? "SKIP" : context.stopped ? "STOPPED" : context.stage === "DONE" ? "OK" : "QUEUED"} worker=${context.workerId || "-"} id=${context.row["TournamentId"]} stage=${context.stage} tickets=${context.linkedTickets}/${context.tickets.length} task_elapsed_ms=${context.elapsedMs} task_elapsed=${formatDurationMs(context.elapsedMs)} ${context.row["大会名"]}${context.error ? ` error=${context.error}` : ""}`
       ));
 
-      let auditSummary = null;
-      if (!stopRequested) {
-        try {
-          appendReportLine(`[${nowText()}] TICKET_AUDIT_START POST=0`);
-          auditSummary = await runTicketAuditPlan(loadAuditPlan(), { silentAlert: true });
-        } catch (e) {
-          appendReportLine(`[${nowText()}] TICKET_AUDIT_FATAL ${e?.message || e}`);
-        }
-      }
-
       log(stopRequested ? "停止完了" : "全部完成");
       alert(stopRequested
         ? "Ticket Link停止完了。進行中だった処理の結果はReportを確認してください。"
-        : `Ticket Link 全部完成。\n\n実行OK: ${successful.length}\nSKIP: ${skipped.length}\n実行ERROR: ${failed.length}` +
-          (auditSummary ? `\n\nAudit OK: ${auditSummary.counts.OK || 0}\nAudit EXTRA参考: ${auditSummary.counts.OK_WITH_EXISTING_EXTRA || 0}\nAudit MISSING: ${auditSummary.counts.MISSING || 0}\nAudit ERROR: ${auditSummary.counts.ERROR || 0}` : "\n\nAuditを完了できませんでした。") +
-          "\n\nReportとAudit TSVを確認してください。"
+        : `Ticket Link 全部完成（未監査）。\n\n実行OK: ${successful.length}\nSKIP: ${skipped.length}\n実行ERROR: ${failed.length}` +
+          "\n\n必要な場合だけ「Ticket Link再確認（書込なし）」を実行してください。\nReportを確認してください。"
       );
     } finally {
       clearFlowState();

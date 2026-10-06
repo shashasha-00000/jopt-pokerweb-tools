@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW Tournament CLOSE + AUDIT Background Batch
 // @namespace    xhpc007-pw-close-audit-batch-private
-// @version      1.0.6
+// @version      1.0.7
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-close-audit-batch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-close-audit-batch.user.js
 // @description  PW比赛批量 CLOSE / 監査。读取TSV、用Shared Cache / URL pool补全URL、分开执行CLOSE与監査。
@@ -65,7 +65,7 @@
 
   const APP = {
     name: 'PW-CLOSE-AUDIT-BATCH',
-    version: '1.0.6',
+    version: '1.0.7',
 
     // 沿用你之前 URL Manager 的共享 Cache Key
     sharedCacheKey: 'PW_SHARED_TOURNAMENT_URL_CACHE_V1',
@@ -2315,8 +2315,8 @@
     const remaining = direct.queue.length > 10 ? `\n...ほか ${direct.queue.length - 10} 件` : '';
     const operationLabel = operation === 'close' ? 'CLOSE' : '監査';
     const flowLabel = operation === 'close'
-      ? '各大会: GET → CLOSE POST → 再GET検証'
-      : '各大会: GET → 監査 POST → 再GET検証';
+      ? '各大会: GET → CLOSE POST → リダイレクト確認（追加GETなし）'
+      : '各大会: GET → 監査 POST → リダイレクト確認（追加GETなし）';
     if (!confirm(
       `BACKGROUND ${operationLabel} を実行します。\n\n` +
       `対象: ${direct.queue.length} 件\n` +
