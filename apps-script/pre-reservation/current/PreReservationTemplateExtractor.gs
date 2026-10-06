@@ -58,7 +58,7 @@ function extractPreReservationTemplatesFromActiveSheet() {
         cellA1,
         eventName,
         label,
-        preResTemplateInferMailType_(label, parsed.subject),
+        preResTemplateInferMailType_(label, parsed.subject, parsed.body),
         parsed.to,
         parsed.bcc,
         parsed.subject,
@@ -75,11 +75,17 @@ function extractPreReservationTemplatesFromActiveSheet() {
 
   const outputSheet = preResTemplateGetOrCreateOutputSheet_(ss);
   const removed = preResTemplateRefreshRows_(outputSheet, rows, sheet.getName(), eventName);
+  const conflicts = preResTemplateFindAutomaticTypeConflicts_(rows);
   outputSheet.activate();
   SpreadsheetApp.getUi().alert(
     'テンプレートを更新しました。\n\n' +
     '追加: ' + rows.length + '件\n' +
     '削除した旧テンプレート: ' + removed + '件\n\n' +
+    (conflicts.length
+      ? '【要確認】同じ自動メール種別が複数あります。REPORT作成は停止します。\n' +
+        conflicts.join('\n') + '\n' +
+        'PreReservationTemplateSource の mail_type で、自動送信する1件だけ元の種類を残し、他は manual_only または別の種類に変更してください。\n\n'
+      : '') +
     '初期設定はこちらで完了済みです。\n' +
     'メール本文・件名を変更したい場合のみ、元の表の Gmail hyperlink を修正してから再実行してください。'
   );
@@ -136,14 +142,52 @@ function preResTemplateEventName_(sheet) {
   return sheet.getName();
 }
 
-function preResTemplateInferMailType_(label, subject) {
+function preResTemplateInferMailType_(label, subject, body) {
   const source = preResTemplateText_(label + ' ' + subject);
+  if (preResTemplateLooksManualOnly_(label, subject, body)) return 'manual_only';
   if (/キャンセル/.test(source)) return 'cancel';
   if (/当日案内/.test(source) && /決済完了|選手契約履行/.test(source)) return 'contract_confirmed';
   if (/当日案内/.test(source)) return 'day_guide';
   if (/LivePocket/i.test(source)) return 'livepocket_payment';
   if (/コイン|coin/i.test(source)) return 'coin_payment';
   return 'unknown';
+}
+
+function preResTemplateLooksManualOnly_(label, subject, body) {
+  const labelText = preResTemplateText_(label);
+  const source = preResTemplateText_(label + ' ' + subject + ' ' + body);
+  const isLivePocket = /Live\s*Pocket|livepocket/i.test(source);
+  const hasManualPaymentSignal =
+    /バウチャー|voucher|残額|差額|メインチケット/i.test(source) ||
+    (/チケット/.test(labelText) && /Live\s*Pocket|livepocket/i.test(labelText)) ||
+    /チケット\s*[0-9０-９]+\s*枚|[0-9０-９]+\s*枚.*チケット/.test(source);
+  return isLivePocket && hasManualPaymentSignal;
+}
+
+function preResTemplateFindAutomaticTypeConflicts_(rows) {
+  const automaticTypes = {
+    coin_payment: true,
+    livepocket_payment: true,
+    contract_confirmed: true,
+    day_guide: true,
+    cancel: true
+  };
+  const grouped = {};
+  rows.forEach(row => {
+    const mailType = preResTemplateText_(row[5]);
+    if (!automaticTypes[mailType]) return;
+    if (!grouped[mailType]) grouped[mailType] = [];
+    grouped[mailType].push({
+      cell: preResTemplateText_(row[2]),
+      label: preResTemplateText_(row[4]),
+      subject: preResTemplateText_(row[8])
+    });
+  });
+  return Object.keys(grouped)
+    .filter(mailType => grouped[mailType].length > 1)
+    .map(mailType => mailType + ': ' + grouped[mailType]
+      .map(item => item.cell + '「' + item.label + '」/ ' + item.subject)
+      .join(' | '));
 }
 
 function preResTemplateParseGmailComposeUrl_(url) {

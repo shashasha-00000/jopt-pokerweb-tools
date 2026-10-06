@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW URL Cache Manager
 // @namespace    pw-shared-url-cache-manager
-// @version      0.8.0
+// @version      0.8.1
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-url-cache-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-url-cache-manager.user.js
 // @description  PW大会URL共用Cache管理ツール。大会名リスト検索 / イベントPrefix全ページ収集 / 汚染チェック・修復 / Sheet用TSV出力・整庫置換。
@@ -15,6 +15,40 @@
 
 (function () {
   "use strict";
+
+  const PW_REQUEST_MIN_INTERVAL_MS = 6100;
+  const pwNativeFetch = globalThis.fetch.bind(globalThis);
+  let pwRequestQueue = Promise.resolve();
+  let pwLastRequestStartedAt = 0;
+
+  function waitForPwRequestSlot() {
+    const reserve = async () => {
+      const waitMs = Math.max(0, pwLastRequestStartedAt + PW_REQUEST_MIN_INTERVAL_MS - Date.now());
+      if (waitMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, waitMs));
+      }
+      pwLastRequestStartedAt = Date.now();
+    };
+    const current = pwRequestQueue.then(reserve, reserve);
+    pwRequestQueue = current.catch(() => {});
+    return current;
+  }
+
+  async function limitedFetch(...args) {
+    await waitForPwRequestSlot();
+    return pwNativeFetch(...args);
+  }
+
+  const takeRequestSlot = waitForPwRequestSlot;
+
+  function openPwUrlWithDelay(url) {
+    const win = window.open("about:blank", "_blank");
+    if (!win) return null;
+    takeRequestSlot().then(() => {
+      win.location.href = url;
+    });
+    return win;
+  }
 
   const SHARED_CACHE_KEY = "PW_SHARED_TOURNAMENT_URL_CACHE_V1";
   const VALID_DUPLICATE_STATUS = "VALID_DUPLICATE";
@@ -110,14 +144,14 @@
   }
 
   function setStatus(text) {
-    console.log("[PW-URL-CACHE-v0.8.0]", text);
+    console.log("[PW-URL-CACHE-v0.8.1]", text);
     const box = document.querySelector("#pw-url-cache-status");
     if (box) box.textContent = text;
   }
 
   function appendReport(type, msg) {
     const line = `[${nowText()}] ${type}  ${msg}`;
-    console.log("[PW-URL-CACHE-v0.8.0]", line);
+    console.log("[PW-URL-CACHE-v0.8.1]", line);
 
     const box = document.querySelector("#pw-url-cache-report");
     if (box) {
@@ -286,7 +320,7 @@
 
         const open = document.createElement("button");
         open.textContent = "打开URL";
-        open.onclick = () => window.open(row.URL, "_blank");
+        open.onclick = () => openPwUrlWithDelay(row.URL);
         line.appendChild(open);
 
         const adopt = document.createElement("button");
@@ -937,6 +971,7 @@
   }
 
   async function runDataTableActionAndWait(win, dt, action, label) {
+    await takeRequestSlot();
     const drawPromise = waitNextDataTableDraw(win, dt, label);
 
     try {
@@ -1089,6 +1124,7 @@
 
     const input = findDataTablesSearchInputInWindow(win);
     if (input) {
+      await takeRequestSlot();
       dispatchSearchInputInWindow(win, input, searchText);
       await waitSearchStable(win);
     }
@@ -1589,7 +1625,7 @@
 
   async function openTournamentListWindow(page) {
     const win = window.open(
-      page.path,
+      "about:blank",
       `pw_url_cache_${page.label}_${Date.now()}`,
       "width=1280,height=900"
     );
@@ -1597,6 +1633,9 @@
     if (!win) {
       throw new Error(`${page.label}: popup blocked`);
     }
+
+    await takeRequestSlot();
+    win.location.href = page.path;
 
     await waitForWindowLoad(win, 25000);
 
@@ -1676,16 +1715,19 @@
     let found = null;
 
     for (let attempt = 1; attempt <= CONFIG.nameSearchRetry; attempt++) {
+      await takeRequestSlot();
       dispatchSearchInputInWindow(win, input, name);
       await waitSearchStable(win);
 
       found = findTournamentFromRows(await readRowsForReadStable(win, true), name);
       if (found) break;
 
+      await takeRequestSlot();
       dispatchSearchInputInWindow(win, input, "");
       await sleep(CONFIG.betweenSearchMs);
     }
 
+    await takeRequestSlot();
     dispatchSearchInputInWindow(win, input, "");
     await sleep(CONFIG.betweenSearchMs);
 
@@ -2084,7 +2126,7 @@
       panel.style.gap = "8px";
       panel.style.borderRadius = "8px";
       panel.style.maxHeight = "94vh";
-    if (title) title.textContent = "PW URL Cache Manager v0.8.0";
+    if (title) title.textContent = "PW URL Cache Manager v0.8.1";
     }
 
     localStorage.setItem(CONFIG.collapsedKey, collapsed ? "1" : "0");
@@ -2125,7 +2167,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <div id="pw-url-cache-title" style="font-weight:bold;white-space:nowrap;">PW URL Cache Manager v0.8.0</div>
+        <div id="pw-url-cache-title" style="font-weight:bold;white-space:nowrap;">PW URL Cache Manager v0.8.1</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-url-cache-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-url-cache-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>

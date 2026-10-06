@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW 大会作成 Auto
 // @namespace    pw-tournament-create-auto
-// @version      0.4.4
+// @version      0.4.5
 // @description  API-first tournament create flow from fixed TSV with one sequential tournament worker.
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js
@@ -14,6 +14,31 @@
 
 (function () {
   "use strict";
+
+  const PW_REQUEST_MIN_INTERVAL_MS = 6100;
+  const pwNativeFetch = globalThis.fetch.bind(globalThis);
+  let pwRequestQueue = Promise.resolve();
+  let pwLastRequestStartedAt = 0;
+
+  function waitForPwRequestSlot() {
+    const reserve = async () => {
+      const waitMs = Math.max(0, pwLastRequestStartedAt + PW_REQUEST_MIN_INTERVAL_MS - Date.now());
+      if (waitMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, waitMs));
+      }
+      pwLastRequestStartedAt = Date.now();
+    };
+    const current = pwRequestQueue.then(reserve, reserve);
+    pwRequestQueue = current.catch(() => {});
+    return current;
+  }
+
+  async function limitedFetch(...args) {
+    await waitForPwRequestSlot();
+    return pwNativeFetch(...args);
+  }
+
+  const takeRequestSlot = waitForPwRequestSlot;
 
   const DEFAULT_INPUT = `大会名\t日付\t開始時間\tEN名称\tEN略称\tEN金額\tEN手数料\tEN回数\tENチップ数\tRE名称\tRE略称\tRE金額\tRE手数料\tRE回数\tREチップ数\tチケット名称
 test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t【SPADIE TOKYO 42nd】Main Event / -2026.08.31`;
@@ -309,7 +334,7 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t【SPADIE 
     fd.set("ddTrnNovo[vaga_ind]", DEFAULTS.vaga_ind);
     fd.set("ddTrnNovo[datasGeradas]", DEFAULTS.datasGeradas);
 
-    const res = await fetch("/torneio/cadastrar", {
+    const res = await limitedFetch("/torneio/cadastrar", {
       method: "POST",
       body: fd,
       credentials: "same-origin",
@@ -328,7 +353,7 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t【SPADIE 
   }
 
   async function fetchTournamentDoc(id) {
-    const res = await fetch(`/torneio/painel/${id}`, {
+    const res = await limitedFetch(`/torneio/painel/${id}`, {
       credentials: "same-origin",
       cache: "no-store"
     });
@@ -344,7 +369,7 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t【SPADIE 
     body.set("campo", setting.campo);
     body.set("id_torneio", id);
     body.set("status", setting.status);
-    const res = await fetch("/torneio/abas/configuracao/alterar_campos", {
+    const res = await limitedFetch("/torneio/abas/configuracao/alterar_campos", {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
@@ -438,7 +463,7 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t【SPADIE 
       ? "/torneio/abas/configuracao/item_editar"
       : "/torneio/abas/configuracao/item_criar");
 
-    const res = await fetch(action, {
+    const res = await limitedFetch(action, {
       method: "POST",
       body: fd,
       credentials: "same-origin",
@@ -518,7 +543,7 @@ test7777\t2026/07/02\t13:00\t\t\t80000\t1000\t1\t\t\t\t80000\t0\t3\t\t【SPADIE 
     fd.set("codbloq", codbloq);
     fd.set("id_torneio", id);
 
-    const res = await fetch(form.getAttribute("action") || "/torneio/abas/configuracao/vincular_grupos_vagas", {
+    const res = await limitedFetch(form.getAttribute("action") || "/torneio/abas/configuracao/vincular_grupos_vagas", {
       method: "POST",
       body: fd,
       credentials: "same-origin",

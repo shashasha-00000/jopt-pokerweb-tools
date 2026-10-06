@@ -1,146 +1,146 @@
 [
-    {
-        "file":  "pw-cashier-ticket-check.user.js",
-        "name":  "PW キャッシャーチケット Check",
-        "version":  "0.1.2",
-        "description":  "Quick read-only Main Event ticket check from the PokerWeb tournament cashier page.",
-        "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-cashier-ticket-check.user.js",
-        "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-cashier-ticket-check.user.js",
-        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-cashier-ticket-check.user.js"
-    },
-    {
-        "file":  "pw-existing-tournament-item-updater.user.js",
-        "name":  "PW 既存大会 Item 更新 人工確認版",
-        "version":  "0.7.4",
-        "description":  "OPEN/CLOSED URL poolを后台一括取得して人工確認後、販売項目の全体更新、后台局部更新と大会名修正を行う。",
-        "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js",
-        "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js",
-        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js"
-    },
-    {
-        "file":  "pw-main-event-ticket-check.user.js",
-        "name":  "PW Main Event チケット Check",
-        "version":  "1.1.2",
-        "description":  "单个GameID按票名自动解析Main Event ticket group，并区分当前持有与已使用记录。",
-        "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-main-event-ticket-check.user.js",
-        "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-main-event-ticket-check.user.js",
-        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-main-event-ticket-check.user.js"
-    },
-    {
-        "file":  "pw-national-ticket-batch.user.js",
-        "name":  "PW ナショナルチケット Batch",
-        "version":  "1.3.10",
-        "description":  "任意のPokerWeb管理画面からGameID・チケット名TSVを厳密検証し、ナショナルチケットを安全に一件ずつ付与する正式版",
-        "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js",
-        "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js",
-        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js"
-    },
-    {
-        "file":  "pw-panel-drag-helper.user.js",
-        "name":  "PW 共通パネル移動・最小化",
-        "version":  "0.2.4",
-        "description":  "PokerWeb用Tampermonkeyツールの通常パネルをドラッグ移動し、選択中のパネルを最前面に表示します。",
-        "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-panel-drag-helper.user.js",
-        "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-panel-drag-helper.user.js",
-        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-panel-drag-helper.user.js"
-    },
-    {
-        "file":  "pw-prize-batch-manual.user.js",
-        "name":  "PW Prize Plan 書込・確認",
-        "version":  "2.0.7",
-        "description":  "大会Prize表からPLANを作成し、PokerWebへの書込または読取確認を行います。",
-        "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-batch-manual.user.js",
-        "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-batch-manual.user.js",
-        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-batch-manual.user.js"
-    },
-    {
-        "file":  "pw-prize-coin-batch.user.js",
-        "name":  "PW Prize Coin Batch",
-        "version":  "0.4.2",
-        "description":  "TSVを唯一の支払基準として、複数大会の未払いPrizeを照合しPW Coinを一件ずつ付与します。",
-        "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-coin-batch.user.js",
-        "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-coin-batch.user.js",
-        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-coin-batch.user.js"
-    },
-    {
-        "file":  "pw-prize-gameid-check.user.js",
-        "name":  "PW・シーズン プライズGameID照合",
-        "version":  "0.1.2",
-        "description":  "読み取り専用：PWプライズ行のGameIDをシーズンDBと照合します。",
-        "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-gameid-check.user.js",
-        "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-gameid-check.user.js",
-        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-gameid-check.user.js"
-    },
-    {
-        "file":  "pw-receipt-manual-check.user.js",
-        "name":  "PW 領収書 Manual Check",
-        "version":  "1.7.0",
-        "description":  "Manual receipt check. Per-application Game ID, keyword, and date-range TSV with strict URL Cache verification and payment TSV output.",
-        "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js",
-        "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js",
-        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js"
-    },
-    {
-        "file":  "pw-sprinter-chip-leader-award.user.js",
-        "name":  "PW Sprinter・Chip Leader 追加",
-        "version":  "0.2.4",
-        "description":  "Sprinter / Chip Leader の特殊賞を既存Prize末尾に追加・確認します。",
-        "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-sprinter-chip-leader-award.user.js",
-        "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-sprinter-chip-leader-award.user.js",
-        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-sprinter-chip-leader-award.user.js"
-    },
-    {
-        "file":  "pw-ticket-link-semi-auto.user.js",
-        "name":  "PW Ticket Link Semi Auto",
-        "version":  "1.4.0",
-        "description":  "幅広Ticketルール表の無関係列を無視し、対応外大会はSKIP報告。確認済み大会だけを独立workerで逐次Ticket Linkし、tn_ optionのみPOST。",
-        "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js",
-        "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js",
-        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js"
-    },
-    {
-        "file":  "pw-tournament-blind-manual.user.js",
-        "name":  "PW ブラインド設定 Manual（現行可・改善予定）",
-        "version":  "1.2.2",
-        "description":  "PokerWeb blind backend direct success version. Current rules are hardcoded; usable but planned for safer template/preview upgrade.",
-        "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-blind-manual.user.js",
-        "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-blind-manual.user.js",
-        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-blind-manual.user.js"
-    },
-    {
-        "file":  "pw-tournament-close-audit-batch.user.js",
-        "name":  "PW Tournament CLOSE + AUDIT Background Batch",
-        "version":  "1.0.5",
-        "description":  "PW比赛批量 CLOSE / 監査。读取TSV、用Shared Cache / URL pool补全URL、分开执行CLOSE与監査。",
-        "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-close-audit-batch.user.js",
-        "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-close-audit-batch.user.js",
-        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-close-audit-batch.user.js"
-    },
-    {
-        "file":  "pw-tournament-create-auto.user.js",
-        "name":  "PW 大会作成 Auto",
-        "version":  "0.4.4",
-        "description":  "API-first tournament create flow from fixed TSV with independent per-tournament workers.",
-        "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js",
-        "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js",
-        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js"
-    },
-    {
-        "file":  "pw-tournament-double-check.user.js",
-        "name":  "PW 大会 Double Check",
-        "version":  "3.0.2",
-        "description":  "3つの入力（大会名 / Portal Tournament / 受付Portal Ticket Link）から、Start・EN・RE・TE・Chips・Ticket Link・Settings・USDTを一括DC",
-        "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-double-check.user.js",
-        "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-double-check.user.js",
-        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-double-check.user.js"
-    },
-    {
-        "file":  "pw-url-cache-manager.user.js",
-        "name":  "PW URL Cache Manager",
-        "version":  "0.8.0",
-        "description":  "PW大会URL共用Cache管理ツール。大会名リスト検索 / イベントPrefix全ページ収集 / 汚染チェック・修復 / Sheet用TSV出力・整庫置換。",
-        "updateURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-url-cache-manager.user.js",
-        "downloadURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-url-cache-manager.user.js",
-        "rawURL":  "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-url-cache-manager.user.js"
-    }
+  {
+    "file": "pw-cashier-ticket-check.user.js",
+    "name": "PW キャッシャーチケット Check",
+    "version": "0.1.2",
+    "description": "Quick read-only Main Event ticket check from the PokerWeb tournament cashier page.",
+    "updateURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-cashier-ticket-check.user.js",
+    "downloadURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-cashier-ticket-check.user.js",
+    "rawURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-cashier-ticket-check.user.js"
+  },
+  {
+    "file": "pw-existing-tournament-item-updater.user.js",
+    "name": "PW 既存大会 Item 更新 人工確認版",
+    "version": "0.7.4",
+    "description": "OPEN/CLOSED URL poolを后台一括取得して人工確認後、販売項目の全体更新、后台局部更新と大会名修正を行う。",
+    "updateURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js",
+    "downloadURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js",
+    "rawURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-existing-tournament-item-updater.user.js"
+  },
+  {
+    "file": "pw-main-event-ticket-check.user.js",
+    "name": "PW Main Event チケット Check",
+    "version": "1.1.2",
+    "description": "单个GameID按票名自动解析Main Event ticket group，并区分当前持有与已使用记录。",
+    "updateURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-main-event-ticket-check.user.js",
+    "downloadURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-main-event-ticket-check.user.js",
+    "rawURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-main-event-ticket-check.user.js"
+  },
+  {
+    "file": "pw-national-ticket-batch.user.js",
+    "name": "PW ナショナルチケット Batch",
+    "version": "1.3.11",
+    "description": "任意のPokerWeb管理画面からGameID・チケット名TSVを厳密検証し、ナショナルチケットを安全に一件ずつ付与する正式版",
+    "updateURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js",
+    "downloadURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js",
+    "rawURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-national-ticket-batch.user.js"
+  },
+  {
+    "file": "pw-panel-drag-helper.user.js",
+    "name": "PW 共通パネル移動・最小化",
+    "version": "0.2.4",
+    "description": "PokerWeb用Tampermonkeyツールの通常パネルをドラッグ移動し、選択中のパネルを最前面に表示します。",
+    "updateURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-panel-drag-helper.user.js",
+    "downloadURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-panel-drag-helper.user.js",
+    "rawURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-panel-drag-helper.user.js"
+  },
+  {
+    "file": "pw-prize-batch-manual.user.js",
+    "name": "PW Prize Plan 書込・確認",
+    "version": "2.0.8",
+    "description": "大会Prize表からPLANを作成し、PokerWebへの書込または読取確認を行います。",
+    "updateURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-batch-manual.user.js",
+    "downloadURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-batch-manual.user.js",
+    "rawURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-batch-manual.user.js"
+  },
+  {
+    "file": "pw-prize-coin-batch.user.js",
+    "name": "PW Prize Coin Batch",
+    "version": "0.4.3",
+    "description": "TSVを唯一の支払基準として、複数大会の未払いPrizeを照合しPW Coinを一件ずつ付与します。",
+    "updateURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-coin-batch.user.js",
+    "downloadURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-coin-batch.user.js",
+    "rawURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-coin-batch.user.js"
+  },
+  {
+    "file": "pw-prize-gameid-check.user.js",
+    "name": "PW・シーズン プライズGameID照合",
+    "version": "0.1.3",
+    "description": "読み取り専用：PWプライズ行のGameIDをシーズンDBと照合します。",
+    "updateURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-gameid-check.user.js",
+    "downloadURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-gameid-check.user.js",
+    "rawURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-prize-gameid-check.user.js"
+  },
+  {
+    "file": "pw-receipt-manual-check.user.js",
+    "name": "PW 領収書 Manual Check",
+    "version": "1.7.3",
+    "description": "Manual receipt check. Per-application Game ID, keyword, and date-range TSV with strict URL Cache verification and payment TSV output.",
+    "updateURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js",
+    "downloadURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js",
+    "rawURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js"
+  },
+  {
+    "file": "pw-sprinter-chip-leader-award.user.js",
+    "name": "PW Sprinter・Chip Leader 追加",
+    "version": "0.2.4",
+    "description": "Sprinter / Chip Leader の特殊賞を既存Prize末尾に追加・確認します。",
+    "updateURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-sprinter-chip-leader-award.user.js",
+    "downloadURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-sprinter-chip-leader-award.user.js",
+    "rawURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-sprinter-chip-leader-award.user.js"
+  },
+  {
+    "file": "pw-ticket-link-semi-auto.user.js",
+    "name": "PW Ticket Link Semi Auto",
+    "version": "1.4.1",
+    "description": "Ticketルール表から計画を作成し、確認済み大会へLinkした後にPokerWeb実状態を再取得してAudit TSVを出力する。",
+    "updateURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js",
+    "downloadURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js",
+    "rawURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js"
+  },
+  {
+    "file": "pw-tournament-blind-manual.user.js",
+    "name": "PW ブラインド設定 Manual（現行可・改善予定）",
+    "version": "1.2.2",
+    "description": "PokerWeb blind backend direct tool with external saved settings UI and four internal blind structures.",
+    "updateURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-blind-manual.user.js",
+    "downloadURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-blind-manual.user.js",
+    "rawURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-blind-manual.user.js"
+  },
+  {
+    "file": "pw-tournament-close-audit-batch.user.js",
+    "name": "PW Tournament CLOSE + AUDIT Background Batch",
+    "version": "1.0.6",
+    "description": "PW比赛批量 CLOSE / 監査。读取TSV、用Shared Cache / URL pool补全URL、分开执行CLOSE与監査。",
+    "updateURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-close-audit-batch.user.js",
+    "downloadURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-close-audit-batch.user.js",
+    "rawURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-close-audit-batch.user.js"
+  },
+  {
+    "file": "pw-tournament-create-auto.user.js",
+    "name": "PW 大会作成 Auto",
+    "version": "0.4.5",
+    "description": "API-first tournament create flow from fixed TSV with one sequential tournament worker.",
+    "updateURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js",
+    "downloadURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js",
+    "rawURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-create-auto.user.js"
+  },
+  {
+    "file": "pw-tournament-double-check.user.js",
+    "name": "PW Tournament DC 表照合",
+    "version": "3.0.3",
+    "description": "大会管理表を基準にPokerWeb OPEN大会の名称・開始時刻・Chips・Fee・上限・Settingsを読取専用で照合し、TSVを出力する。",
+    "updateURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-double-check.user.js",
+    "downloadURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-double-check.user.js",
+    "rawURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-double-check.user.js"
+  },
+  {
+    "file": "pw-url-cache-manager.user.js",
+    "name": "PW URL Cache Manager",
+    "version": "0.8.1",
+    "description": "PW大会URL共用Cache管理ツール。大会名リスト検索 / イベントPrefix全ページ収集 / 汚染チェック・修復 / Sheet用TSV出力・整庫置換。",
+    "updateURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-url-cache-manager.user.js",
+    "downloadURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-url-cache-manager.user.js",
+    "rawURL": "https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-url-cache-manager.user.js"
+  }
 ]

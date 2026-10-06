@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW Ticket Link Semi Auto
 // @namespace    pw-ticket-link-semi-auto
-// @version      1.4.0
+// @version      1.4.1
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
 // @description  Ticketルール表から計画を作成し、確認済み大会へLinkした後にPokerWeb実状態を再取得してAudit TSVを出力する。
@@ -14,6 +14,31 @@
 
 (function () {
   "use strict";
+
+  const PW_REQUEST_MIN_INTERVAL_MS = 6100;
+  const pwNativeFetch = globalThis.fetch.bind(globalThis);
+  let pwRequestQueue = Promise.resolve();
+  let pwLastRequestStartedAt = 0;
+
+  function waitForPwRequestSlot() {
+    const reserve = async () => {
+      const waitMs = Math.max(0, pwLastRequestStartedAt + PW_REQUEST_MIN_INTERVAL_MS - Date.now());
+      if (waitMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, waitMs));
+      }
+      pwLastRequestStartedAt = Date.now();
+    };
+    const current = pwRequestQueue.then(reserve, reserve);
+    pwRequestQueue = current.catch(() => {});
+    return current;
+  }
+
+  async function limitedFetch(...args) {
+    await waitForPwRequestSlot();
+    return pwNativeFetch(...args);
+  }
+
+  const takeRequestSlot = waitForPwRequestSlot;
 
   const CONFIG = {
     sharedUrlCacheKey: "PW_SHARED_TOURNAMENT_URL_CACHE_V1",
@@ -130,13 +155,13 @@
   }
 
   function log(...args) {
-    console.log("[PW-TICKET-LINK-v1.4.0]", ...args);
+    console.log("[PW-TICKET-LINK-v1.4.1]", ...args);
     const el = document.querySelector("#pw-ticket-link-status");
     if (el) el.textContent = args.map(String).join(" ");
   }
 
   function warn(...args) {
-    console.warn("[PW-TICKET-LINK-v1.4.0]", ...args);
+    console.warn("[PW-TICKET-LINK-v1.4.1]", ...args);
     const el = document.querySelector("#pw-ticket-link-status");
     if (el) el.textContent = "⚠ " + args.map(String).join(" ");
   }
@@ -1462,6 +1487,7 @@
     const drawPromise = waitForNextDraw(win, dt, CONFIG.searchWaitTimeoutMs);
 
     try {
+      await takeRequestSlot();
       dt.draw();
     } catch (e) {
       throw new Error("DataTable draw failed: " + (e.message || String(e)));
@@ -1508,6 +1534,7 @@
     if (!dt) throw new Error("DataTable not found");
     const drawPromise = waitForNextDraw(win, dt, CONFIG.searchWaitTimeoutMs);
     try {
+      await takeRequestSlot();
       dt.page(pageIndex).draw("page");
     } catch (e) {
       throw new Error(`DataTable page ${pageIndex + 1} draw failed: ${e.message || e}`);
@@ -1608,8 +1635,11 @@
     throw new Error("window load timeout");
   }
   async function openTournamentListWindow(path, label) {
-    const win = window.open(path, `pw_ticket_url_${label}_${Date.now()}`, "width=1280,height=900");
+    const win = window.open("about:blank", `pw_ticket_url_${label}_${Date.now()}`, "width=1280,height=900");
     if (!win) throw new Error(`${label}: popup blocked`);
+
+    await takeRequestSlot();
+    win.location.href = path;
 
     await waitForWindowLoad(win, 25000);
 
@@ -1926,7 +1956,7 @@
               url: item.url,
               actualName: item.actualName,
               matchedRow: "manual-force-url",
-              source: "ticket-link-v1.4.0-manual-repair"
+              source: "ticket-link-v1.4.1-manual-repair"
             })
           : [];
 
@@ -2089,7 +2119,7 @@
     const finalUrl = String(url || "").startsWith("http")
       ? String(url)
       : `${location.origin}${url || ""}`;
-    const res = await fetch(finalUrl, {
+    const res = await limitedFetch(finalUrl, {
       method: "GET",
       credentials: "same-origin",
       cache: "no-store",
@@ -2219,7 +2249,7 @@
     }
 
     const action = form.getAttribute("action") || "/torneio/abas/configuracao/vincular_grupos_vagas";
-    const res = await fetch(action, {
+    const res = await limitedFetch(action, {
       method: "POST",
       body: fd,
       credentials: "same-origin",
@@ -2247,7 +2277,7 @@
       console.log(k, "=", v);
     }
 
-    const res = await fetch(form.action || "/torneio/abas/configuracao/vincular_grupos_vagas", {
+    const res = await limitedFetch(form.action || "/torneio/abas/configuracao/vincular_grupos_vagas", {
       method: "POST",
       body: fd,
       credentials: "same-origin",
@@ -3019,7 +3049,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-      <div style="font-weight:bold;">PW Ticket Link Semi Auto v1.4.0</div>
+      <div style="font-weight:bold;">PW Ticket Link Semi Auto v1.4.1</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-ticket-link-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-ticket-link-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>

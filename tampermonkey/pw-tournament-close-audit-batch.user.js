@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW Tournament CLOSE + AUDIT Background Batch
 // @namespace    xhpc007-pw-close-audit-batch-private
-// @version      1.0.5
+// @version      1.0.6
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-close-audit-batch.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-close-audit-batch.user.js
 // @description  PW比赛批量 CLOSE / 監査。读取TSV、用Shared Cache / URL pool补全URL、分开执行CLOSE与監査。
@@ -15,6 +15,31 @@
 
 (() => {
   'use strict';
+
+  const PW_REQUEST_MIN_INTERVAL_MS = 6100;
+  const pwNativeFetch = globalThis.fetch.bind(globalThis);
+  let pwRequestQueue = Promise.resolve();
+  let pwLastRequestStartedAt = 0;
+
+  function waitForPwRequestSlot() {
+    const reserve = async () => {
+      const waitMs = Math.max(0, pwLastRequestStartedAt + PW_REQUEST_MIN_INTERVAL_MS - Date.now());
+      if (waitMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, waitMs));
+      }
+      pwLastRequestStartedAt = Date.now();
+    };
+    const current = pwRequestQueue.then(reserve, reserve);
+    pwRequestQueue = current.catch(() => {});
+    return current;
+  }
+
+  async function limitedFetch(...args) {
+    await waitForPwRequestSlot();
+    return pwNativeFetch(...args);
+  }
+
+  const takeRequestSlot = waitForPwRequestSlot;
 
   /********************************************************************
    * PW Tournament CLOSE + AUDIT Background Batch V1.0
@@ -32,7 +57,7 @@
 
   const APP = {
     name: 'PW-CLOSE-AUDIT-BATCH',
-    version: '1.0.5',
+    version: '1.0.6',
 
     // 沿用你之前 URL Manager 的共享 Cache Key
     sharedCacheKey: 'PW_SHARED_TOURNAMENT_URL_CACHE_V1',
@@ -774,8 +799,11 @@
   }
 
   async function openTournamentListWindow(path, label) {
-    const win = window.open(path, `pwca_url_pool_${label}_${Date.now()}`, 'width=1280,height=900');
+    const win = window.open('about:blank', `pwca_url_pool_${label}_${Date.now()}`, 'width=1280,height=900');
     if (!win) throw new Error(`${label}: popup blocked`);
+
+    await takeRequestSlot();
+    win.location.href = path;
 
     await waitForWindowLoad(win, 25000);
     await waitForDataTableReadyInWindow(win, 20000);
@@ -830,10 +858,12 @@
 
     if (dt) {
       try { dt.page.len(100); } catch (_) {}
+      await takeRequestSlot();
       try { dt.search(value).draw(); } catch (_) {}
     }
 
     if (input) {
+      await takeRequestSlot();
       input.focus();
       input.value = value;
       input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -849,6 +879,7 @@
     const drawPromise = waitForNextDataTableDraw(win, dt, 8000);
 
     try {
+      await takeRequestSlot();
       dt.page(pageIndex).draw('page');
     } catch (e) {
       throw new Error(`DataTable page ${pageIndex + 1} draw failed: ${e.message || e}`);
@@ -1527,7 +1558,9 @@
     saveJob(job);
 
     if (location.href !== targetUrl) {
-      location.href = targetUrl;
+      takeRequestSlot().then(() => {
+        location.href = targetUrl;
+      });
     } else {
       processJobOnTournamentPage().catch(e => {
         err('processJobOnTournamentPage failed', e);
@@ -1603,7 +1636,7 @@
 
   async function fetchTournamentDocInBackground(id) {
     const url = getRelativePanelUrl(id);
-    const res = await fetch(url, {
+    const res = await limitedFetch(url, {
       method: 'GET',
       credentials: 'same-origin',
       cache: 'no-store',
@@ -1704,7 +1737,7 @@
     const action = new URL(actionAttr, location.origin).href;
 
     appendReport(`BACKGROUND_${type.toUpperCase()}_POST`, `id=${item.tournamentId} action=${action}`);
-    const res = await fetch(action, {
+    const res = await limitedFetch(action, {
       method: 'POST',
       body: fd,
       credentials: 'same-origin',
@@ -2651,7 +2684,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-      <div style="font-weight:700;">PW CLOSE/AUDIT Batch v1.0.5</div>
+      <div style="font-weight:700;">PW CLOSE/AUDIT Batch v1.0.6</div>
         <div style="display:flex;gap:4px;">
           <button id="pwca-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pwca-close-panel" style="font-size:11px;padding:2px 6px;cursor:pointer;">×</button>

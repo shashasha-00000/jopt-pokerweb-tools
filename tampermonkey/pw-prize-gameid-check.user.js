@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW・シーズン プライズGameID照合
 // @namespace    https://japanopt.bt.pokerweb.com.br/
-// @version      0.1.2
+// @version      0.1.3
 // @description  読み取り専用：PWプライズ行のGameIDをシーズンDBと照合します。
 // @match        https://japanopt.bt.pokerweb.com.br/*
 // @match        https://japanopt.pokerweb.com.br/*
@@ -12,6 +12,31 @@
 
 (function () {
   'use strict';
+
+  const PW_REQUEST_MIN_INTERVAL_MS = 6100;
+  const pwNativeFetch = globalThis.fetch.bind(globalThis);
+  let pwRequestQueue = Promise.resolve();
+  let pwLastRequestStartedAt = 0;
+
+  function waitForPwRequestSlot() {
+    const reserve = async () => {
+      const waitMs = Math.max(0, pwLastRequestStartedAt + PW_REQUEST_MIN_INTERVAL_MS - Date.now());
+      if (waitMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, waitMs));
+      }
+      pwLastRequestStartedAt = Date.now();
+    };
+    const current = pwRequestQueue.then(reserve, reserve);
+    pwRequestQueue = current.catch(() => {});
+    return current;
+  }
+
+  async function limitedFetch(...args) {
+    await waitForPwRequestSlot();
+    return pwNativeFetch(...args);
+  }
+
+  const takeRequestSlot = waitForPwRequestSlot;
 
   const APP = {
     name: 'PW・シーズン プライズGameID照合',
@@ -141,7 +166,7 @@
   }
 
   async function postForm(url, dataObj) {
-    const res = await fetch(url, {
+    const res = await limitedFetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',

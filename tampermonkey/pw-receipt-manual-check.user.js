@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW 領収書 Manual Check
 // @namespace    pw-receipt-manual-check
-// @version      1.7.2
+// @version      1.7.3
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js
 // @description  Manual receipt check. Per-application Game ID, keyword, and date-range TSV with strict URL Cache verification and payment TSV output.
@@ -14,6 +14,40 @@
 
 (function () {
   "use strict";
+
+  const PW_REQUEST_MIN_INTERVAL_MS = 6100;
+  const pwNativeFetch = globalThis.fetch.bind(globalThis);
+  let pwRequestQueue = Promise.resolve();
+  let pwLastRequestStartedAt = 0;
+
+  function waitForPwRequestSlot() {
+    const reserve = async () => {
+      const waitMs = Math.max(0, pwLastRequestStartedAt + PW_REQUEST_MIN_INTERVAL_MS - Date.now());
+      if (waitMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, waitMs));
+      }
+      pwLastRequestStartedAt = Date.now();
+    };
+    const current = pwRequestQueue.then(reserve, reserve);
+    pwRequestQueue = current.catch(() => {});
+    return current;
+  }
+
+  async function limitedFetch(...args) {
+    await waitForPwRequestSlot();
+    return pwNativeFetch(...args);
+  }
+
+  const takeRequestSlot = waitForPwRequestSlot;
+
+  function openPwUrlWithDelay(url) {
+    const win = window.open("about:blank", "_blank");
+    if (!win) return null;
+    takeRequestSlot().then(() => {
+      win.location.href = url;
+    });
+    return win;
+  }
 
   const CONFIG = {
     defaultDateRange: "02/01/2025 - 31/12/2026",
@@ -124,11 +158,11 @@
   }
 
   function log(...args) {
-    console.log("[PW-MANUAL-v1.7.0]", ...args);
+    console.log("[PW-MANUAL-v1.7.3]", ...args);
   }
 
   function warn(...args) {
-    console.warn("[PW-MANUAL-v1.7.0]", ...args);
+    console.warn("[PW-MANUAL-v1.7.3]", ...args);
   }
 
   function setStatus(text) {
@@ -630,7 +664,7 @@
   }
 
   async function postForm(url, dataObj) {
-    const res = await fetch(url, {
+    const res = await limitedFetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
@@ -696,7 +730,7 @@
   async function requestPlayerTournamentHtml(internalId, dateRange) {
     const pageUrl = `/jogadores_cb/painel/${internalId}`;
 
-    const getRes = await fetch(pageUrl, { method: "GET", credentials: "same-origin" });
+    const getRes = await limitedFetch(pageUrl, { method: "GET", credentials: "same-origin" });
     if (!getRes.ok) throw new Error(`player page GET HTTP ${getRes.status}`);
 
     const pageHtml = await getRes.text();
@@ -1107,6 +1141,7 @@
     const drawPromise = waitForNextDraw(win, dt, CONFIG.searchWaitTimeoutMs);
 
     try {
+      await takeRequestSlot();
       dt.draw();
     } catch (e) {
       throw new Error("DataTable draw failed: " + (e.message || String(e)));
@@ -1178,6 +1213,7 @@
 
       if (page > 0) {
         const drawPromise = waitForNextDraw(win, dt, CONFIG.searchWaitTimeoutMs);
+        await takeRequestSlot();
         dt.page(page).draw("page");
         if (!await drawPromise) throw new Error(`${source}: page ${page + 1} draw timeout`);
         await waitForSearchResultStable(win, dt);
@@ -1256,8 +1292,11 @@
     throw new Error("window load timeout");
   }
   async function openTournamentListWindow(path, label) {
-    const win = window.open(path, `pw_manual_url_${label}_${Date.now()}`, "width=1280,height=900");
+    const win = window.open("about:blank", `pw_manual_url_${label}_${Date.now()}`, "width=1280,height=900");
     if (!win) throw new Error(`${label}: popup blocked`);
+
+    await takeRequestSlot();
+    win.location.href = path;
 
     await waitForWindowLoad(win, 25000);
 
@@ -1513,7 +1552,7 @@
       if (playerId && playerUrl) {
         const open = document.createElement("button");
         open.textContent = `打开玩家页面URL ${playerId}`;
-        open.onclick = () => window.open(playerUrl, "_blank");
+        open.onclick = () => openPwUrlWithDelay(playerUrl);
         actions.appendChild(open);
 
         const useOnce = document.createElement("button");
@@ -1534,7 +1573,7 @@
 
         const open = document.createElement("button");
         open.textContent = `打开Cache URL ${cached.tournamentId}`;
-        open.onclick = () => window.open(cached.url, "_blank");
+        open.onclick = () => openPwUrlWithDelay(cached.url);
         actions.appendChild(open);
 
         const useOnce = document.createElement("button");
@@ -1552,7 +1591,7 @@
       for (const candidate of parseReviewCandidates(row["理由"])) {
         const open = document.createElement("button");
         open.textContent = `打开候補URL ${candidate.tournamentId}`;
-        open.onclick = () => window.open(candidate.url, "_blank");
+        open.onclick = () => openPwUrlWithDelay(candidate.url);
         actions.appendChild(open);
 
         const useOnce = document.createElement("button");
@@ -2655,7 +2694,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-      <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.7.0</div>
+      <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.7.3</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-manual-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-manual-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>

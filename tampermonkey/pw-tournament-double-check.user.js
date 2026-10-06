@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW Tournament DC 表照合
 // @namespace    pw-tournament-double-check
-// @version      3.0.2
+// @version      3.0.3
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-double-check.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-tournament-double-check.user.js
 // @description  大会管理表を基準にPokerWeb OPEN大会の名称・開始時刻・Chips・Fee・上限・Settingsを読取専用で照合し、TSVを出力する。
@@ -15,8 +15,33 @@
 (function () {
   "use strict";
 
+  const PW_REQUEST_MIN_INTERVAL_MS = 6100;
+  const pwNativeFetch = globalThis.fetch.bind(globalThis);
+  let pwRequestQueue = Promise.resolve();
+  let pwLastRequestStartedAt = 0;
+
+  function waitForPwRequestSlot() {
+    const reserve = async () => {
+      const waitMs = Math.max(0, pwLastRequestStartedAt + PW_REQUEST_MIN_INTERVAL_MS - Date.now());
+      if (waitMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, waitMs));
+      }
+      pwLastRequestStartedAt = Date.now();
+    };
+    const current = pwRequestQueue.then(reserve, reserve);
+    pwRequestQueue = current.catch(() => {});
+    return current;
+  }
+
+  async function limitedFetch(...args) {
+    await waitForPwRequestSlot();
+    return pwNativeFetch(...args);
+  }
+
+  const takeRequestSlot = waitForPwRequestSlot;
+
   const APP = {
-    version: "3.0.2",
+    version: "3.0.3",
     openListPath: "/torneio/abertos",
     pageLength: 100,
     waitMs: 25000,
@@ -395,6 +420,7 @@
       dt.search(query || prefix);
       dt.page.len(APP.pageLength);
       dt.page(0);
+      await takeRequestSlot();
       dt.draw();
       await draw;
       await sleep(200);
@@ -402,6 +428,7 @@
     }
     const input = [...win.document.querySelectorAll('.dataTables_filter input[type="search"],input[type="search"]')].find(el => isVisible(win, el));
     if (input) {
+      await takeRequestSlot();
       input.value = prefix;
       input.dispatchEvent(new win.Event("input", { bubbles: true }));
       input.dispatchEvent(new win.Event("change", { bubbles: true }));
@@ -413,6 +440,7 @@
   async function goTablePage(win, dt, page) {
     if (!dt) return;
     const draw = waitDraw(win, dt);
+    await takeRequestSlot();
     dt.page(page).draw("page");
     if (!(await draw)) throw new Error(`OPEN一覧 ${page + 1}ページの描画timeout`);
     await sleep(APP.betweenPagesMs);
@@ -471,8 +499,10 @@
   }
 
   async function scanOpen(prefix) {
-    const win = window.open(APP.openListPath, `pw_tournament_dc_open_${Date.now()}`, "width=1280,height=900");
+    const win = window.open("about:blank", `pw_tournament_dc_open_${Date.now()}`, "width=1280,height=900");
     if (!win) throw new Error("Popupがブロックされました。OPEN一覧を開けません。");
+    await takeRequestSlot();
+    win.location.href = APP.openListPath;
     const found = [];
     const seen = new Set();
     try {
@@ -575,7 +605,7 @@
   }
 
   async function fetchActual(entry) {
-    const response = await fetch(new URL(entry.url, location.origin).href, { credentials: "include", cache: "no-store" });
+    const response = await limitedFetch(new URL(entry.url, location.origin).href, { credentials: "include", cache: "no-store" });
     if (!response.ok) throw new Error(`GET ${response.status}: ${entry.url}`);
     const html = await response.text();
     const doc = new DOMParser().parseFromString(html, "text/html");

@@ -394,7 +394,7 @@ function preResMailerBuildReport_(mailTypeFilter, reportLabel) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   preResMailerEnsureTokyoTimezone_(ss);
   const ctx = preResMailerResolveContext_(ss);
-  const templates = preResMailerLoadTemplates_(ss, ctx);
+  const templates = preResMailerLoadTemplates_(ss, ctx, mailTypeFilter);
   const reportGeneratedAt = new Date();
   const rows = preResMailerReadSourceRowsWithoutUpdates_(
     ctx.sourceSheet,
@@ -405,6 +405,7 @@ function preResMailerBuildReport_(mailTypeFilter, reportLabel) {
   const output = [];
   const richLinks = [];
   const paymentDeadlineRows = [];
+  const missingTemplateTypes = {};
 
   latestRows.forEach(row => {
     const mailType = preResMailerMailTypeForRow_(row);
@@ -412,7 +413,10 @@ function preResMailerBuildReport_(mailTypeFilter, reportLabel) {
     if (mailTypeFilter && mailType !== mailTypeFilter) return;
 
     const template = templates[mailType];
-    if (!template) return;
+    if (!template) {
+      missingTemplateTypes[mailType] = true;
+      return;
+    }
 
     const mail = preResMailerBuildMail_(template, row, ctx);
     output.push([
@@ -443,6 +447,16 @@ function preResMailerBuildReport_(mailTypeFilter, reportLabel) {
       paymentDeadlineRows.push(row);
     }
   });
+
+  const missingTypes = Object.keys(missingTemplateTypes);
+  if (missingTypes.length) {
+    throw new Error(
+      '現在の大会に一致するテンプレートがありません。別大会のテンプレートは使用しません。\n' +
+      '大会名: ' + ctx.eventName + '\n' +
+      '不足: ' + missingTypes.join(', ') + '\n' +
+      '元の表からテンプレート再抽出後、PreReservationTemplateSource の event_name / mail_type を確認してください。'
+    );
+  }
 
   const report = preResMailerGetOrCreateReportSheet_(ss);
   report.clear();
@@ -774,7 +788,7 @@ function preResMailerFindMaxApplicants_(sheet) {
   return 0;
 }
 
-function preResMailerLoadTemplates_(ss, ctx) {
+function preResMailerLoadTemplates_(ss, ctx, mailTypeFilter) {
   const sheet = ss.getSheetByName(PRE_RES_TEMPLATE_MAILER.templateSourceSheetName);
   if (!sheet) throw new Error('PreReservationTemplateSource が見つかりません。先にテンプレート抽出を実行してください。');
 
@@ -787,13 +801,15 @@ function preResMailerLoadTemplates_(ss, ctx) {
     sourceSheet: headers.indexOf('source_sheet'),
     eventName: headers.indexOf('event_name'),
     mailType: headers.indexOf('mail_type'),
+    sourceCell: headers.indexOf('source_cell'),
+    templateLabel: headers.indexOf('template_label'),
     bcc: headers.indexOf('bcc'),
     subject: headers.indexOf('subject'),
     body: headers.indexOf('body')
   };
 
-  const exact = {};
-  const fallback = {};
+  const exactCandidates = {};
+  const allCandidates = {};
 
   for (let row = 1; row < values.length; row++) {
     const item = {
@@ -801,24 +817,45 @@ function preResMailerLoadTemplates_(ss, ctx) {
       sourceSheet: preResMailerText_(values[row][idx.sourceSheet]),
       eventName: preResMailerText_(values[row][idx.eventName]),
       mailType: preResMailerText_(values[row][idx.mailType]),
+      sourceCell: idx.sourceCell >= 0 ? preResMailerText_(values[row][idx.sourceCell]) : '',
+      templateLabel: idx.templateLabel >= 0 ? preResMailerText_(values[row][idx.templateLabel]) : '',
       bcc: preResMailerText_(values[row][idx.bcc]) || PRE_RES_TEMPLATE_MAILER.defaultBcc,
       subject: String(values[row][idx.subject] == null ? '' : values[row][idx.subject]),
       body: String(values[row][idx.body] == null ? '' : values[row][idx.body])
     };
     if (!item.mailType || !item.subject || !item.body) continue;
 
+    if (!allCandidates[item.mailType]) allCandidates[item.mailType] = [];
+    allCandidates[item.mailType].push(item);
+
     const isExact = item.eventName === ctx.eventName || (ctx.controlSheet && item.sourceSheet === ctx.controlSheet.getName());
-    if (isExact && (!exact[item.mailType] || exact[item.mailType].extractedAt < item.extractedAt)) {
-      exact[item.mailType] = item;
-    }
-    if (!fallback[item.mailType] || fallback[item.mailType].extractedAt < item.extractedAt) {
-      fallback[item.mailType] = item;
-    }
+    if (!isExact) continue;
+    if (!exactCandidates[item.mailType]) exactCandidates[item.mailType] = [];
+    exactCandidates[item.mailType].push(item);
   }
 
   const result = {};
   PRE_RES_TEMPLATE_MAILER.templateTypes.forEach(type => {
-    result[type] = exact[type] || fallback[type] || null;
+    const exact = exactCandidates[type] || [];
+    const candidates = exact.length ? exact : (allCandidates[type] || []);
+    const scopeLabel = exact.length ? '現在の大会' : '全テンプレート';
+    const shouldValidate = !mailTypeFilter || type === mailTypeFilter;
+    if (shouldValidate && candidates.length > 1) {
+      throw new Error(
+        '同じ自動メール種別の候補が複数あります。自動選択を停止しました。\n' +
+        '大会名: ' + ctx.eventName + '\n' +
+        'mail_type: ' + type + '\n' +
+        '検索範囲: ' + scopeLabel + '\n' +
+        candidates.map(item =>
+          '- ' + (item.sourceSheet || '(sheet不明)') + '!' + (item.sourceCell || '(cell不明)') +
+          ' / ' + (item.templateLabel || '(名称なし)') +
+          ' / ' + item.subject
+        ).join('\n') + '\n' +
+        'PreReservationTemplateSource の mail_type で、自動送信する1件だけ ' + type +
+        ' を残し、他は manual_only または別の種類に変更してください。'
+      );
+    }
+    result[type] = candidates.length === 1 ? candidates[0] : null;
   });
   return result;
 }

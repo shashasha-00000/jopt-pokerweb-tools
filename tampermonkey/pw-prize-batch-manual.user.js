@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW Prize Plan 書込・確認
 // @namespace    https://japanopt.bt.pokerweb.com.br/
-// @version      2.0.7
+// @version      2.0.8
 // @description  大会Prize表からPLANを作成し、PokerWebへの書込または読取確認を行います。
 // @match        https://japanopt.bt.pokerweb.com.br/*
 // @match        https://japanopt.pokerweb.com.br/*
@@ -13,9 +13,34 @@
 (function () {
   'use strict';
 
+  const PW_REQUEST_MIN_INTERVAL_MS = 6100;
+  const pwNativeFetch = globalThis.fetch.bind(globalThis);
+  let pwRequestQueue = Promise.resolve();
+  let pwLastRequestStartedAt = 0;
+
+  function waitForPwRequestSlot() {
+    const reserve = async () => {
+      const waitMs = Math.max(0, pwLastRequestStartedAt + PW_REQUEST_MIN_INTERVAL_MS - Date.now());
+      if (waitMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, waitMs));
+      }
+      pwLastRequestStartedAt = Date.now();
+    };
+    const current = pwRequestQueue.then(reserve, reserve);
+    pwRequestQueue = current.catch(() => {});
+    return current;
+  }
+
+  async function limitedFetch(...args) {
+    await waitForPwRequestSlot();
+    return pwNativeFetch(...args);
+  }
+
+  const takeRequestSlot = waitForPwRequestSlot;
+
   const APP = {
     name: 'PW-PRIZE-PLAN',
-    version: '2.0.7',
+    version: '2.0.8',
     panelId: 'pw-prize-plan-panel',
     stateKey: 'PW_PRIZE_PLAN_STATE_V3',
     urlCacheKey: 'PW_SHARED_TOURNAMENT_URL_CACHE_V1',
@@ -560,6 +585,7 @@
         dt.search(prefix);
         dt.page.len(APP.pageLength);
         dt.page(0);
+        await takeRequestSlot();
         dt.draw();
         await draw;
         await sleep(200);
@@ -568,6 +594,7 @@
     }
     const input = [...win.document.querySelectorAll('.dataTables_filter input[type="search"], input[type="search"]')].find(el => isVisible(win, el));
     if (input) {
+      await takeRequestSlot();
       input.value = prefix;
       input.dispatchEvent(new win.Event('input', { bubbles: true }));
       input.dispatchEvent(new win.Event('change', { bubbles: true }));
@@ -580,6 +607,7 @@
     if (!dt) throw new Error('DataTable not found');
     const draw = waitDraw(win, dt);
     try {
+      await takeRequestSlot();
       dt.page(page).draw('page');
     } catch (e) {
       throw new Error(`DataTable page ${page + 1} draw failed: ${e.message || e}`);
@@ -664,8 +692,10 @@
   }
 
   async function openListWindow(page) {
-    const win = window.open(page.path, `pw_prize_url_${page.label}_${Date.now()}`, 'width=1280,height=900');
+    const win = window.open('about:blank', `pw_prize_url_${page.label}_${Date.now()}`, 'width=1280,height=900');
     if (!win) throw new Error(`${page.label}: popup blocked`);
+    await takeRequestSlot();
+    win.location.href = page.path;
     await waitForWindowLoad(win);
     await waitForInWindow(win, w => dataTable(w) || rowsForRead(w, false).length);
     await sleep(700);
@@ -1118,7 +1148,7 @@
 
   async function fetchDoc(url) {
     const absolute = url.startsWith('http') ? url : new URL(url, location.origin).href;
-    const res = await fetch(absolute, { credentials: 'include', cache: 'no-store' });
+    const res = await limitedFetch(absolute, { credentials: 'include', cache: 'no-store' });
     const html = await res.text();
     if (!res.ok) throw new Error(`GET ${res.status}`);
     const doc = new DOMParser().parseFromString(html, 'text/html');
@@ -1309,7 +1339,7 @@
     const params = new URLSearchParams();
     params.append('dados', JSON.stringify(buildPrizePayload(item, doc)));
     params.append('codbloq', codbloq);
-    return fetch(APP.endpointPrizeList, {
+    return limitedFetch(APP.endpointPrizeList, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
@@ -1330,7 +1360,7 @@
       potgarantido: '0',
       codbloq
     });
-    return fetch(APP.endpointPotTotal(item.tournamentId), {
+    return limitedFetch(APP.endpointPotTotal(item.tournamentId), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'

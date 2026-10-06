@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PW Prize Coin Batch
 // @namespace    https://japanopt.bt.pokerweb.com.br/
-// @version      0.4.2
+// @version      0.4.3
 // @description  TSVを唯一の支払基準として、複数大会の未払いPrizeを照合しPW Coinを一件ずつ付与します。
 // @match        https://japanopt.bt.pokerweb.com.br/*
 // @match        https://japanopt.pokerweb.com.br/*
@@ -14,8 +14,42 @@
 (function () {
   'use strict';
 
+  const PW_REQUEST_MIN_INTERVAL_MS = 6100;
+  const pwNativeFetch = globalThis.fetch.bind(globalThis);
+  let pwRequestQueue = Promise.resolve();
+  let pwLastRequestStartedAt = 0;
+
+  function waitForPwRequestSlot() {
+    const reserve = async () => {
+      const waitMs = Math.max(0, pwLastRequestStartedAt + PW_REQUEST_MIN_INTERVAL_MS - Date.now());
+      if (waitMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, waitMs));
+      }
+      pwLastRequestStartedAt = Date.now();
+    };
+    const current = pwRequestQueue.then(reserve, reserve);
+    pwRequestQueue = current.catch(() => {});
+    return current;
+  }
+
+  async function limitedFetch(...args) {
+    await waitForPwRequestSlot();
+    return pwNativeFetch(...args);
+  }
+
+  const takeRequestSlot = waitForPwRequestSlot;
+
+  function openPwUrlWithDelay(url) {
+    const win = window.open('about:blank', '_blank');
+    if (!win) return null;
+    takeRequestSlot().then(() => {
+      win.location.href = url;
+    });
+    return win;
+  }
+
   const APP = {
-    version: '0.4.0',
+    version: '0.4.3',
     panelId: 'pw-prize-coin-batch-panel',
     inputKey: 'PW_PRIZE_COIN_BATCH_INPUT_V1',
     scopeKey: 'PW_PRIZE_COIN_BATCH_SCOPE_V1',
@@ -525,6 +559,7 @@
     dt.search(norm(keyword));
     dt.page(0);
     const draw = waitDraw(win, dt);
+    await takeRequestSlot();
     dt.draw();
     if (!await draw) throw new Error('DataTable search draw timeout');
     if (!await waitForProcessingGone(win, dt)) {
@@ -547,6 +582,7 @@
       return;
     }
     const draw = waitDraw(win, dt);
+    await takeRequestSlot();
     dt.page(page).draw('page');
     if (!await draw) throw new Error(`DataTable page ${page + 1} draw timeout`);
     if (!await waitForProcessingGone(win, dt)) {
@@ -604,7 +640,7 @@
   }
 
   async function requestText(url, options = {}) {
-    const response = await fetch(url, {
+    const response = await limitedFetch(url, {
       credentials: 'same-origin',
       cache: 'no-store',
       ...options
@@ -1467,7 +1503,7 @@
     document.querySelector('#pwpcb-stop').addEventListener('click', stopRun);
     document.querySelector('#pwpcb-copy').addEventListener('click', copyResults);
     document.querySelector('#pwpcb-manual-open').addEventListener('click', () => {
-      window.open('/torneio/abertos', '_blank', 'noopener');
+      openPwUrlWithDelay('/torneio/abertos');
     });
     document.querySelector('#pwpcb-manual-input').addEventListener('keydown', event => {
       if (event.key !== 'Enter') return;
