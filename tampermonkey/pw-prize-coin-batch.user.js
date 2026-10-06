@@ -15,17 +15,25 @@
   'use strict';
 
   const PW_REQUEST_MIN_INTERVAL_MS = 6100;
+  const PW_REQUEST_LAST_STARTED_KEY = "PW_PRIZE_COIN_BATCH_LAST_REQUEST_START_V1";
   const pwNativeFetch = globalThis.fetch.bind(globalThis);
   let pwRequestQueue = Promise.resolve();
-  let pwLastRequestStartedAt = 0;
+  let pwLastRequestStartedAt = Math.max(
+    Number(localStorage.getItem(PW_REQUEST_LAST_STARTED_KEY) || 0),
+    Date.now()
+  );
+  localStorage.setItem(PW_REQUEST_LAST_STARTED_KEY, String(pwLastRequestStartedAt));
 
   function waitForPwRequestSlot() {
     const reserve = async () => {
-      const waitMs = Math.max(0, pwLastRequestStartedAt + PW_REQUEST_MIN_INTERVAL_MS - Date.now());
+      const storedLastStartedAt = Number(localStorage.getItem(PW_REQUEST_LAST_STARTED_KEY) || 0);
+      const lastStartedAt = Math.max(pwLastRequestStartedAt, storedLastStartedAt);
+      const waitMs = Math.max(0, lastStartedAt + PW_REQUEST_MIN_INTERVAL_MS - Date.now());
       if (waitMs > 0) {
         await new Promise(resolve => setTimeout(resolve, waitMs));
       }
       pwLastRequestStartedAt = Date.now();
+      localStorage.setItem(PW_REQUEST_LAST_STARTED_KEY, String(pwLastRequestStartedAt));
     };
     const current = pwRequestQueue.then(reserve, reserve);
     pwRequestQueue = current.catch(() => {});
