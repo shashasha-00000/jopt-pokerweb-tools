@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW 領収書 Manual Check
 // @namespace    pw-receipt-manual-check
-// @version      1.7.4
+// @version      1.7.5
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js
 // @description  Manual receipt check. Per-application Game ID, keyword, and date-range TSV with strict URL Cache verification and payment TSV output.
@@ -15,7 +15,7 @@
 (function () {
   "use strict";
 
-  const PW_REQUEST_MIN_INTERVAL_MS = 6100;
+  const PW_REQUEST_MIN_INTERVAL_MS = 610;
   const PW_REQUEST_LAST_STARTED_KEY = "PW_RECEIPT_MANUAL_CHECK_LAST_REQUEST_START_V1";
   const pwNativeFetch = globalThis.fetch.bind(globalThis);
   let pwRequestQueue = Promise.resolve();
@@ -2702,7 +2702,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-      <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.7.4</div>
+      <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.7.5</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-manual-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-manual-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>
