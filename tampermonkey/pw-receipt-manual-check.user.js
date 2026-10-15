@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW 領収書 Manual Check
 // @namespace    pw-receipt-manual-check
-// @version      1.7.5
+// @version      1.7.6
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js
 // @description  Manual receipt check. Per-application Game ID, keyword, and date-range TSV with strict URL Cache verification and payment TSV output.
@@ -2695,6 +2695,7 @@
       font-family: Arial, sans-serif;
       width: 720px;
       max-height: 94vh;
+      box-sizing: border-box;
       display: flex;
       flex-direction: column;
       gap: 8px;
@@ -2702,14 +2703,14 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-      <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.7.5</div>
+      <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.7.6</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-manual-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-manual-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>
         </div>
       </div>
 
-      <div id="pw-manual-body">
+      <div id="pw-manual-body" style="min-height:0;overflow-y:auto;">
         <div style="font-size:11px;color:#ccc;line-height:1.35;margin-bottom:6px;">
           入力例：<code>51763548</code>（期間内すべて） / <code>51763548[TAB]JOPT[TAB]SPADIE</code><br>
           候補検索も支払い取得もAPIで取得します。URL Cacheは完全な大会名で厳密照合します。<br>
@@ -2753,7 +2754,7 @@
         <div style="font-size:12px;font-weight:bold;margin-top:6px;">Output / TSV + NEED_CHECK + REPORT</div>
         <textarea id="pw-manual-output"
           readonly
-          style="width:100%;height:145px;background:#111;color:#fff;border:1px solid #555;padding:8px;font-family:Consolas,monospace;font-size:12px;"></textarea>
+          style="width:100%;height:90px;max-height:20vh;box-sizing:border-box;resize:vertical;overflow:auto;background:#111;color:#fff;border:1px solid #555;padding:8px;font-family:Consolas,monospace;font-size:12px;"></textarea>
 
         <div style="display:flex;gap:6px;margin-top:6px;">
           <select id="pw-manual-copy-mode" style="flex:1;padding:7px;background:#fff;border:1px solid #aaa;">
