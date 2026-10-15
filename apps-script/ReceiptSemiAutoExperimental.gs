@@ -588,15 +588,11 @@ const RSE = (() => {
       const prior = objectMapBy_(priorRows, 'checkKey');
       const documentProperties = PropertiesService.getDocumentProperties();
       const applyAutoCheckMigration = documentProperties.getProperty(CONFIG.AUTO_RECEIPT_CONFIRM_OK_PROPERTY) !== '1';
-      const rows = buildReceiptCheckRows_(applications, pwResult, ledgerMap, prior, settings, applyAutoCheckMigration);
+      const rows = buildIncrementalReceiptCheckRows_(
+        applications, pwResult, ledgerMap, priorRows, settings, applyAutoCheckMigration, blockedGameIds
+      );
       const unmatchedApplications = findUnmatchedApplications_(applications, pwResult);
       syncSkipCorrectionSheet_(ss, applications, unmatchedApplications, pwResult);
-      const outputCheckKeys = new Set(rows.map(row => text_(row[3])));
-      priorRows.forEach(old => {
-        if (!blockedGameIds.has(normalizeGameId_(old['Game ID']))) return;
-        if (outputCheckKeys.has(text_(old.checkKey))) return;
-        rows.push(heldReceiptCheckRow_(old));
-      });
       const intersection = receiptIntersectionStats_(applications, pwResult);
       const replacementCount = rows.filter(row => text_(row[0]) === '差替').length;
 
@@ -795,6 +791,61 @@ const RSE = (() => {
       });
     });
     return output;
+  }
+
+  function buildIncrementalReceiptCheckRows_(applications, pwResult, ledgerMap, priorRows, settings, autoCheck, blockedGameIds) {
+    const prior = objectMapBy_(priorRows, 'checkKey');
+    const oldByPayment = {};
+    (priorRows || []).forEach(row => {
+      const key = text_(row.paymentKey);
+      if (key) (oldByPayment[key] || (oldByPayment[key] = [])).push(row);
+    });
+    const paymentKeyFor = pw => makePaymentKey_({
+      gameId: pw.gameId, tournament: pw.tournament, purchaseTime: pw.purchaseTime,
+      type: pw.type, total: calcTotal_(pw)
+    });
+    const currentCounts = {};
+    Object.keys(pwResult.byGameId).forEach(id => pwResult.byGameId[id].forEach(pw => {
+      const key = paymentKeyFor(pw);
+      currentCounts[key] = (currentCounts[key] || 0) + 1;
+    }));
+    const normalizedPw = Object.assign({}, pwResult, { byGameId: {} });
+    Object.keys(pwResult.byGameId).forEach(id => {
+      normalizedPw.byGameId[id] = pwResult.byGameId[id].map(pw => {
+        const key = paymentKeyFor(pw);
+        const oldRows = oldByPayment[key] || [];
+        const match = oldRows.length === 1 && currentCounts[key] === 1
+          ? text_(oldRows[0].checkKey).match(/__PWROW__(\d+)$/) : null;
+        return match ? Object.assign({}, pw, { rowNo: Number(match[1]) }) : pw;
+      });
+    });
+    const incoming = buildReceiptCheckRows_(applications, normalizedPw, ledgerMap, prior, settings, autoCheck);
+    const keys = new Set(incoming.map(row => text_(row[CHECK_HEADERS.indexOf('checkKey')])));
+    (priorRows || []).forEach(old => {
+      if (keys.has(text_(old.checkKey))) return;
+      const gameId = normalizeGameId_(old['Game ID']);
+      if (blockedGameIds.has(gameId)) {
+        incoming.push(heldReceiptCheckRow_(old));
+        return;
+      }
+      const app = applications[text_(old['申請キー'])];
+      // Refresh identity from confirmed applications even when only another person's TSV was pasted.
+      // Keep the original payment data and key; never transfer a payment to a different Game ID.
+      if (!app || app.gameId !== gameId || (
+        text_(old['本名']) === text_(app.name) &&
+        text_(old['メールアドレス']).toLowerCase() === text_(app.email).toLowerCase() &&
+        removeSama_(old['宛名']) === removeSama_(app.recipient)
+      )) return;
+      const match = text_(old.checkKey).match(/__PWROW__(\d+)$/);
+      if (!match) return;
+      const pw = Object.assign(receiptDataFromCheckRow_(old, settings), { rowNo: Number(match[1]) });
+      if (paymentKeyFor(pw) !== text_(old.paymentKey)) return;
+      const refreshed = buildReceiptCheckRows_(
+        { [app.applicationKey]: app }, { byGameId: { [gameId]: [pw] } }, ledgerMap, prior, settings, false
+      );
+      incoming.push(...refreshed);
+    });
+    return mergeReceiptCheckRows_(priorRows, incoming);
   }
 
   function receiptIntersectionStats_(applications, pwResult) {
@@ -3963,7 +4014,7 @@ ${usdtBreakdownHtml}
       hash_, gameIdFinalHash_, receiptFinalHash_, receiptBatchHash_,
       isGameIdCheckRowResolved_, isReceiptCheckRowResolved_, makeReceiptFileName_,
       unresolvedGameIdSet_, receiptProcessingScope_, heldReceiptCheckRow_,
-      makeReceiptCheckRow_, buildReceiptCheckRows_, groupCheckRowsForDraft_,
+      makeReceiptCheckRow_, buildReceiptCheckRows_, buildIncrementalReceiptCheckRows_, groupCheckRowsForDraft_,
       completedApplicationKeysFromCheckRows_, receiptIntersectionStats_,
       findUnmatchedApplications_, mergeReceiptCheckRows_,
       readApplications_, readFormEventNameByApplicationKey_, buildPwInputData_, pwInputPeriodFromApplicationKey_,

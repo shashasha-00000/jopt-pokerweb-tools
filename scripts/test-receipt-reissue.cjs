@@ -183,4 +183,51 @@ test('Cancel, concurrent edits and pending CHECK stop before file creation', () 
   const pending = directHarness({ pending: true });
   assert.throws(pending.run, /処理中/); assert.equal(pending.created(), 0);
 });
+test('Incremental CHECK retains sent history and appends only new payments', () => {
+  const normal = { ...app, instruction: '自動', recipient: base.recipient };
+  const existing = checkRows([], normal)[0];
+  existing.PDF_FILE_ID = 'keep-pdf'; existing['送信ステータス'] = '送信済み';
+  existing['Draft ID'] = 'keep-draft';
+  const newer = { ...base, gameId: '12345678', rowNo: 2 };
+  const application = { ...normal, gameId: newer.gameId, applicationKey: 'REQ__12345678__ALL__ALL' };
+  const rows = a.buildIncrementalReceiptCheckRows_(
+    { [application.applicationKey]: application }, { byGameId: { [newer.gameId]: [newer] } },
+    a.buildLedgerMap_([]), [existing], {}, false, new Set()
+  ).map(row => asRow(a.CHECK_HEADERS, row));
+  assert.equal(rows.length, 2);
+  assert.deepEqual(plain(rows[0]), plain(existing));
+  assert.equal(rows[1]['Game ID'], newer.gameId);
+});
+
+test('Re-pasted payment with a different TSV row number updates in place', () => {
+  const normal = { ...app, instruction: '自動', recipient: base.recipient };
+  const existing = checkRows([], normal)[0];
+  const rows = a.buildIncrementalReceiptCheckRows_(
+    { [normal.applicationKey]: normal }, { byGameId: { [base.gameId]: [{ ...base, rowNo: 99 }] } },
+    a.buildLedgerMap_([]), [existing], {}, false, new Set()
+  ).map(row => asRow(a.CHECK_HEADERS, row));
+  assert.equal(rows.length, 1); assert.equal(rows[0].checkKey, existing.checkKey);
+});
+
+test('Confirmed email correction updates retained payment without current TSV', () => {
+  const normal = { ...app, instruction: '自動', recipient: base.recipient };
+  const existing = checkRows([], normal)[0];
+  const changed = { ...normal, email: 'corrected@example.com' };
+  const rows = a.buildIncrementalReceiptCheckRows_(
+    { [changed.applicationKey]: changed }, { byGameId: {} }, a.buildLedgerMap_([old]),
+    [existing], {}, false, new Set()
+  ).map(row => asRow(a.CHECK_HEADERS, row));
+  assert.equal(rows.length, 1); assert.equal(rows[0]['メールアドレス'], changed.email);
+  assert.equal(rows[0]['判定'], '差替'); assert.equal(rows[0]['確認状態'], '未確定');
+  assert.equal(rows[0]['領収書No'], old['領収書No']);
+});
+
+test('Unconfirmed Game ID holds retained rows instead of deleting them', () => {
+  const existing = checkRows([])[0];
+  const rows = a.buildIncrementalReceiptCheckRows_(
+    {}, { byGameId: {} }, a.buildLedgerMap_([]), [existing], {}, false, new Set([base.gameId])
+  ).map(row => asRow(a.CHECK_HEADERS, row));
+  assert.equal(rows.length, 1); assert.equal(rows[0]['確認状態'], '未確定');
+  assert.equal(rows[0]['確認OK'], false); assert.equal(rows[0]['送信OK'], false);
+});
 console.log(`${passed} regression groups passed. Apps Script parsed successfully.`);
