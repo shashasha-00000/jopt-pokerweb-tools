@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW 領収書 Manual Check
 // @namespace    pw-receipt-manual-check
-// @version      1.7.3
+// @version      1.7.4
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-receipt-manual-check.user.js
 // @description  Manual receipt check. Per-application Game ID, keyword, and date-range TSV with strict URL Cache verification and payment TSV output.
@@ -74,7 +74,7 @@
   };
 
   const CANDIDATE_HEADERS = [
-    "本次处理", "Game ID", "internalId", "参加日", "対象キーワード", "対象期間", "大会名",
+    "今回の処理", "Game ID", "internalId", "参加日", "対象キーワード", "対象期間", "大会名",
     "TournamentId", "URL", "判定", "理由"
   ];
 
@@ -835,7 +835,7 @@
 
         if (!rows.length) {
           candidates.push({
-            本次处理: "不使用", "Game ID": task.gameId, internalId: search.internalId, 参加日: "",
+            今回の処理: "不使用", "Game ID": task.gameId, internalId: search.internalId, 参加日: "",
             対象キーワード: keywordLabel, 対象期間: task.dateRange,
             大会名: "", TournamentId: "", URL: "",
             判定: "NO_MATCH", 理由: "指定キーワードに一致する参加大会なし"
@@ -862,20 +862,20 @@
               cacheResult = {
                 status: "URL_CACHE_POLLUTION_SUSPECT",
                 row: { tournamentId: row.tournamentId, url: row.url },
-                reason: `Shared Cache污染疑い: player page=${row.tournamentId} / cache=${sharedCacheResult.row.tournamentId}`
+                reason: `Shared Cache汚染の疑い: player page=${row.tournamentId} / cache=${sharedCacheResult.row.tournamentId}`
               };
             }
           } else if (row.tournamentId && sharedCacheResult.status === "URL_VALID_DUPLICATE") {
             cacheResult = {
               status: "URL_VALID_DUPLICATE",
               row: { tournamentId: row.tournamentId, url: row.url },
-              reason: `合法同名: player page=${row.tournamentId} / ${sharedCacheResult.reason} / 请仅为本次确认`
+              reason: `同名の別大会: player page=${row.tournamentId} / ${sharedCacheResult.reason} / 今回のみ使用するURLを確認してください`
             };
           } else if (row.tournamentId && sharedCacheResult.status === "URL_AMBIGUOUS") {
             cacheResult = {
               status: "URL_CACHE_POLLUTION_SUSPECT",
               row: { tournamentId: row.tournamentId, url: row.url },
-              reason: `Shared Cache污染疑い: player page=${row.tournamentId} / ${sharedCacheResult.reason}`
+              reason: `Shared Cache汚染の疑い: player page=${row.tournamentId} / ${sharedCacheResult.reason}`
             };
           } else if (row.tournamentId) {
             cacheResult = {
@@ -899,7 +899,7 @@
           }
 
           candidates.push({
-            本次处理: autoUse ? "使用" : "不使用",
+            今回の処理: autoUse ? "使用" : "不使用",
             "Game ID": task.gameId,
             internalId: search.internalId,
             参加日: row.date,
@@ -915,7 +915,7 @@
 
       } catch (e) {
           candidates.push({
-            本次处理: "不使用", "Game ID": task.gameId, internalId: "", 参加日: "",
+            今回の処理: "不使用", "Game ID": task.gameId, internalId: "", 参加日: "",
             対象キーワード: keywordLabel, 対象期間: task.dateRange,
             大会名: "", TournamentId: "", URL: "",
             判定: "ERROR", 理由: e.message || String(e)
@@ -1341,10 +1341,10 @@
 
   function normalizeCandidateProcessing(rows) {
     return rows.map(row => {
-      const oldValue = norm(row["本次处理"] || row["USE"]);
+      const oldValue = norm(row["今回の処理"] || row["本次处理"] || row["USE"]);
       const use = oldValue === "使用" || oldValue === "1" || oldValue.toUpperCase() === "TRUE" ||
         oldValue.toUpperCase() === "Y" || oldValue === "〇" || oldValue === "○";
-      row["本次处理"] = use ? "使用" : "不使用";
+      row["今回の処理"] = use ? "使用" : "不使用";
       delete row["USE"];
       return row;
     });
@@ -1380,7 +1380,7 @@
     const rows = parseTsv(getCandidateText());
     for (const row of rows) {
       if (!isSameTournamentExactSafe(name, row["大会名"])) continue;
-      row["本次处理"] = "使用";
+      row["今回の処理"] = "使用";
       delete row["USE"];
       row["TournamentId"] = tournamentId;
       row["URL"] = url;
@@ -1403,9 +1403,9 @@
       id,
       finalUrl,
       "OK_THIS_RUN",
-      `仅本次使用，不修改Shared Cache: ${sourceLabel}`
+      `今回のみ使用し、Shared Cacheは変更しません: ${sourceLabel}`
     );
-    setStatus(`本次URL採用: ${name} → ${id}（Shared Cache未変更）`);
+    setStatus(`今回のURL採用: ${name} → ${id}（Shared Cache未変更）`);
   }
 
   function confirmAndRepairCache(name, tournamentId, url, sourceLabel) {
@@ -1453,14 +1453,14 @@
   }
 
   function skipCandidateForThisRun(name) {
-    if (!confirm(`本次处理暂时排除这场比赛吗？\n\n${name}`)) return;
+    if (!confirm(`この大会を今回の処理対象から除外しますか？\n\n${name}`)) return;
 
     const rows = parseTsv(getCandidateText());
     for (const row of rows) {
       if (!isSameTournamentExactSafe(name, row["大会名"])) continue;
-      row["本次处理"] = "不使用";
+      row["今回の処理"] = "不使用";
       row["判定"] = "SKIPPED_THIS_RUN";
-      row["理由"] = "本次人工排除";
+      row["理由"] = "今回の処理から手動で除外";
       delete row["USE"];
     }
     setCandidateRows(rows);
@@ -1468,15 +1468,15 @@
 
   function userFacingReviewStatus(status) {
     const labels = {
-      URL_CACHE_POLLUTION_SUSPECT: "发现历史URL冲突，需要确认",
-      URL_AMBIGUOUS: "同名比赛存在多个历史URL",
-      URL_VALID_DUPLICATE: "合法同名比赛存在多个URL，请仅为本次选择",
-      URL_CACHE_BAD_ROW: "历史URL记录异常",
-      URL未解決: "尚未取得比赛URL",
-      URL_NOT_FOUND: "未找到比赛URL",
-      URL_CANDIDATES_REVIEW: "找到候補URL，需要手动选择",
-      AMBIGUOUS: "搜索结果存在多个同名比赛",
-      ERROR: "读取时发生错误"
+      URL_CACHE_POLLUTION_SUSPECT: "既存URLに競合があります。確認してください",
+      URL_AMBIGUOUS: "同名大会に複数の既存URLがあります",
+      URL_VALID_DUPLICATE: "同名の別大会に複数のURLがあります。今回使用するURLを選択してください",
+      URL_CACHE_BAD_ROW: "既存URL記録に異常があります",
+      URL未解決: "大会URLを未取得",
+      URL_NOT_FOUND: "大会URLが見つかりません",
+      URL_CANDIDATES_REVIEW: "候補URLが見つかりました。手動で選択してください",
+      AMBIGUOUS: "検索結果に複数の同名大会があります",
+      ERROR: "読み込み中にエラーが発生しました"
     };
     return labels[status] || status;
   }
@@ -1519,13 +1519,13 @@
     const unresolved = reviewRows.length - pollution - conflicts;
 
     summary.textContent =
-      `符合比赛 ${rows.filter(row => row["大会名"]).length} / 已有一致 ${existing} / 新增 ${added} / ` +
-      `疑似污染 ${pollution} / 重名冲突 ${conflicts} / 其他待确认 ${Math.max(0, unresolved)}`;
+      `対象大会 ${rows.filter(row => row["大会名"]).length} / 既存URL一致 ${existing} / 新規追加 ${added} / ` +
+      `汚染の疑い ${pollution} / 同名競合 ${conflicts} / その他要確認 ${Math.max(0, unresolved)}`;
 
     box.replaceChildren();
     if (!reviewRows.length) {
       const ok = document.createElement("div");
-      ok.textContent = "需要人工确认的项目：0";
+      ok.textContent = "手動確認が必要な項目：0";
       ok.style.color = "#9f9";
       box.appendChild(ok);
       return;
@@ -1564,13 +1564,13 @@
         actions.appendChild(open);
 
         const useOnce = document.createElement("button");
-        useOnce.textContent = `仅本次使用 ${playerId}`;
+        useOnce.textContent = `今回のみ使用 ${playerId}`;
         useOnce.style.background = "#bff0c2";
         useOnce.onclick = () => useUrlForCurrentRun(name, playerId, playerUrl, "player-page");
         actions.appendChild(useOnce);
 
         const adopt = document.createElement("button");
-        adopt.textContent = `污染修复：采用 ${playerId} 并清除旧记录`;
+        adopt.textContent = `汚染修復：${playerId}を採用し、旧記録を削除`;
         adopt.style.background = "#ffcf70";
         adopt.onclick = () => confirmAndRepairCache(name, playerId, playerUrl, "player-page");
         actions.appendChild(adopt);
@@ -1585,13 +1585,13 @@
         actions.appendChild(open);
 
         const useOnce = document.createElement("button");
-        useOnce.textContent = `仅本次使用 Cache ${cached.tournamentId}`;
+        useOnce.textContent = `今回のみ使用 Cache ${cached.tournamentId}`;
         useOnce.style.background = "#bff0c2";
         useOnce.onclick = () => useUrlForCurrentRun(name, cached.tournamentId, cached.url, "shared-cache");
         actions.appendChild(useOnce);
 
         const adopt = document.createElement("button");
-        adopt.textContent = `污染修复：采用Cache ${cached.tournamentId}`;
+        adopt.textContent = `汚染修復：Cacheを採用 ${cached.tournamentId}`;
         adopt.onclick = () => confirmAndRepairCache(name, cached.tournamentId, cached.url, "shared-cache");
         actions.appendChild(adopt);
       }
@@ -1603,13 +1603,13 @@
         actions.appendChild(open);
 
         const useOnce = document.createElement("button");
-        useOnce.textContent = `仅本次使用候補 ${candidate.tournamentId}`;
+        useOnce.textContent = `今回のみ候補を使用 ${candidate.tournamentId}`;
         useOnce.style.background = "#bff0c2";
         useOnce.onclick = () => useUrlForCurrentRun(name, candidate.tournamentId, candidate.url, "search-candidate");
         actions.appendChild(useOnce);
 
         const adopt = document.createElement("button");
-        adopt.textContent = `污染修复：采用候補 ${candidate.tournamentId}`;
+        adopt.textContent = `汚染修復：候補を採用 ${candidate.tournamentId}`;
         adopt.style.background = "#d9ecff";
         adopt.onclick = () => confirmAndRepairCache(name, candidate.tournamentId, candidate.url, "search-candidate");
         actions.appendChild(adopt);
@@ -1622,7 +1622,7 @@
       actions.appendChild(manual);
 
       const skip = document.createElement("button");
-      skip.textContent = "本次暂不处理";
+      skip.textContent = "今回は処理しない";
       skip.onclick = () => skipCandidateForThisRun(name);
       actions.appendChild(skip);
 
@@ -1633,7 +1633,7 @@
 
   function getUseCandidateRows() {
     return parseTsv(getCandidateText()).filter(row => {
-      const use = norm(row["本次处理"] || row["USE"]);
+      const use = norm(row["今回の処理"] || row["本次处理"] || row["USE"]);
       return use === "使用" || use === "1" || use.toUpperCase() === "TRUE" || use.toUpperCase() === "Y" || use === "〇" || use === "○";
     });
   }
@@ -1747,7 +1747,7 @@
           }
 
           for (const row of group.rows) {
-            row["本次处理"] = "使用";
+            row["今回の処理"] = "使用";
             delete row["USE"];
             row["TournamentId"] = found.tournamentId;
             row["URL"] = found.url;
@@ -2485,12 +2485,12 @@
 
       alert(
         `候補検索完了\n\n` +
-        `符合条件比赛：${candidates.filter(r => r["大会名"]).length}\n` +
-        `已有URL且一致：${existingCount}\n` +
-        `新增URL：${addedCount}\n` +
-        `疑似污染：${pollutionCount}\n` +
-        `重名冲突：${conflictCount}\n` +
-        `需要人工确认：${reviewCount}`
+        `条件に一致する大会：${candidates.filter(r => r["大会名"]).length}\n` +
+        `既存URLと一致：${existingCount}\n` +
+        `新規追加URL：${addedCount}\n` +
+        `汚染の疑い：${pollutionCount}\n` +
+        `同名競合：${conflictCount}\n` +
+        `手動確認が必要：${reviewCount}`
       );
 
       setStatus("候補検索完了");
@@ -2515,13 +2515,13 @@
     const allRows = parseTsv(getCandidateText());
     const pendingReview = getManualReviewRows(allRows);
     if (pendingReview.length) {
-      alert(`人工確認が未完了の候補があります。\n\n対象：${pendingReview.length}件\n\n人工核查欄で確認・修復してください。`);
+      alert(`人工確認が未完了の候補があります。\n\n対象：${pendingReview.length}件\n\n手動確認欄で確認・修復してください。`);
       return;
     }
 
     const rows = getUseCandidateRows();
     if (!rows.length) {
-      alert("本次处理设为“使用”的比赛为空。");
+      alert("今回の処理が「使用」の大会がありません。");
       return;
     }
 
@@ -2537,7 +2537,7 @@
       return;
     }
 
-    if (!confirm(`从已确认使用的比赛取得支付信息。\n\n本次处理：${usable.length}行\n\n继续吗？`)) return;
+    if (!confirm(`使用が確認された大会の支払情報を取得します。\n\n今回の処理：${usable.length}行\n\n続行しますか？`)) return;
 
     running = true;
     stopRequested = false;
@@ -2702,7 +2702,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-      <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.7.3</div>
+      <div style="font-weight:bold;">PW 領収書抜き出し 人工確認版 v1.7.4</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-manual-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-manual-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>
@@ -2712,13 +2712,13 @@
       <div id="pw-manual-body">
         <div style="font-size:11px;color:#ccc;line-height:1.35;margin-bottom:6px;">
           入力例：<code>51763548</code>（期間内すべて） / <code>51763548[TAB]JOPT[TAB]SPADIE</code><br>
-          候補検索も支払い取得もAPIで取得します。URL Cacheは完整大会名で厳密照合します。<br>
-          流れ：候補検索 → 必要な大会を確認 → 人工核查 → 支払い取得
+          候補検索も支払い取得もAPIで取得します。URL Cacheは完全な大会名で厳密照合します。<br>
+          流れ：候補検索 → 必要な大会を確認 → 手動確認 → 支払い取得
         </div>
 
         <div id="pw-manual-summary"
           style="background:#17324a;border:1px solid #477;padding:7px;color:#cff;font-weight:bold;margin-bottom:6px;">
-          尚未搜索
+          未検索
         </div>
 
         <div style="font-size:12px;font-weight:bold;">総期間（個別期間が空白の行に使用）/ dateRange</div>
@@ -2733,7 +2733,7 @@
         <div style="display:flex;gap:6px;margin-top:6px;">
           <button id="pw-manual-discover" style="flex:1;padding:7px;cursor:pointer;background:#ffe08a;border:1px solid #c99;">1. 候補大会をAPI検索</button>
           <button id="pw-manual-resolve-url" style="flex:1;padding:7px;cursor:pointer;background:#d9ecff;border:1px solid #88a;">2. URL未解決/疑似汚染を検索</button>
-          <button id="pw-manual-run-payment" style="flex:1;padding:7px;cursor:pointer;background:#bff0c2;border:1px solid #8a8;">3. 已确认比赛的支付信息</button>
+          <button id="pw-manual-run-payment" style="flex:1;padding:7px;cursor:pointer;background:#bff0c2;border:1px solid #8a8;">3. 確認済み大会の支払情報を取得</button>
         </div>
 
         <div style="display:flex;gap:6px;margin-top:6px;">
@@ -2746,7 +2746,7 @@
         <textarea id="pw-manual-candidates"
           style="width:100%;height:165px;background:#111;color:#fff;border:1px solid #555;padding:8px;font-family:Consolas,monospace;font-size:12px;"></textarea>
 
-        <div style="font-size:12px;font-weight:bold;margin-top:6px;">人工核查 / 仅显示需要确认的比赛</div>
+        <div style="font-size:12px;font-weight:bold;margin-top:6px;">手動確認 / 確認が必要な大会のみ表示</div>
         <div id="pw-manual-review"
           style="max-height:220px;overflow:auto;background:#181818;border:1px solid #555;padding:6px;font-size:12px;"></div>
 
@@ -2757,10 +2757,10 @@
 
         <div style="display:flex;gap:6px;margin-top:6px;">
           <select id="pw-manual-copy-mode" style="flex:1;padding:7px;background:#fff;border:1px solid #aaa;">
-            <option value="paste-only">只复制可粘贴的领收书结果</option>
-            <option value="with-report">复制结果 + NEED_CHECK + REPORT</option>
+            <option value="paste-only">貼り付け用の領収書結果のみコピー</option>
+            <option value="with-report">結果 + NEED_CHECK + REPORTをコピー</option>
           </select>
-          <button id="pw-manual-copy-output" style="flex:1;padding:7px;cursor:pointer;background:#eee;border:1px solid #aaa;">按所选格式复制</button>
+          <button id="pw-manual-copy-output" style="flex:1;padding:7px;cursor:pointer;background:#eee;border:1px solid #aaa;">選択した形式でコピー</button>
         </div>
 
         <div id="pw-manual-status" style="font-size:11px;color:#9fe;line-height:1.35;white-space:pre-wrap;margin-top:6px;">ready</div>
