@@ -1,0 +1,1871 @@
+{
+  "handoffs": {
+    "H_LOST": {
+      "note": "イベント開催中は高に上げる",
+      "slack": "#cs-line",
+      "name": "忘れ物・落とし物",
+      "sla": "当日中",
+      "id": "H_LOST",
+      "team": "カスタマー",
+      "fields": [
+        "来場日・会場",
+        "なくした場所（卓番号など）と時間帯",
+        "品物の特徴（色・ブランド・中身）",
+        "写真があれば"
+      ],
+      "priority": "中"
+    },
+    "H_CONTRACT": {
+      "note": "ウェブコイン⇔JOPT選手契約の変更など、運用が変わりやすい案件",
+      "slack": "#cs-line",
+      "name": "選手契約の変更・その他",
+      "sla": "当日中",
+      "team": "カスタマー",
+      "id": "H_CONTRACT",
+      "fields": [
+        "GameID（8桁）",
+        "氏名",
+        "ご相談内容"
+      ],
+      "priority": "中"
+    },
+    "H_GENERAL": {
+      "note": "",
+      "slack": "#cs-line",
+      "name": "その他のご質問",
+      "sla": "当日中",
+      "id": "H_GENERAL",
+      "team": "カスタマー",
+      "priority": "中",
+      "fields": [
+        "ご質問内容",
+        "関係する大会名・GameID（あれば）"
+      ]
+    },
+    "H_REPORT": {
+      "note": "調査結果は個別に案内しない方針",
+      "slack": "#cs-line-urgent",
+      "name": "不正・トラブルの報告",
+      "sla": "営業時間内2時間",
+      "team": "カスタマー（責任者）",
+      "id": "H_REPORT",
+      "priority": "高",
+      "fields": [
+        "日時・場所（会場／店舗／アプリ）",
+        "内容",
+        "証拠となる画像など"
+      ]
+    },
+    "H_GAMES": {
+      "note": "Games窓口へ誘導に統一する場合は、この種類を使わずLINE誘導にする",
+      "slack": "#games-support",
+      "name": "JOPT Gamesのチケット・メンバーシップ",
+      "sla": "当日中",
+      "team": "JOPT Games担当",
+      "id": "H_GAMES",
+      "priority": "中",
+      "fields": [
+        "JOPT Games ID（8桁）",
+        "GameID（8桁）",
+        "JOPT Games登録メールアドレス",
+        "お困りの内容（チケット名・トーナメント名など）",
+        "画面のスクリーンショット"
+      ]
+    },
+    "H_PRIZE": {
+      "note": "イベント最終日の翌日20時までは付与申請中のことが多い。それ以降の問い合わせ",
+      "slack": "#cs-line-urgent",
+      "name": "プライズ未付与",
+      "sla": "営業時間内2時間",
+      "team": "カスタマー",
+      "id": "H_PRIZE",
+      "priority": "高",
+      "fields": [
+        "GameID（8桁）",
+        "大会名・トーナメント名",
+        "開催日",
+        "順位",
+        "会場で選手契約・同意書の手続きをしたか"
+      ]
+    },
+    "H_GOODS": {
+      "note": "",
+      "slack": "#cs-line",
+      "name": "商品・副賞・トロフィー",
+      "sla": "2営業日",
+      "team": "カスタマー",
+      "id": "H_GOODS",
+      "priority": "低",
+      "fields": [
+        "氏名",
+        "商品名／副賞名／トロフィー",
+        "購入日または大会名・順位",
+        "状況（届かない／破損 など）"
+      ]
+    },
+    "H_COIN_REFUND": {
+      "note": "返還作業は担当者。手数料は返還不可",
+      "slack": "#cs-line",
+      "name": "ウェブコイン誤送金",
+      "sla": "当日中",
+      "id": "H_COIN_REFUND",
+      "team": "カスタマー",
+      "priority": "中",
+      "fields": [
+        "GameID（8桁）",
+        "送金したコイン数",
+        "送金日時",
+        "本来の送金先",
+        "送金履歴のスクリーンショット"
+      ]
+    },
+    "H_TICKET": {
+      "note": "イベント開催中は高に上げる",
+      "slack": "#cs-line",
+      "name": "チケット・バウチャー未反映",
+      "sla": "当日中",
+      "team": "カスタマー",
+      "id": "H_TICKET",
+      "priority": "中",
+      "fields": [
+        "GameID（8桁）",
+        "チケット／バウチャー名",
+        "獲得した大会・店舗と日付",
+        "枚数・順位"
+      ]
+    },
+    "H_CAMPAIGN": {
+      "note": "",
+      "slack": "#cs-line",
+      "name": "キャンペーン・ミッション",
+      "sla": "2営業日",
+      "id": "H_CAMPAIGN",
+      "team": "カスタマー",
+      "fields": [
+        "GameID（8桁）",
+        "キャンペーン／ミッション名",
+        "当選・達成がわかる画面のスクリーンショット"
+      ],
+      "priority": "低"
+    },
+    "H_RECEIPT": {
+      "note": "",
+      "slack": "#cs-line",
+      "name": "領収書",
+      "sla": "2営業日",
+      "team": "カスタマー",
+      "id": "H_RECEIPT",
+      "fields": [
+        "GameID（8桁）",
+        "氏名",
+        "領収書の宛名",
+        "送付先メールアドレス",
+        "大会名・参加日",
+        "状況（届かない／訂正したい など）"
+      ],
+      "priority": "低"
+    },
+    "H_PRIZE_DOC": {
+      "note": "",
+      "slack": "#cs-line",
+      "name": "同意書・プライズカード",
+      "sla": "当日中",
+      "team": "カスタマー",
+      "id": "H_PRIZE_DOC",
+      "fields": [
+        "GameID（8桁）",
+        "氏名",
+        "大会名・トーナメント名・順位",
+        "状況（郵送した／届いていない／会場で手続きできなかった など）"
+      ],
+      "priority": "中"
+    },
+    "H_PREENTRY": {
+      "note": "開催日が近いので優先",
+      "slack": "#cs-line-urgent",
+      "name": "事前申込・決済の確認",
+      "sla": "営業時間内2時間",
+      "id": "H_PREENTRY",
+      "team": "カスタマー",
+      "fields": [
+        "GameID（8桁）",
+        "大会名・トーナメント名",
+        "代表者名（チーム戦）",
+        "申込時のメールアドレス",
+        "ご相談内容（申込確認／支払い／キャンセル など）"
+      ],
+      "priority": "高"
+    }
+  },
+  "nodes": {
+    "games_id_diff": {
+      "parent": "games",
+      "evidence": "GPT草案FAQ-029・07/21・06/27",
+      "per_event": false,
+      "channel": null,
+      "label": "GameIDとGames IDの違い",
+      "handoff": null,
+      "body": "GameIDとJOPT Games IDは、別々のアプリのIDです。\n・GameID：会場の大会のエントリーやチケット・コインの管理に使うアプリのID（8桁の数字）\n・JOPT Games ID：オンラインポーカーアプリ「JOPT Games」のID\n連携するときは、それぞれのアプリに表示されているIDを確認して登録してください。同じ番号を入力すると連携できません。",
+      "type": "answer",
+      "follow": true,
+      "tags": [
+        "JOPT Games",
+        "GameIDアプリ"
+      ],
+      "review": "",
+      "links": [
+        "app_link",
+        "games_other"
+      ],
+      "id": "games_id_diff",
+      "status": "確認済",
+      "order": 0.5
+    },
+    "goods_trophy": {
+      "parent": "goods",
+      "evidence": "",
+      "per_event": false,
+      "channel": null,
+      "handoff": "H_GOODS",
+      "label": "トロフィー（郵送・破損）",
+      "body": "",
+      "type": "handoff",
+      "follow": false,
+      "tags": [
+        "忘れ物・商品"
+      ],
+      "review": "",
+      "links": [],
+      "id": "goods_trophy",
+      "status": "確認済",
+      "order": 3
+    },
+    "entry_late": {
+      "parent": "entry",
+      "evidence": "10/02・10/06（再申込で受付）／10/07（締切後は当日抽選）",
+      "per_event": false,
+      "channel": null,
+      "handoff": "H_PREENTRY",
+      "label": "支払い期限を過ぎた",
+      "follow": false,
+      "body": "支払い期限を過ぎてキャンセルになった場合でも、事前予約の受付中であれば、再度お申し込みいただけることがあります。担当者が確認してご案内しますので、代表者のGameIDをお送りください。\n事前予約の受付が終了している場合は、当日枠（抽選など）でのご参加をご案内します。",
+      "type": "handoff",
+      "tags": [
+        "大会参加・エントリー"
+      ],
+      "review": "",
+      "links": [],
+      "id": "entry_late",
+      "status": "確認済",
+      "order": 5.6
+    },
+    "ticket_main": {
+      "parent": "ticket",
+      "evidence": "10/09・09/07（9月初旬から運用変更）",
+      "channel": null,
+      "per_event": false,
+      "handoff": "H_GENERAL",
+      "label": "メインは現金で出られる？",
+      "follow": true,
+      "body": "現在、JOPT主催のメインイベントはMain Ticketをお持ちの方のみご参加いただけます。現金などでのダイレクトバイインは受け付けていません。\nMain Ticketは、店舗サテライトやJOPT Gamesのオンラインサテライトなどで獲得できます。\n\n海外にお住まいの方は「大会参加・エントリー」→「海外から参加したい」をご覧ください。",
+      "type": "answer",
+      "tags": [
+        "チケット"
+      ],
+      "review": "",
+      "links": [],
+      "id": "ticket_main",
+      "order": 1,
+      "status": "確認済"
+    },
+    "goods": {
+      "parent": "live",
+      "evidence": "",
+      "channel": null,
+      "per_event": false,
+      "handoff": null,
+      "label": "商品・副賞・トロフィー",
+      "type": "menu",
+      "body": "お選びください。",
+      "follow": false,
+      "tags": [],
+      "review": "",
+      "links": [],
+      "id": "goods",
+      "order": 6,
+      "status": "確認済"
+    },
+    "biz_dealer": {
+      "parent": "biz",
+      "evidence": "",
+      "per_event": false,
+      "channel": "ch_dealer",
+      "handoff": null,
+      "label": "ディーラー",
+      "body": "ディーラーの応募・シフト・欠勤のご連絡は、こちらのLINEへお願いします。",
+      "type": "redirect",
+      "follow": false,
+      "tags": [
+        "店舗・お仕事"
+      ],
+      "review": "",
+      "links": [],
+      "id": "biz_dealer",
+      "status": "確認済",
+      "order": 3
+    },
+    "entry_info": {
+      "parent": "entry",
+      "evidence": "",
+      "per_event": true,
+      "channel": null,
+      "handoff": "H_GENERAL",
+      "label": "日程・会場",
+      "type": "answer",
+      "follow": true,
+      "body": "【大会名】\n日程：【日程】\n会場：【会場】\n\nスケジュール・受付時間・各トーナメントの詳細はプレイヤーズガイドをご覧ください。\n【ガイドURL】",
+      "tags": [
+        "大会参加・エントリー"
+      ],
+      "review": "開催回ごとに変数を更新すること",
+      "links": [],
+      "id": "entry_info",
+      "status": "要確認",
+      "order": 6
+    },
+    "goods_prize": {
+      "parent": "goods",
+      "evidence": "",
+      "channel": null,
+      "per_event": false,
+      "label": "副賞・景品が届かない",
+      "handoff": "H_GOODS",
+      "type": "handoff",
+      "follow": false,
+      "body": "",
+      "tags": [
+        "忘れ物・商品"
+      ],
+      "review": "",
+      "links": [],
+      "id": "goods_prize",
+      "order": 2,
+      "status": "確認済"
+    },
+    "biz": {
+      "parent": "root",
+      "evidence": "",
+      "per_event": false,
+      "channel": null,
+      "label": "店舗様・お仕事",
+      "handoff": null,
+      "follow": false,
+      "type": "menu",
+      "body": "お選びください。",
+      "tags": [],
+      "review": "",
+      "links": [],
+      "id": "biz",
+      "status": "確認済",
+      "order": 5
+    },
+    "contract_balance": {
+      "parent": "coin",
+      "evidence": "460回",
+      "channel": "ch_contract_jopt",
+      "per_event": false,
+      "label": "JOPT選手契約の残高",
+      "handoff": null,
+      "follow": false,
+      "body": "JOPTと締結した選手契約の残高照会・履行（補助）申請は、下記の専用LINEに登録のうえ、リッチメニューからお手続きください。",
+      "type": "redirect",
+      "tags": [
+        "コイン・選手契約"
+      ],
+      "review": "",
+      "links": [],
+      "id": "contract_balance",
+      "status": "確認済",
+      "order": 2
+    },
+    "coin_balance": {
+      "parent": "coin",
+      "evidence": "POKERWEB COIN案内 28回＋",
+      "per_event": false,
+      "channel": "ch_pokerguild",
+      "label": "コイン残高・有効期限",
+      "handoff": null,
+      "type": "redirect",
+      "body": "POKER WEB COIN（ウェブコイン）の残高・利用履歴・有効期限・現金化などは、下記の窓口でご案内しています。",
+      "follow": false,
+      "tags": [
+        "コイン・選手契約"
+      ],
+      "review": "",
+      "links": [],
+      "id": "coin_balance",
+      "order": 1,
+      "status": "確認済"
+    },
+    "receipt_coin": {
+      "parent": "receipt",
+      "evidence": "07/13・07/11・05/30・05/14（発行可）／04/30（不可）・07/27（チケット利用時は実支払額）",
+      "channel": null,
+      "per_event": false,
+      "label": "コイン払いの領収書",
+      "handoff": "H_RECEIPT",
+      "follow": true,
+      "type": "answer",
+      "body": "POKER WEB COIN（ウェブコイン）でお支払いいただいた参加費も、領収書を発行いたします。\n会場受付の「領収書申請用QRコード」からフォームで申請してください。申請内容を確認のうえ、イベント終了後にメールでお送りします。\n※領収書の「ポイント」の表記は、ウェブコインでのお支払い分を表します。\n※メインチケットを使って参加した場合は、実際にお支払いいただいた金額（施設使用料・ドリンク代など）が領収書の金額になります。",
+      "tags": [
+        "領収書",
+        "コイン・選手契約"
+      ],
+      "review": "04/30は「コイン払いは発行不可」、05/14・05/30・07/11・07/13は「発行する」と回答。最新の運用（発行する）で作成したが、責任者の最終確認が必要（GPT草案の指摘で修正）",
+      "links": [],
+      "id": "receipt_coin",
+      "order": 3,
+      "status": "要確認"
+    },
+    "lost": {
+      "parent": "live",
+      "evidence": "58件",
+      "per_event": false,
+      "channel": null,
+      "handoff": "H_LOST",
+      "label": "忘れ物・落とし物",
+      "type": "handoff",
+      "body": "会場の忘れ物は受付でお預かりしています。お受け取りの際は、ご本人様の物であることを確認させていただきます。",
+      "follow": false,
+      "tags": [
+        "忘れ物・商品"
+      ],
+      "review": "",
+      "links": [],
+      "id": "lost",
+      "order": 5,
+      "status": "確認済"
+    },
+    "games": {
+      "parent": "root",
+      "evidence": "",
+      "channel": null,
+      "per_event": false,
+      "label": "JOPT Games（アプリ）",
+      "handoff": null,
+      "body": "オンラインポーカーアプリ「JOPT Games」について、お選びください。\nまず下の確認方法をお試しください。解決しない場合はJOPT Gamesお問い合わせ窓口へご案内します。",
+      "type": "menu",
+      "follow": false,
+      "tags": [],
+      "review": "",
+      "links": [],
+      "id": "games",
+      "status": "確認済",
+      "order": 2
+    },
+    "entry_venue_rule": {
+      "parent": "entry",
+      "evidence": "同僚表",
+      "channel": null,
+      "per_event": false,
+      "label": "観戦・会場のルール",
+      "handoff": "H_GENERAL",
+      "follow": true,
+      "type": "answer",
+      "body": "観戦は自由で、入場料や手続きは不要です。競技の妨げにならないようご配慮ください。\n刺青・タトゥーがあることのみを理由に入場をお断りすることはありません。",
+      "tags": [
+        "大会参加・エントリー"
+      ],
+      "review": "",
+      "links": [],
+      "id": "entry_venue_rule",
+      "order": 8,
+      "status": "確認済"
+    },
+    "prize_steps": {
+      "parent": "prize",
+      "evidence": "同意書未提出の案内（07/27〜10/16, 6回）・10/09・08/13・09/18（後日郵送で手続き）",
+      "per_event": false,
+      "channel": null,
+      "label": "入賞したら何をする？",
+      "handoff": "H_PRIZE_DOC",
+      "follow": true,
+      "body": "入賞された日に、会場内の選手契約ブースでお手続きください。\n①プライズカード裏面の下側のQRコードから入賞記録フォームを送信\n②プライズカード下部の同意書に記入して提出\n初めて入賞された方は、ポーカーギルド社での選手契約の承認後にプライズが付与されます。\n\n選手契約ブースが閉まっている場合は、受付横の「特別対応窓口」へお越しください。\n\n当日手続きできなかった場合（先にお帰りになった場合など）も、プライズカードを郵送して手続きできます。「担当者に相談」からご連絡ください。",
+      "type": "answer",
+      "tags": [
+        "プライズ"
+      ],
+      "review": "",
+      "links": [],
+      "id": "prize_steps",
+      "order": 2,
+      "status": "確認済"
+    },
+    "prize_doc": {
+      "parent": "prize",
+      "evidence": "07/27〜10/16",
+      "per_event": false,
+      "channel": null,
+      "handoff": "H_PRIZE_DOC",
+      "label": "同意書・プライズカード",
+      "follow": false,
+      "body": "同意書の郵送先：〒162-0845 東京都新宿区市谷本村町2-21 市ヶ谷キャナルコート 3F ジャパンオープンポーカーツアー株式会社 カスタマー部",
+      "type": "handoff",
+      "tags": [
+        "プライズ"
+      ],
+      "review": "",
+      "links": [],
+      "id": "prize_doc",
+      "order": 6,
+      "status": "確認済"
+    },
+    "entry_need": {
+      "parent": "entry",
+      "evidence": "08/25・08/06・09/13",
+      "per_event": false,
+      "channel": null,
+      "label": "参加に必要なもの",
+      "handoff": "H_GENERAL",
+      "type": "answer",
+      "body": "トーナメントへのエントリーはGameIDアプリで行います。GameIDのアカウントを作成のうえ、当日会場の受付へお越しください。\n・公式サイトのプレイヤー登録は必須ではありません。\n・出場だけならKYC（本人確認）は不要です。プライズの手続きやウェブコインの利用時に必要になる場合があるため、事前の認証をおすすめします。",
+      "follow": true,
+      "tags": [
+        "大会参加・エントリー"
+      ],
+      "review": "",
+      "links": [],
+      "id": "entry_need",
+      "order": 1,
+      "status": "確認済"
+    },
+    "ticket_games": {
+      "parent": "ticket",
+      "evidence": "",
+      "channel": null,
+      "per_event": false,
+      "handoff": null,
+      "label": "JOPT Gamesのチケット",
+      "type": "answer",
+      "body": "トライアル・サテライト・ファイナルなど、JOPT Gamesアプリの中で使うチケットについては「JOPT Games（アプリ）」のメニューをご覧ください。",
+      "follow": false,
+      "tags": [
+        "チケット",
+        "JOPT Games"
+      ],
+      "review": "",
+      "links": [
+        "games"
+      ],
+      "id": "ticket_games",
+      "status": "確認済",
+      "order": 8
+    },
+    "games_coupon": {
+      "parent": "games",
+      "evidence": "10/17・10/19・10/20",
+      "per_event": false,
+      "channel": "ch_jopt_games",
+      "label": "クーポンが使えない",
+      "handoff": null,
+      "body": "①クーポンコードは、JOPT Gamesアプリ内の「自分」→「クーポン」から入力してください。\n\n②「利用可能なクーポン数を超過しました」と表示される場合は、システムの不具合です（改善予定）。受け取れなかったクーポンコードを添えて下記のJOPT Gamesお問い合わせ窓口へご連絡ください。\n{{ch_jopt_games}}\n\n③「期限切れ」と表示される場合は、表示された画面のスクリーンショットを添えて下記のJOPT Gamesお問い合わせ窓口へご連絡ください。\n{{ch_jopt_games}}",
+      "type": "check",
+      "follow": true,
+      "tags": [
+        "JOPT Games"
+      ],
+      "review": "",
+      "links": [],
+      "id": "games_coupon",
+      "status": "確認済",
+      "order": 3
+    },
+    "ticket_side": {
+      "parent": "ticket",
+      "evidence": "ご担当者確認（2026/10/22）・10/09",
+      "per_event": true,
+      "channel": null,
+      "handoff": "H_GENERAL",
+      "label": "サイドで使える？",
+      "follow": true,
+      "type": "answer",
+      "body": "10,000円分として発行されたJOPT Main Ticketは、サイドトーナメントで10,000円分としてご利用いただけます。事前申請は不要です。受付でGameIDを提示し、使用するチケットをお伝えください。\n券面に「1円」と記載されたMain Ticketは、サイドトーナメントの参加費の割引には使えません。\n\n利用できるトーナメントはプレイヤーズガイド（【ガイドURL】）でご確認ください。",
+      "tags": [
+        "チケット"
+      ],
+      "review": "",
+      "links": [],
+      "id": "ticket_side",
+      "order": 3,
+      "status": "確認済"
+    },
+    "entry_pay": {
+      "parent": "entry",
+      "evidence": "10/08・10/09・10/10・07/30",
+      "per_event": false,
+      "channel": null,
+      "handoff": "H_GENERAL",
+      "label": "支払い方法",
+      "type": "answer",
+      "body": "エントリー費は次の方法でお支払いいただけます。\n・現金\n・クレジットカード\n・交通系IC、iD、QUICPayなどの電子決済\n・POKER WEB COIN\n・USDT（受付横の「特別対応窓口」へお越しください）\nPayPayはご利用いただけません。\n\n複数の支払い方法を組み合わせることもできます（1,000円単位）。",
+      "follow": true,
+      "tags": [
+        "大会参加・エントリー",
+        "コイン・選手契約"
+      ],
+      "review": "d払い・auPAYなどのQRコード決済：07/24は「利用可」、07/31は「すべてのQRコード決済不可」と回答が矛盾。現行を確認",
+      "links": [],
+      "id": "entry_pay",
+      "order": 3,
+      "status": "要確認"
+    },
+    "games_membership": {
+      "parent": "games",
+      "evidence": "10/19・10/10・06/18（23回）",
+      "per_event": false,
+      "channel": null,
+      "label": "メンバーシップ",
+      "handoff": null,
+      "follow": true,
+      "type": "answer",
+      "body": "・GOLD（月額4,980円）：毎月トライアルチケット2枚とサテライトチケット1枚が付与されます。\n・サテライトステージ以降のトーナメントには、Silver以上のメンバーシップが必要です。\n・購入すると、クーポンコードがメールで届きます。アプリ内の「自分」→「クーポン」で入力すると反映されます。プランは自動では切り替わりません。\n\n購入後に反映されない場合は、アプリを完全に終了して再起動し、ログアウト・再ログインをお試しください。",
+      "tags": [
+        "JOPT Games"
+      ],
+      "review": "Silverの料金・特典も追記するか確認",
+      "links": [
+        "games_other"
+      ],
+      "id": "games_membership",
+      "status": "要確認",
+      "order": 2
+    },
+    "biz_media": {
+      "parent": "biz",
+      "evidence": "",
+      "channel": null,
+      "per_event": false,
+      "label": "メディア・写真",
+      "handoff": "H_GENERAL",
+      "type": "handoff",
+      "body": "メディアパスの申請、掲載写真の削除・訂正のご依頼を承ります。写真の削除は、ご本人からのご依頼でやむを得ない事情がある場合に対応します。",
+      "follow": false,
+      "tags": [
+        "店舗・お仕事"
+      ],
+      "review": "",
+      "links": [],
+      "id": "biz_media",
+      "order": 5,
+      "status": "確認済"
+    },
+    "ticket_overused": {
+      "parent": "ticket",
+      "evidence": "GPT草案FAQ-014・07/21",
+      "channel": null,
+      "per_event": false,
+      "label": "チケットが多く使われた",
+      "handoff": "H_TICKET",
+      "type": "handoff",
+      "body": "チケットの使用履歴とエントリー履歴を照合して確認します。別の大会で使用した分が含まれていないかもあわせて確認します。",
+      "follow": false,
+      "tags": [
+        "チケット"
+      ],
+      "review": "",
+      "links": [],
+      "id": "ticket_overused",
+      "status": "確認済",
+      "order": 6.5
+    },
+    "games_account": {
+      "parent": "games",
+      "evidence": "ご担当者確認（2026/10/22）",
+      "channel": null,
+      "per_event": false,
+      "handoff": null,
+      "label": "メール変更・ログイン",
+      "follow": false,
+      "body": "JOPT Gamesの登録メールアドレスは、アプリ内から変更できます。\nログインできない場合やアカウントについては、下記のJOPT Gamesお問い合わせ窓口へご連絡ください。\n{{ch_jopt_games}}",
+      "type": "answer",
+      "tags": [
+        "JOPT Games"
+      ],
+      "review": "",
+      "links": [],
+      "id": "games_account",
+      "status": "確認済",
+      "order": 8
+    },
+    "prize_missing": {
+      "parent": "prize",
+      "evidence": "157件を確認。原因は選手契約の未完了・同意書未提出・アプリ未更新・フォームのGameID誤りが中心（10/10・10/11・10/02・08/02・05/16 など）",
+      "channel": null,
+      "per_event": false,
+      "label": "プライズが届かない",
+      "handoff": "H_PRIZE",
+      "body": "次の順にご確認ください。\n\n①GameIDアプリを一度完全に終了して再起動し、「コイン」をご確認ください。\n\n②入賞当日に、会場で選手契約の手続きと、プライズカード下部の同意書の提出はお済みですか。\nまだの場合は、プライズカード裏面の下側のQRコードから入賞記録フォームを送信し、同意書をご記入のうえ下記へご郵送ください。\n〒162-0845 東京都新宿区市谷本村町2-21 市ヶ谷キャナルコート 3F ジャパンオープンポーカーツアー株式会社 カスタマー部\nプライズカードがお手元にない場合は「担当者に相談」を押してください。カードを郵送します。\n\n③初めて入賞された方は、ポーカーギルド社からのメール（迷惑メールフォルダも）をご確認ください。申請内容に不備がある場合はメールが届きます。\n\n④選手契約フォームのGameIDなどに誤りがないかご確認のうえ、下記から再度申請してください。\nhttps://pokerguild-contract.com/ja/player_agreement?flow=player_contract\n\nそれでも反映されない場合は「担当者に相談」を押してください。",
+      "type": "check",
+      "follow": true,
+      "tags": [
+        "プライズ"
+      ],
+      "review": "",
+      "links": [],
+      "id": "prize_missing",
+      "status": "確認済",
+      "order": 4
+    },
+    "ticket_transfer": {
+      "parent": "ticket",
+      "evidence": "10/02 回答・同僚表（SENGOKU）",
+      "channel": null,
+      "per_event": false,
+      "label": "友人に譲渡できる？",
+      "handoff": "H_GENERAL",
+      "body": "チケット・バウチャーは他の方へ譲渡できません。獲得されたご本人様のみご利用いただけます。",
+      "type": "answer",
+      "follow": true,
+      "tags": [
+        "チケット"
+      ],
+      "review": "",
+      "links": [],
+      "id": "ticket_transfer",
+      "status": "確認済",
+      "order": 4
+    },
+    "entry": {
+      "parent": "live",
+      "evidence": "",
+      "per_event": false,
+      "channel": null,
+      "handoff": null,
+      "label": "大会参加・エントリー",
+      "body": "大会参加について、お選びください。",
+      "type": "menu",
+      "follow": false,
+      "tags": [],
+      "review": "",
+      "links": [],
+      "id": "entry",
+      "order": 3,
+      "status": "確認済"
+    },
+    "human_other": {
+      "parent": "human",
+      "evidence": "",
+      "channel": null,
+      "per_event": false,
+      "handoff": "H_GENERAL",
+      "label": "上記以外の質問",
+      "follow": false,
+      "body": "",
+      "type": "handoff",
+      "tags": [
+        "その他"
+      ],
+      "review": "",
+      "links": [],
+      "id": "human_other",
+      "status": "確認済",
+      "order": 1
+    },
+    "ticket_valid": {
+      "parent": "ticket",
+      "evidence": "10/19・10/08・10/06",
+      "per_event": false,
+      "channel": null,
+      "handoff": "H_TICKET",
+      "label": "有効期限・使える会場",
+      "follow": true,
+      "body": "JOPTのMain Ticketは、チケットに記載の有効期限内であれば、東京以外の大阪・札幌・福岡などで開催されるJOPTでもご利用いただけます。\nサテライトで獲得したMain Ticketの有効期限は、原則として獲得から1年間です（チケット名に記載の大会と同じ名称の翌年の大会は除く）。\n\nバウチャーは、記載された大会・会場でのみご利用いただけます。",
+      "type": "answer",
+      "tags": [
+        "チケット"
+      ],
+      "review": "",
+      "links": [],
+      "id": "ticket_valid",
+      "order": 2,
+      "status": "確認済"
+    },
+    "receipt": {
+      "parent": "live",
+      "evidence": "",
+      "channel": null,
+      "per_event": false,
+      "handoff": null,
+      "label": "領収書",
+      "follow": false,
+      "body": "領収書について、お選びください。",
+      "type": "menu",
+      "tags": [],
+      "review": "",
+      "links": [],
+      "id": "receipt",
+      "order": 4,
+      "status": "確認済"
+    },
+    "games_merges": {
+      "parent": "games",
+      "evidence": "10/14・10/19・10/22・10/02・10/03",
+      "channel": "ch_jopt_games",
+      "per_event": false,
+      "label": "会場入賞→Gamesのチケット",
+      "handoff": null,
+      "body": "会場の大会で入賞した方に付与するJOPT GamesのFinal Ticket（Merges用など）について、次の順にご確認ください。\n\n①チケットは、対象トーナメントの当日、開始の約1時間前に付与されます（例：22:00開始なら21:00ごろ）。それまで表示されないのは正常です。\n\n②会場で選手契約の手続きと同意書の提出は完了していますか。完了していないとチケットを付与できません。\n\n③JOPT Games IDとGameIDは連携済みですか。\n\n開始1時間前を過ぎても届かない場合は、すぐに下記のJOPT Gamesお問い合わせ窓口へご連絡ください。\n{{ch_jopt_games}}\n※対象トーナメント専用のチケットのため、トーナメント終了後は使用できません。",
+      "type": "check",
+      "follow": true,
+      "tags": [
+        "JOPT Games",
+        "チケット"
+      ],
+      "review": "",
+      "links": [],
+      "id": "games_merges",
+      "status": "確認済",
+      "order": 5
+    },
+    "ticket_campaign": {
+      "parent": "ticket",
+      "evidence": "07/15・10/08・同僚表",
+      "per_event": false,
+      "channel": null,
+      "label": "キャンペーン当選・招待",
+      "handoff": "H_CAMPAIGN",
+      "body": "キャンペーンの賞品・招待チケットは、各キャンペーンの告知に記載の日時にGameIDへ付与します。\nアプリを再起動し「その他」→「チケット」をご確認ください。受け取りに公式LINEのミッション画面で「達成」ボタンが必要なものもあります。\n\nミッション賞品の受け取り期間を過ぎてしまった場合は「担当者に相談」からご連絡ください。担当者が確認してご案内します。",
+      "type": "answer",
+      "follow": true,
+      "tags": [
+        "チケット"
+      ],
+      "review": "",
+      "links": [],
+      "id": "ticket_campaign",
+      "order": 9,
+      "status": "確認済"
+    },
+    "entry_mail": {
+      "parent": "entry",
+      "evidence": "28件を確認（06/27・09/25・08/08）",
+      "per_event": false,
+      "channel": null,
+      "handoff": "H_PREENTRY",
+      "label": "決済案内メールが届かない",
+      "follow": true,
+      "type": "check",
+      "body": "事前申込の決済案内メールは、申込内容を担当者が確認してから個別にお送りしています（自動送信ではありません）。お届けまでお時間をいただく場合があります。\n\n①申込時のメールアドレスの迷惑メールフォルダをご確認ください。\n\n②申込フォームに入力したGameID・メールアドレスに誤りがないかご確認ください。決済の確認はフォームのGameIDで行います。\n\nお急ぎの場合や、それでも届かない場合は「担当者に相談」を押してください。",
+      "tags": [
+        "大会参加・エントリー"
+      ],
+      "review": "",
+      "links": [],
+      "id": "entry_mail",
+      "status": "確認済",
+      "order": 5.5
+    },
+    "prize_when": {
+      "parent": "prize",
+      "evidence": "10/14 回答（付与申請ルール）・10/20 USDT",
+      "channel": null,
+      "per_event": false,
+      "label": "いつ付与される？",
+      "handoff": "H_PRIZE",
+      "type": "answer",
+      "body": "プライズの付与申請は、通常次のタイミングで行います。\n・イベント期間中の入賞分：翌日の午前中まで\n・イベント最終日の入賞分：翌日20:00まで\n申請後、GameIDアプリを再起動してご確認ください。\n\n初めて入賞された方は、選手契約の承認後の付与となります。登録メールアドレスにポーカーギルド社から連絡が届いていないか（迷惑メールフォルダも）ご確認ください。\nUSDTでのお受け取りは、大会終了後2〜3週間ほどかかります。",
+      "follow": true,
+      "tags": [
+        "プライズ"
+      ],
+      "review": "",
+      "links": [],
+      "id": "prize_when",
+      "order": 3,
+      "status": "確認済"
+    },
+    "entry_drink": {
+      "parent": "entry",
+      "evidence": "09/18・同僚表",
+      "channel": null,
+      "per_event": true,
+      "label": "ドリンク代",
+      "handoff": "H_GENERAL",
+      "body": "トーナメントの種類によって異なりますが、基本的に最初のエントリー時にドリンク代が必要です。詳しくはプレイヤーズガイド（【ガイドURL】）をご確認ください。\nドリンクチケットはウェブコインでも購入できます（特別対応窓口。アルコールとの交換には使えません）。",
+      "type": "answer",
+      "follow": true,
+      "tags": [
+        "大会参加・エントリー"
+      ],
+      "review": "",
+      "links": [],
+      "id": "entry_drink",
+      "status": "確認済",
+      "order": 4
+    },
+    "prize_type": {
+      "parent": "prize",
+      "evidence": "10/08・09/07・06/29 の回答",
+      "per_event": false,
+      "channel": null,
+      "label": "プライズの受け取り方",
+      "handoff": "H_GENERAL",
+      "body": "プライズは現金の賞金ではなく、対象のポーカートーナメントへの参加補助などを受けられる「選手契約（委託料）」の形でお渡ししています。\n現在のJOPT主催大会では、POKER WEB COIN（ウェブコイン）で付与しています。\n外国籍の方は、USDTまたは選手契約の形でご案内します。\n\n詳しくはこちら：{{contract_url}}",
+      "type": "answer",
+      "follow": true,
+      "tags": [
+        "プライズ"
+      ],
+      "review": "",
+      "links": [],
+      "id": "prize_type",
+      "status": "確認済",
+      "order": 1
+    },
+    "coin": {
+      "parent": "root",
+      "evidence": "",
+      "per_event": false,
+      "channel": null,
+      "handoff": null,
+      "label": "コイン・選手契約",
+      "body": "ウェブコイン・選手契約について、お選びください。",
+      "type": "menu",
+      "follow": false,
+      "tags": [],
+      "review": "",
+      "links": [],
+      "id": "coin",
+      "order": 4,
+      "status": "確認済"
+    },
+    "games_other": {
+      "parent": "games",
+      "evidence": "09/28〜10/22",
+      "channel": "ch_jopt_games",
+      "per_event": false,
+      "label": "その他（Games窓口）",
+      "handoff": null,
+      "type": "redirect",
+      "body": "JOPT Gamesについてのお問い合わせ（アカウント、ログイン、不正・迷惑行為の報告など）は、下記のJOPT Gamesお問い合わせ窓口で承っています。\n不正・迷惑行為のご報告は、日時・トーナメント名・相手のプレイヤー名・画面の画像があると確認がスムーズです。",
+      "follow": false,
+      "tags": [
+        "JOPT Games"
+      ],
+      "review": "",
+      "links": [],
+      "id": "games_other",
+      "status": "確認済",
+      "order": 10
+    },
+    "entry_age": {
+      "parent": "entry",
+      "evidence": "09/29・07/07・10/10",
+      "per_event": true,
+      "channel": null,
+      "handoff": "H_GENERAL",
+      "label": "年齢制限",
+      "body": "JOPTは、参加日時点で満18歳以上の方がご参加いただけます。\nただし、高校在学中の方は22:00以降の会場への入場・滞在はできません。\n\n【大会名】について：【年齢制限】",
+      "type": "answer",
+      "follow": true,
+      "tags": [
+        "大会参加・エントリー"
+      ],
+      "review": "",
+      "links": [],
+      "id": "entry_age",
+      "status": "確認済",
+      "order": 2
+    },
+    "app_link": {
+      "parent": "games",
+      "evidence": "10/08・同僚表",
+      "per_event": false,
+      "channel": null,
+      "label": "GamesとGameIDの連携",
+      "handoff": null,
+      "type": "answer",
+      "body": "JOPT Gamesのバウチャーなどを受け取るには、JOPT Games IDとGameIDの連携が必要です。JOPT Games公式LINEのリッチメニュー「GameID紐づけ」から登録してください。\nイベント開催中は、会場の特別対応窓口でもお手伝いします。",
+      "follow": true,
+      "tags": [
+        "JOPT Games",
+        "GameIDアプリ"
+      ],
+      "review": "",
+      "links": [
+        "games_other"
+      ],
+      "id": "app_link",
+      "order": 6,
+      "status": "確認済"
+    },
+    "coin_wrong": {
+      "parent": "coin",
+      "evidence": "22件、09/08〜10/20",
+      "per_event": false,
+      "channel": null,
+      "label": "JOPTに誤って送金した",
+      "handoff": "H_COIN_REFUND",
+      "follow": false,
+      "type": "handoff",
+      "body": "誤って送金されたウェブコインは、確認のうえ返還いたします。\n※トランスファー時の手数料は返還できません。\n返還は数日以内にGameIDへ反映されます。それまでの間、該当コインのご利用はお控えください。",
+      "tags": [
+        "コイン・選手契約"
+      ],
+      "review": "",
+      "links": [],
+      "id": "coin_wrong",
+      "status": "確認済",
+      "order": 6
+    },
+    "coin_other_event": {
+      "parent": "coin",
+      "evidence": "10/02 APTバウチャー・09/15",
+      "channel": null,
+      "per_event": false,
+      "handoff": "H_CONTRACT",
+      "label": "他の大会(APT等)で使える？",
+      "follow": true,
+      "body": "海外大会やJOPT以外の大会での利用可否・申請方法は、お持ちのプライズによって窓口が異なります。\n・ウェブコインの方：{{ch_pokerguild}}\n・JOPT選手契約の方：{{ch_contract_jopt}}\n\nなお、入賞で獲得したAPTバウチャーは、APT会場内のJOPTブースでご利用いただけます（有効期限は原則1年）。",
+      "type": "answer",
+      "tags": [
+        "コイン・選手契約"
+      ],
+      "review": "利用可能な大会の一覧ページがあればリンクを追加",
+      "links": [],
+      "id": "coin_other_event",
+      "order": 4,
+      "status": "要確認"
+    },
+    "receipt_issue": {
+      "parent": "receipt",
+      "evidence": "32件を確認。原因は未申請が最多、次いで作成中、迷惑メール（09/30・10/15・05/20）",
+      "per_event": true,
+      "channel": null,
+      "handoff": "H_RECEIPT",
+      "label": "領収書が届かない",
+      "follow": true,
+      "type": "check",
+      "body": "次の順にご確認ください。\n\n①領収書の申請はお済みですか。まだの場合や、申請できたか分からない場合は、下記フォームから申請してください。申請期限を過ぎていても申請できます。\n{{receipt_form_after}}\n\n②領収書は申請後、まとめて作成してメールでお送りしています。送付予定日（【領収書送付期限】）を過ぎていない場合は、もうしばらくお待ちください。\n\n③申請したメールアドレスの迷惑メールフォルダをご確認ください。\n\nそれでも届かない場合や、枚数・内容に誤りがある場合は「担当者に相談」を押してください。",
+      "tags": [
+        "領収書"
+      ],
+      "review": "",
+      "links": [],
+      "id": "receipt_issue",
+      "order": 4,
+      "status": "確認済"
+    },
+    "prize": {
+      "parent": "live",
+      "evidence": "",
+      "channel": null,
+      "per_event": false,
+      "label": "入賞・プライズ",
+      "handoff": null,
+      "type": "menu",
+      "body": "入賞・プライズについて、確認したい内容をお選びください。",
+      "follow": false,
+      "tags": [],
+      "review": "",
+      "links": [],
+      "id": "prize",
+      "status": "確認済",
+      "order": 1
+    },
+    "games_about": {
+      "parent": "games",
+      "evidence": "ご担当者の説明（2026/10/22）・10/10回答「JOPT公式のポーカーアプリ」",
+      "channel": null,
+      "per_event": false,
+      "label": "JOPT Gamesとは",
+      "handoff": null,
+      "follow": true,
+      "body": "JOPT Gamesは、JOPTが開発・運営するオンラインポーカーアプリです。無料で遊べて、アプリ内のトーナメントで勝ち上がると、会場で開催するJOPTの大会に無料で参加できるチケット（バウチャー・Main Ticket）を獲得できます。\n\n・アプリ内で使うチケット（トライアル・サテライト・ファイナル）→ JOPT Gamesアプリに表示\n・獲得した会場用のチケット → GameIDアプリに表示（JOPT Games IDとGameIDの連携が必要）",
+      "type": "answer",
+      "tags": [
+        "JOPT Games"
+      ],
+      "review": "",
+      "links": [
+        "games_ticket_types",
+        "games_live_voucher",
+        "games_other"
+      ],
+      "id": "games_about",
+      "status": "確認済",
+      "order": 0
+    },
+    "entry_team": {
+      "parent": "entry",
+      "evidence": "10/08・同僚表 14件・代表者変更可（ご担当者確認 2026/10/22）",
+      "channel": null,
+      "per_event": false,
+      "label": "3on3・タッグの申込",
+      "handoff": "H_PREENTRY",
+      "body": "チーム戦の事前申込は、公式Xなどで告知する申込フォームから行います。申込後に届く決済案内メールで、期日までに決済すると確定です。\n・決済後のキャンセル・返金はできません。\n・代表者を含むメンバーの変更ができます。「担当者に相談」から、決済者のGameIDと、変更前・変更後の方のGameID・プレイヤーネームをお送りください。当日の着席前であれば会場でも変更できます。\n・ウェブコインでの支払いは、代表者のGameIDから行ってください。\n・定員に達した場合、当日枠を抽選で用意することがあります。",
+      "type": "answer",
+      "follow": true,
+      "tags": [
+        "大会参加・エントリー"
+      ],
+      "review": "",
+      "links": [],
+      "id": "entry_team",
+      "order": 5,
+      "status": "確認済"
+    },
+    "prize_contract_status": {
+      "parent": "prize",
+      "evidence": "同意見の回答 17回（03/20〜05/12）",
+      "per_event": false,
+      "channel": "ch_pokerguild",
+      "label": "選手契約の状況確認",
+      "handoff": null,
+      "follow": false,
+      "body": "選手契約の申請・承認状況は、ポーカーギルド社が管理しているため、JOPTでは確認できません。下記の窓口へお問い合わせください。",
+      "type": "redirect",
+      "tags": [
+        "プライズ",
+        "コイン・選手契約"
+      ],
+      "review": "",
+      "links": [],
+      "id": "prize_contract_status",
+      "order": 5,
+      "status": "確認済"
+    },
+    "entry_overseas": {
+      "parent": "entry",
+      "evidence": "10/02・10/16・10/20",
+      "per_event": false,
+      "channel": null,
+      "label": "海外から参加したい",
+      "handoff": "H_GENERAL",
+      "follow": true,
+      "body": "海外にお住まいの方は、メインイベントの特別協賛制度でご参加いただける場合があります。協賛金は開催回によって異なり、会場でご案内します。\nGameIDの登録やエントリーは、会場受付横の「特別対応窓口」でサポートします。\nSOFAステータスの方は対象外です。\n\nEnglish guide: {{overseas_guide_url}}",
+      "type": "answer",
+      "tags": [
+        "大会参加・エントリー"
+      ],
+      "review": "",
+      "links": [],
+      "id": "entry_overseas",
+      "order": 7,
+      "status": "確認済"
+    },
+    "games_live_voucher": {
+      "parent": "games",
+      "evidence": "10/15・10/19・10/08・08/15",
+      "channel": "ch_jopt_games",
+      "per_event": false,
+      "handoff": null,
+      "label": "Gamesの会場用チケット",
+      "body": "JOPT Gamesで獲得した会場用のバウチャー・Main Ticketは、GameIDアプリに付与されます。次の順にご確認ください。\n\n①JOPT Games IDとGameIDを連携していますか。JOPT Games公式LINEのリッチメニュー「GameID紐づけ」から登録してください。\n\n②GameIDで「JOPT」クラブに参加していますか。\n\n③入賞者の確認後、通常2〜3営業日で付与します。GameIDアプリを再起動し、「その他」→「チケット」をご確認ください。\n\nそれでも届かない場合は下記のJOPT Gamesお問い合わせ窓口へご連絡ください。\n{{ch_jopt_games}}",
+      "type": "check",
+      "follow": true,
+      "tags": [
+        "JOPT Games",
+        "チケット"
+      ],
+      "review": "",
+      "links": [],
+      "id": "games_live_voucher",
+      "status": "確認済",
+      "order": 4
+    },
+    "root": {
+      "parent": null,
+      "evidence": "",
+      "per_event": false,
+      "channel": null,
+      "handoff": null,
+      "label": "トップ",
+      "body": "{{msg_root}}",
+      "follow": false,
+      "type": "menu",
+      "tags": [],
+      "review": "",
+      "links": [],
+      "id": "root",
+      "order": 0,
+      "status": "確認済"
+    },
+    "biz_store": {
+      "parent": "biz",
+      "evidence": "",
+      "channel": "ch_store_east",
+      "per_event": false,
+      "handoff": null,
+      "label": "店舗様（東日本）",
+      "body": "店舗様からのお問い合わせ（サテライト開催・チケット配布など）は、店舗様専用のLINEで承っています。",
+      "type": "redirect",
+      "follow": false,
+      "tags": [
+        "店舗・お仕事"
+      ],
+      "review": "",
+      "links": [],
+      "id": "biz_store",
+      "status": "確認済",
+      "order": 1
+    },
+    "biz_staff": {
+      "parent": "biz",
+      "evidence": "",
+      "per_event": false,
+      "channel": "ch_staff",
+      "handoff": null,
+      "label": "イベントスタッフ募集",
+      "type": "redirect",
+      "body": "イベントスタッフの募集は、こちらのLINEでご案内しています。",
+      "follow": false,
+      "tags": [
+        "店舗・お仕事"
+      ],
+      "review": "",
+      "links": [],
+      "id": "biz_staff",
+      "order": 4,
+      "status": "確認済"
+    },
+    "games_membership_fix": {
+      "parent": "games",
+      "evidence": "06/18（23回）・10/09・10/10",
+      "per_event": false,
+      "channel": "ch_jopt_games",
+      "label": "メンバーシップが反映されない",
+      "handoff": null,
+      "type": "check",
+      "body": "次の順にご確認ください。\n\n①JOPT Gamesアプリを一度完全に終了して再起動し、ログアウト→再ログインしてください。\n\n②購入後にメールで届いたクーポンコードを、アプリ内の「自分」→「クーポン」で入力しましたか。入力するまでプランは反映されません。\n\nそれでも反映されない場合はJOPT Games ID（8桁）、ニックネーム、登録メールアドレス、注文番号が分かる購入履歴の画像を添えて下記のJOPT Gamesお問い合わせ窓口へご連絡ください。\n{{ch_jopt_games}}",
+      "follow": true,
+      "tags": [
+        "JOPT Games"
+      ],
+      "review": "",
+      "links": [],
+      "id": "games_membership_fix",
+      "order": 2.5,
+      "status": "確認済"
+    },
+    "human": {
+      "parent": "root",
+      "evidence": "",
+      "channel": null,
+      "per_event": false,
+      "label": "担当者に相談",
+      "handoff": null,
+      "type": "menu",
+      "body": "内容をお選びください。",
+      "follow": false,
+      "tags": [],
+      "review": "",
+      "links": [],
+      "id": "human",
+      "order": 6,
+      "status": "確認済"
+    },
+    "live": {
+      "parent": "root",
+      "evidence": "",
+      "per_event": false,
+      "channel": null,
+      "handoff": null,
+      "label": "JOPTの問い合わせ",
+      "follow": false,
+      "type": "menu",
+      "body": "JOPTの問い合わせについて、お選びください。",
+      "tags": [],
+      "review": "",
+      "links": [],
+      "id": "live",
+      "status": "確認済",
+      "order": 1
+    },
+    "ticket_voucher_use": {
+      "parent": "ticket",
+      "evidence": "同僚表・09/05",
+      "per_event": false,
+      "channel": null,
+      "handoff": "H_GENERAL",
+      "label": "バウチャーの使い方",
+      "body": "・受付でGameIDを提示し、使用するバウチャーをお伝えください。\n・1つのトーナメントにつき2枚までご利用いただけます。\n・額面が参加費を上回ってもお釣りは出ません。分割利用もできません。\n・ドリンク代は別途必要な場合があります。",
+      "type": "answer",
+      "follow": true,
+      "tags": [
+        "チケット"
+      ],
+      "review": "",
+      "links": [],
+      "id": "ticket_voucher_use",
+      "status": "確認済",
+      "order": 5
+    },
+    "ticket_missing": {
+      "parent": "ticket",
+      "evidence": "86件＋GameID関連46件を確認。原因はJOPTクラブ未参加が最多、次いで入力GameIDの誤り・店舗付与・付与日時前（08/14・09/09・10/06・10/08 など）",
+      "per_event": false,
+      "channel": null,
+      "handoff": "H_TICKET",
+      "label": "チケットが届かない",
+      "follow": true,
+      "type": "check",
+      "body": "次の順にご確認ください。\n\n①GameIDアプリを一度完全に終了して再起動し、画面下メニュー右端の「その他」→「チケット」をご確認ください。\n\n②GameIDで「JOPT」クラブに参加しているかご確認ください。クラブに参加していないと、チケットを付与できません。\n（GameID下部の「クラブ」から「JOPT」を検索して参加申請）\n\n③申込フォームやキャンペーンに入力したGameIDが、ご自身のGameID（8桁の数字）と合っているかご確認ください。\n\n④店舗のサテライトで獲得したチケットは、獲得した店舗から付与されます。店舗へお問い合わせください。\n\n⑤キャンペーンのチケットは、告知に記載の日時に付与されます。当日会場の「特別対応窓口」で付与するものもあります。\n\nそれでも見当たらない場合は「担当者に相談」を押してください。",
+      "tags": [
+        "チケット"
+      ],
+      "review": "JOPTクラブ参加手順の画像（担当者が送っているもの）を添付するか確認",
+      "links": [],
+      "id": "ticket_missing",
+      "order": 6,
+      "status": "確認済"
+    },
+    "ticket": {
+      "parent": "live",
+      "evidence": "",
+      "channel": null,
+      "per_event": false,
+      "handoff": null,
+      "label": "会場のチケット",
+      "follow": false,
+      "body": "会場の大会で使うチケット・バウチャー（GameIDアプリに表示されるもの）について、お選びください。",
+      "type": "menu",
+      "tags": [],
+      "review": "",
+      "links": [],
+      "id": "ticket",
+      "status": "確認済",
+      "order": 2
+    },
+    "biz_store_w": {
+      "parent": "biz",
+      "evidence": "",
+      "per_event": false,
+      "channel": "ch_store_west",
+      "handoff": null,
+      "label": "店舗様（西日本）",
+      "type": "redirect",
+      "body": "西日本エリアの店舗様からのお問い合わせは、こちらの専用LINEで承っています。",
+      "follow": false,
+      "tags": [
+        "店舗・お仕事"
+      ],
+      "review": "",
+      "links": [],
+      "id": "biz_store_w",
+      "order": 2,
+      "status": "確認済"
+    },
+    "ticket_other_brand": {
+      "parent": "ticket",
+      "evidence": "同僚表・10/16・ご担当者確認（2026/10/22）",
+      "channel": null,
+      "per_event": false,
+      "label": "SPADIE・戦国のチケット",
+      "handoff": "H_TICKET",
+      "type": "answer",
+      "follow": true,
+      "body": "SPADIEで獲得したバウチャー・チケットは、記載された対象のSPADIEでのみご利用いただけます。JOPTや戦国ポーカーツアーでは使えません。\n戦国ポーカーツアーのチケットも同様に、記載の対象大会のみでご利用いただけます。\nSPADIEのメインチケットは、指定されたサイドトーナメント（例：NLH One Spark）にはチケットで参加できますが、そのほかのサイドトーナメントの参加費の割引には使えません。",
+      "tags": [
+        "チケット"
+      ],
+      "review": "",
+      "links": [],
+      "id": "ticket_other_brand",
+      "status": "確認済",
+      "order": 7
+    },
+    "human_report": {
+      "parent": "human",
+      "evidence": "",
+      "channel": null,
+      "per_event": false,
+      "label": "不正・トラブルの報告",
+      "handoff": "H_REPORT",
+      "type": "handoff",
+      "body": "ご報告ありがとうございます。いただいた内容は社内で確認いたします。調査の経過や結果は個別にご案内しておりませんので、ご了承ください。",
+      "follow": false,
+      "tags": [
+        "その他"
+      ],
+      "review": "",
+      "links": [],
+      "id": "human_report",
+      "status": "確認済",
+      "order": 2
+    },
+    "app_gameid": {
+      "parent": "live",
+      "evidence": "21回",
+      "per_event": false,
+      "channel": "ch_gameid",
+      "label": "GameIDアプリ",
+      "handoff": null,
+      "body": "GameIDアプリのログイン・アカウント復元・KYC（本人確認）・プロフィール写真は、GameIDを運営するグローバルポイント社の窓口へお問い合わせください。\n※パスワードや認証コードは送らないでください。",
+      "follow": false,
+      "type": "redirect",
+      "tags": [
+        "GameIDアプリ"
+      ],
+      "review": "",
+      "links": [],
+      "id": "app_gameid",
+      "status": "確認済",
+      "order": 7
+    },
+    "games_ticket_types": {
+      "parent": "games",
+      "evidence": "10/19・06/22（8回）・同僚表",
+      "channel": null,
+      "per_event": false,
+      "handoff": null,
+      "label": "アプリ内チケットの種類",
+      "follow": true,
+      "type": "answer",
+      "body": "JOPT Gamesでは、チケットでトーナメントを勝ち上がります。\n・トライアルチケット：トライアルステージに参加\n・サテライトチケット：サテライトステージに参加\n・ファイナルチケット：ファイナルステージに参加\nサテライトステージ以降に参加するには、Silver以上のメンバーシップが必要です。\n\nファイナルチケットはJOPT Gamesの中で使うチケットです。会場のメインイベントやMillionsでは使えません。",
+      "tags": [
+        "JOPT Games",
+        "チケット"
+      ],
+      "review": "",
+      "links": [
+        "games_other"
+      ],
+      "id": "games_ticket_types",
+      "status": "確認済",
+      "order": 1
+    },
+    "receipt_after": {
+      "parent": "receipt",
+      "evidence": "10/15・10/19・10/22（期限後も同フォームで受付）",
+      "per_event": false,
+      "channel": null,
+      "handoff": "H_RECEIPT",
+      "label": "過去の大会の領収書",
+      "follow": true,
+      "body": "過去の大会の領収書も、下記フォームから申請できます。申請期限を過ぎていても問題ありません。\n{{receipt_form_after}}\n\nフォームの「対象期間」には、参加した大会の開催期間（例：10/8〜10/12）をご入力ください。",
+      "type": "answer",
+      "tags": [
+        "領収書"
+      ],
+      "review": "",
+      "links": [],
+      "id": "receipt_after",
+      "order": 2,
+      "status": "確認済"
+    },
+    "games_refund": {
+      "parent": "games",
+      "evidence": "GPT草案FAQ-034・035・06/19・03/18",
+      "per_event": false,
+      "channel": null,
+      "handoff": null,
+      "label": "返金・解約について",
+      "type": "answer",
+      "body": "返金と、サブスクリプションの解約は別の手続きです。\n・解約（今後の自動更新を止める）：iPhoneの「設定」→ 自分の名前 →「サブスクリプション」から手続きしてください。\n・返金：App Storeで購入した場合は、Appleの「問題を報告する」（https://reportaproblem.apple.com）から申請してください。\n返金を受けると、そのメンバーシップと特典のチケットは取り消されます。\n\n解約・返金のあとにチケットが消えた場合は、下記のJOPT Gamesお問い合わせ窓口へご連絡ください。\n{{ch_jopt_games}}",
+      "follow": false,
+      "tags": [
+        "JOPT Games"
+      ],
+      "review": "Google Playで購入した場合の案内を追加するか確認",
+      "links": [
+        "games_other"
+      ],
+      "id": "games_refund",
+      "status": "要確認",
+      "order": 2.6
+    },
+    "games_online_day1": {
+      "parent": "games",
+      "evidence": "10/20・同僚表",
+      "channel": null,
+      "per_event": false,
+      "label": "オンラインDay1を通過した",
+      "handoff": null,
+      "type": "answer",
+      "body": "JOPT GamesでGameIDとの連携ができていれば、Day 2に向けた手続きは必要ありません。すべてのDay 1が終わったあとにシートドローを公開します。\nチップ量はDay 2に引き継がれます。",
+      "follow": true,
+      "tags": [
+        "JOPT Games"
+      ],
+      "review": "Online Day1通過後にフォーム提出が必要な回もある（同僚表）。開催回ごとに確認",
+      "links": [
+        "games_other"
+      ],
+      "id": "games_online_day1",
+      "status": "要確認",
+      "order": 7
+    },
+    "receipt_event": {
+      "parent": "receipt",
+      "evidence": "10/14 回答",
+      "channel": null,
+      "per_event": true,
+      "handoff": "H_RECEIPT",
+      "label": "大会の領収書がほしい",
+      "body": "下記フォームから申請してください。大会当日に申請できなかった場合や、申請期限を過ぎた場合も申請できます。\n【領収書フォーム】\n\n申請内容をもとに、【領収書送付期限】までにご登録のメールアドレスへ電子領収書をお送りします。\n但し書きは「施設使用料として」となります。",
+      "type": "answer",
+      "follow": true,
+      "tags": [
+        "領収書"
+      ],
+      "review": "",
+      "links": [],
+      "id": "receipt_event",
+      "status": "確認済",
+      "order": 1
+    },
+    "coin_travel": {
+      "parent": "coin",
+      "evidence": "08/28 回答 10回・09/15",
+      "per_event": false,
+      "channel": null,
+      "handoff": "H_CONTRACT",
+      "label": "渡航費・宿泊費に使える？",
+      "type": "answer",
+      "body": "保有しているウェブコイン（または選手契約）を、交通費・宿泊費・対象大会の参加費に充てることができます。\n大会側から交通費を別途支給したり、実費をキャッシュバックしたりする制度ではありません。\n\n・ウェブコインの方：ポーカーギルド公式LINE（{{ch_pokerguild}}）のリッチメニュー「選手契約」から申請\n・JOPT選手契約の方：選手契約履行申請サポート（{{ch_contract_jopt}}）から申請",
+      "follow": true,
+      "tags": [
+        "コイン・選手契約"
+      ],
+      "review": "",
+      "links": [],
+      "id": "coin_travel",
+      "order": 3,
+      "status": "確認済"
+    },
+    "ticket_which": {
+      "parent": "root",
+      "evidence": "同僚表でも会場とGamesのチケットを分けて案内。ログで混同が多数",
+      "channel": null,
+      "per_event": false,
+      "label": "チケットの種類がわからない",
+      "handoff": "H_GENERAL",
+      "follow": true,
+      "body": "チケットの名前と表示される場所で見分けられます。\n\n■ 会場の大会で使うチケット\nGameIDアプリの「その他」→「チケット」に表示されます。名前に「Main Ticket」「Voucher（バウチャー）」が付きます。\n\n■ JOPT Gamesのチケット（オンライン用）\nJOPT Gamesアプリの中で使います。名前に「Trial（トライアル）」「Satellite（サテライト）」「Final（ファイナル）」が付きます。\n\n※JOPT Gamesで勝ち上がって獲得した会場用のバウチャーやMain Ticketは、GameIDアプリに付与されます。\n※会場の大会で入賞して獲得するJOPT GamesのFinal Ticketは、JOPT Gamesアプリに付与されます。",
+      "type": "answer",
+      "tags": [
+        "チケット",
+        "JOPT Games"
+      ],
+      "review": "",
+      "links": [
+        "ticket",
+        "games",
+        "games_id_diff"
+      ],
+      "id": "ticket_which",
+      "order": 3,
+      "status": "確認済"
+    },
+    "coin_change": {
+      "parent": "coin",
+      "evidence": "",
+      "channel": null,
+      "per_event": false,
+      "handoff": "H_CONTRACT",
+      "label": "選手契約への変更",
+      "type": "handoff",
+      "body": "ウェブコインから選手契約への変更は、獲得したウェブコインを全額保有している場合に限り承ります。特定の入賞分だけの変更はできません。",
+      "follow": false,
+      "tags": [
+        "コイン・選手契約"
+      ],
+      "review": "同僚表は「会場で受取方法を選んだ後は変更不可」、08/25〜31は「FST用に変更手続きを行う」と回答。現行ルールを確認",
+      "links": [],
+      "id": "coin_change",
+      "order": 7,
+      "status": "要確認"
+    },
+    "goods_ship": {
+      "parent": "goods",
+      "evidence": "",
+      "per_event": false,
+      "channel": null,
+      "handoff": "H_GOODS",
+      "label": "購入商品が届かない",
+      "type": "handoff",
+      "body": "",
+      "follow": false,
+      "tags": [
+        "忘れ物・商品"
+      ],
+      "review": "",
+      "links": [],
+      "id": "goods_ship",
+      "status": "確認済",
+      "order": 1
+    },
+    "entry_photo": {
+      "parent": "entry",
+      "evidence": "GPT草案FAQ-047・049・04/30（Flickr）・10/01",
+      "channel": null,
+      "per_event": true,
+      "label": "大会の写真・動画撮影",
+      "handoff": "H_GENERAL",
+      "type": "answer",
+      "body": "■ 大会の写真\n公式の写真アルバムで公開しています。\n【写真アルバム】\n掲載された写真の削除・差し替えをご希望の場合は、店舗様・お仕事 ›「メディア・写真」からご連絡ください。\n\n■ 会場での動画撮影\n会場内で撮影する場合は、事前にメディアパスの申請が必要です。\n【メディア申請】\n申請後、当日は受付横の「特別対応窓口」でメディアパスをお受け取りください。",
+      "follow": true,
+      "tags": [
+        "大会参加・エントリー"
+      ],
+      "review": "",
+      "links": [],
+      "id": "entry_photo",
+      "status": "確認済",
+      "order": 8.5
+    },
+    "coin_entry": {
+      "parent": "coin",
+      "evidence": "09/07 回答・同僚表",
+      "per_event": false,
+      "channel": null,
+      "handoff": "H_GENERAL",
+      "label": "エントリーにコインは使える？",
+      "follow": true,
+      "body": "サイドトーナメントのエントリー費にウェブコインをご利用いただけます（メインチケットを使うトーナメントを除く）。\n参加するトーナメントごとに、必要な金額をその都度トランスファーしてください。複数大会分をまとめて事前に送ることはご遠慮ください。",
+      "type": "answer",
+      "tags": [
+        "コイン・選手契約",
+        "大会参加・エントリー"
+      ],
+      "review": "",
+      "links": [],
+      "id": "coin_entry",
+      "order": 5,
+      "status": "確認済"
+    }
+  },
+  "channels": {
+    "ch_dealer": {
+      "note": "過去に Cu5as5E / PxUyam7 / bEZMm3m / OhUfjhF(大阪) も使用。最新はどれか確認",
+      "last_seen": "2026-10-17",
+      "scope": "ディーラー応募・シフト・欠勤連絡",
+      "name": "ディーラー募集・ディーラー連絡",
+      "uses": 2,
+      "id": "ch_dealer",
+      "url": "https://lin.ee/tCoO6FE",
+      "status": "要確認"
+    },
+    "ch_jopt_games": {
+      "note": "10/19までは lin.ee/N9g1tVq（55回）。10/20から @309xigvj に切り替わった模様。最新を確認",
+      "last_seen": "2026-10-22",
+      "scope": "JOPT Gamesアプリ（メンバーシップ・オンラインサテライト・アプリ内チケット・アカウント）",
+      "name": "JOPT Games お問い合わせ窓口",
+      "uses": 3,
+      "id": "ch_jopt_games",
+      "url": "https://line.me/R/ti/p/@309xigvj",
+      "status": "要確認"
+    },
+    "ch_pokerguild": {
+      "note": "同じ用途で lin.ee/HlydfsS（グローバルポイント社 履行申請窓口, 9/15〜10/8 で3回）と line.me/R/ti/p/@401vzjrq（ポーカーギルド, 78回, 電話080-7174-3552）も使われている。どれを正とするか決める",
+      "last_seen": "2026-10-16",
+      "scope": "POKER WEB COIN（ウェブコイン）の残高・有効期限・選手契約手続き・渡航費申請",
+      "name": "ポーカーギルド公式LINE",
+      "uses": 153,
+      "id": "ch_pokerguild",
+      "url": "https://lin.ee/rzrryxc",
+      "status": "要確認"
+    },
+    "ch_store_east": {
+      "note": "旧リンク lin.ee/Yo4xQq2（〜2026/05）は使わない",
+      "last_seen": "2026-10-15",
+      "scope": "店舗様からのお問い合わせ（サテライト開催・チケット配布など）",
+      "name": "店舗様専用LINE",
+      "uses": 6,
+      "id": "ch_store_east",
+      "url": "https://lin.ee/eXzpvza",
+      "status": "確認済"
+    },
+    "ch_staff": {
+      "note": "",
+      "last_seen": "2026-09-21",
+      "scope": "サービス・メディアなどイベントスタッフの応募",
+      "name": "イベントスタッフ募集",
+      "uses": 4,
+      "id": "ch_staff",
+      "url": "https://lin.ee/ZslbBRc",
+      "status": "要確認"
+    },
+    "ch_contract_jopt": {
+      "note": "",
+      "last_seen": "2026-10-22",
+      "scope": "JOPTと締結した選手契約の残高照会・履行（補助）申請",
+      "name": "JOPT選手契約 履行申請サポート",
+      "uses": 460,
+      "id": "ch_contract_jopt",
+      "url": "https://lin.ee/Gw21lv0",
+      "status": "確認済"
+    },
+    "ch_gameid": {
+      "note": "",
+      "last_seen": "2026-10-11",
+      "scope": "GameIDアプリのログイン・アカウント復元・KYC・プロフィール写真",
+      "name": "GameID 公式LINE（グローバルポイント社）",
+      "uses": 21,
+      "id": "ch_gameid",
+      "url": "https://line.me/R/ti/p/@578hovhc",
+      "status": "確認済"
+    },
+    "ch_store_west": {
+      "note": "",
+      "last_seen": "2026-10-15",
+      "scope": "西日本エリアの店舗様からのお問い合わせ",
+      "name": "店舗様専用LINE（西日本）",
+      "uses": 3,
+      "id": "ch_store_west",
+      "url": "https://lin.ee/pVz2u5r",
+      "status": "確認済"
+    }
+  },
+  "messages": {
+    "msg_root": {
+      "title": "メニュー表示",
+      "text": "JOPTサポート窓口です。\n会場で開催する「JOPTの大会」と、オンラインアプリ「JOPT Games」のどちらについてのお問い合わせですか？\n下のボタンからお選びください。",
+      "id": "msg_root"
+    },
+    "msg_ticket_open": {
+      "title": "対応中の案件がある時",
+      "id": "msg_ticket_open",
+      "text": "担当者が確認中です。追加の内容はこのままお送りください。順番にご返信いたします。"
+    },
+    "msg_followup": {
+      "title": "回答後の確認",
+      "id": "msg_followup",
+      "text": "ご不明点は解決しましたか？"
+    },
+    "msg_handoff_out": {
+      "title": "担当者へ（営業時間外）",
+      "id": "msg_handoff_out",
+      "text": "現在は営業時間外のため、翌営業日以降に担当者よりご返信いたします。\n【対応時間】10:00〜19:00（水・日を除く）\n\nお手数ですが、下記の内容を先にこのトークへご返信ください。\n\n{{fields}}"
+    },
+    "msg_tags": {
+      "title": "カテゴリ一覧",
+      "id": "msg_tags",
+      "text": "[\"プライズ\",\"チケット\",\"大会参加・エントリー\",\"領収書\",\"コイン・選手契約\",\"JOPT Games\",\"GameIDアプリ\",\"店舗・お仕事\",\"忘れ物・商品\",\"その他\"]"
+    },
+    "msg_freetext": {
+      "title": "自由入力への返信（v1）",
+      "id": "msg_freetext",
+      "text": "お問い合わせありがとうございます。\nよくあるご質問は下のボタンからすぐにご確認いただけます。\n該当がない場合は「担当者に相談」を押してください。"
+    },
+    "msg_handoff_in": {
+      "title": "担当者へ（営業時間内）",
+      "id": "msg_handoff_in",
+      "text": "担当者が確認してご返信いたします。\nお手数ですが、下記の内容をこのトークにご返信ください。\n\n{{fields}}\n\n※内容によりお時間をいただく場合がございます。"
+    },
+    "msg_resolved": {
+      "title": "解決した",
+      "id": "msg_resolved",
+      "text": "ご利用ありがとうございました。\nほかにご質問があれば、いつでもメッセージをお送りください。"
+    }
+  },
+  "vars": {
+    "players_guide_url": {
+      "note": "Tokyo #03用。Osaka #02用に差し替え",
+      "valid_until": "2026-10-12",
+      "value": "https://events.japanopenpoker.com/2026-tokyo-03",
+      "key": "players_guide_url"
+    },
+    "media_form_url": {
+      "note": "未入力。開催回ごとに更新",
+      "valid_until": "",
+      "value": "（開催回のメディアパス申請フォームURLを入力）",
+      "key": "media_form_url"
+    },
+    "receipt_form_after": {
+      "note": "イベント期間外の領収書申請フォーム",
+      "valid_until": "",
+      "value": "https://docs.google.com/forms/d/e/1FAIpQLScGcR2m42hqUnpsPyIkDRcqwFN2aYIvtoowq4M5qJCWQSswfw/viewform",
+      "key": "receipt_form_after"
+    },
+    "event_dates": {
+      "note": "要確認：ログ上の推定",
+      "valid_until": "2026-11-03",
+      "value": "2026年10月31日（土）〜11月3日（火・祝）",
+      "key": "event_dates"
+    },
+    "overseas_guide_url": {
+      "note": "海外プレイヤー向けメインイベント案内",
+      "valid_until": "",
+      "value": "https://japanopenpoker.com/international-en-main-event-guide/",
+      "key": "overseas_guide_url"
+    },
+    "photo_album_url": {
+      "note": "要確認：ログ上のFlickrアルバム。開催回ごとのアルバムURLにするか確認",
+      "valid_until": "",
+      "value": "https://www.flickr.com/photos/190979093@N07/albums",
+      "key": "photo_album_url"
+    },
+    "event_name": {
+      "note": "次回開催の正式名称",
+      "valid_until": "2026-11-03",
+      "value": "JOPT 2026 Osaka #02",
+      "key": "event_name"
+    },
+    "age_note": {
+      "note": "Tokyo #03 では 10/9〜10/11（JT協賛）に20歳未満入場不可だった。開催回ごとに必ず更新",
+      "valid_until": "2026-11-03",
+      "value": "期間中、20歳未満の方の入場を制限する日はありません。",
+      "key": "age_note"
+    },
+    "receipt_send_deadline": {
+      "note": "Tokyo #03 分の送付期限",
+      "valid_until": "2026-10-28",
+      "value": "2026年10月28日",
+      "key": "receipt_send_deadline"
+    },
+    "event_venue": {
+      "note": "未入力",
+      "valid_until": "2026-11-03",
+      "value": "（会場名・住所を入力）",
+      "key": "event_venue"
+    },
+    "receipt_form_event": {
+      "note": "Tokyo #03 電子領収書申請フォーム",
+      "valid_until": "2026-10-28",
+      "value": "https://docs.google.com/forms/d/e/1FAIpQLSdDayMHAxlKaJGaN1tkTlyNs0QqPnoxjXMjA58n9jT3RSCYPA/viewform",
+      "key": "receipt_form_event"
+    },
+    "contract_url": {
+      "note": "選手契約の説明ページ",
+      "valid_until": "",
+      "value": "https://japanopenpoker.com/contract/",
+      "key": "contract_url"
+    }
+  },
+  "events": {
+    "ev_osaka02": {
+      "note": "変数から移行",
+      "venue": "（会場名・住所を入力）",
+      "receipt_form": "https://docs.google.com/forms/d/e/1FAIpQLSdDayMHAxlKaJGaN1tkTlyNs0QqPnoxjXMjA58n9jT3RSCYPA/viewform",
+      "media_form": "（開催回のメディアパス申請フォームURLを入力）",
+      "receipt_deadline": "2026年10月28日",
+      "age_note": "期間中、20歳未満の方の入場を制限する日はありません。",
+      "active": true,
+      "dates": "2026年10月31日（土）〜11月3日（火・祝）",
+      "guide_url": "https://events.japanopenpoker.com/2026-tokyo-03",
+      "extra": "",
+      "name": "JOPT 2026 Osaka #02",
+      "photo_url": "https://www.flickr.com/photos/190979093@N07/albums",
+      "id": "ev_osaka02",
+      "order": 1
+    },
+    "ev_mvkkk7aa": {
+      "note": "",
+      "venue": "",
+      "receipt_form": "",
+      "media_form": "",
+      "receipt_deadline": "",
+      "active": true,
+      "age_note": "",
+      "dates": "",
+      "guide_url": "",
+      "extra": "{}",
+      "name": "SPADIE OSAKA 03 TEST",
+      "id": "ev_mvkkk7aa",
+      "photo_url": "",
+      "order": 2
+    }
+  }
+}

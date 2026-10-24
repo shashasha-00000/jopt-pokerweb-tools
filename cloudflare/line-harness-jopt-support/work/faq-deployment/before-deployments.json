@@ -1,0 +1,82 @@
+{
+  "result": {
+    "deployments": [
+      {
+        "id": "fd1af5a8-f8a9-4e47-bb46-fde5b3d271be",
+        "source": "wrangler",
+        "strategy": "percentage",
+        "author_email": "xhpc007@gmail.com",
+        "annotations": {
+          "workers/triggered_by": "deployment"
+        },
+        "versions": [
+          {
+            "version_id": "01d1c74a-602a-4834-9a27-9e55a8af05c2",
+            "percentage": 100
+          }
+        ],
+        "created_on": "2026-10-17T09:13:29.657296Z"
+      },
+      {
+        "id": "95b2274f-1f4f-4f17-9490-7653f6b54e22",
+        "source": "wrangler",
+        "strategy": "percentage",
+        "author_email": "xhpc007@gmail.com",
+        "annotations": {
+          "workers/triggered_by": "deployment"
+        },
+        "versions": [
+          {
+            "version_id": "01d86bc2-bf0d-4836-949a-6ff4aadabccc",
+            "percentage": 100
+          }
+        ],
+        "created_on": "2026-10-17T09:12:55.498645Z"
+      },
+      {
+        "id": "e4e29108-5a24-48ab-beeb-087f46d5e6a0",
+        "source": "wrangler",
+        "strategy": "percentage",
+        "author_email": "xhpc007@gmail.com",
+        "annotations": {
+          "workers/message": "Automatic deployment on upload.",
+          "workers/triggered_by": "upload"
+        },
+        "versions": [
+          {
+            "version_id": "9684583a-2fbd-498d-bf48-c0a9397a10a3",
+            "percentage": 100
+          }
+        ],
+        "created_on": "2026-10-17T09:10:31.252737Z"
+      },
+      {
+        "id": "e7d74e4f-f897-4429-992e-c2c0732dbb24",
+        "source": "wrangler",
+        "strategy": "percentage",
+        "author_email": "xhpc007@gmail.com",
+        "annotations": {
+          "workers/message": "Automatic deployment on upload.",
+          "workers/triggered_by": "upload"
+        },
+        "versions": [
+          {
+            "version_id": "fd7b492f-afc8-4187-a3ff-99af6ec66dbe",
+            "percentage": 100
+          }
+        ],
+        "created_on": "2026-10-17T09:08:57.416459Z"
+      }
+    ]
+  },
+  "success": true,
+  "errors": [],
+  "messages": [],
+  "result_info": {
+    "page": 1,
+    "per_page": 10,
+    "count": 4,
+    "total_count": 4,
+    "total_pages": 1
+  }
+}

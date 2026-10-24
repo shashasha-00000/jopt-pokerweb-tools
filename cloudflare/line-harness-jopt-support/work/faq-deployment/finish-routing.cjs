@@ -1,0 +1,14 @@
+const fs=require('fs');let p='apps/worker/src/services/faq-render.ts',s=fs.readFileSync(p,'utf8');s=s.replace("view.outcome='redirected';","view.outcome=ch?.url?'redirected':'handoff';");s=s.replace("if(n.type==='handoff'){","if(n.type==='handoff'||n.type==='check'||view.outcome==='handoff'){\n      view.outcome='handoff';");s=s.replace("if(n.type==='answer'||n.type==='check'){","if(n.type==='answer'){");s=s.replace("    if(n.type==='redirect')view.buttons.push({label:d.nodes.human?.label||'担当者に相談',action:'handoff'});",'');s=s.replace("  if(n.parent)view.buttons.push","  if(view.outcome==='handoff'){view.buttons=[];return view;}\n  if(n.parent)view.buttons.push");fs.writeFileSync(p,s);
+p='apps/worker/src/services/faq-runtime.ts';s=fs.readFileSync(p,'utf8');let start=s.indexOf("  }else if(!s.preserve_unread){"),end=s.indexOf('\n  }\n}',start);if(start<0||end<0)throw Error('status anchor');s=s.slice(0,start)+`  }else{
+    // Complete this FAQ without closing a separate pending consultation or a
+    // new incoming message. Postback taps are controls, not new inquiries.
+    await db.prepare(\`INSERT OR IGNORE INTO chats(id,friend_id,status,last_message_at,created_at,updated_at)
+      SELECT ?,?,'resolved',?,?,? WHERE NOT EXISTS(SELECT 1 FROM chats WHERE friend_id=?)
+      AND NOT EXISTS(SELECT 1 FROM faq_sessions WHERE friend_id=? AND outcome='handoff')\`).bind(crypto.randomUUID(),s.friend_id,now,now,now,s.friend_id,s.friend_id).run();
+    await db.prepare(\`UPDATE chats SET status='resolved',updated_at=? WHERE friend_id=? AND status<>'in_progress'
+      AND NOT EXISTS(SELECT 1 FROM faq_sessions WHERE friend_id=? AND outcome='handoff')
+      AND NOT EXISTS(SELECT 1 FROM messages_log WHERE friend_id=? AND direction='incoming' AND message_type<>'postback'
+        AND rowid>COALESCE((SELECT MIN(rowid) FROM messages_log WHERE friend_id=? AND direction='outgoing' AND instr(content,?)>0),-1))\`).bind(now,s.friend_id,s.friend_id,s.friend_id,s.friend_id,s.id).run();`+s.slice(end);
+s=s.replace("      await updateStatus(db,s,'resolved','');",'');s=s.replace("    await db.prepare(\"UPDATE faq_webhook_receipts SET state='sent'", "    if(action==='resolved'||view.outcome==='redirected')await updateStatus(db,s,'resolved','');\n    await db.prepare(\"UPDATE faq_webhook_receipts SET state='sent'");fs.writeFileSync(p,s);
+const files=['apps/web/src/app/chats/page.tsx','apps/web/src/app/notifications/page.tsx','apps/web/src/components/chats/friend-info-sidebar.tsx','apps/web/src/components/layout/sidebar.tsx','apps/web/src/components/inbox/inbox-list.tsx','apps/web/src/components/inbox/inbox-summary-bar.tsx','apps/web/src/components/friends/friend-list-row.tsx'];
+for(const f of files){let t=fs.readFileSync(f,'utf8').replaceAll('未対応','要対応').replaceAll('解決済','対応済み');if(f.endsWith('app/chats/page.tsx'))t=t.replaceAll("label: '未読'","label: '要対応'");fs.writeFileSync(f,t)}

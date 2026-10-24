@@ -1,0 +1,148 @@
+{
+  "errors": [],
+  "warnings": [
+    {
+      "node": "entry_info",
+      "code": "REVIEW_REQUIRED"
+    },
+    {
+      "node": "receipt_coin",
+      "code": "REVIEW_REQUIRED"
+    },
+    {
+      "node": "entry_pay",
+      "code": "REVIEW_REQUIRED"
+    },
+    {
+      "node": "games_membership",
+      "code": "REVIEW_REQUIRED"
+    },
+    {
+      "node": "coin_other_event",
+      "code": "REVIEW_REQUIRED"
+    },
+    {
+      "node": "games_refund",
+      "code": "REVIEW_REQUIRED"
+    },
+    {
+      "node": "games_online_day1",
+      "code": "REVIEW_REQUIRED"
+    },
+    {
+      "node": "coin_change",
+      "code": "REVIEW_REQUIRED"
+    },
+    {
+      "node": "goods_trophy",
+      "code": "EMPTY_BODY"
+    },
+    {
+      "node": "entry_info",
+      "code": "UNRESOLVED_VARIABLE_OR_PLACEHOLDER"
+    },
+    {
+      "node": "entry_info",
+      "code": "EVENT_CONTEXT_REQUIRED",
+      "events": [
+        "ev_osaka02",
+        "ev_mvkkk7aa"
+      ]
+    },
+    {
+      "node": "goods_prize",
+      "code": "EMPTY_BODY"
+    },
+    {
+      "node": "ticket_side",
+      "code": "UNRESOLVED_VARIABLE_OR_PLACEHOLDER"
+    },
+    {
+      "node": "ticket_side",
+      "code": "EVENT_CONTEXT_REQUIRED",
+      "events": [
+        "ev_osaka02",
+        "ev_mvkkk7aa"
+      ]
+    },
+    {
+      "node": "human_other",
+      "code": "EMPTY_BODY"
+    },
+    {
+      "node": "entry_drink",
+      "code": "UNRESOLVED_VARIABLE_OR_PLACEHOLDER"
+    },
+    {
+      "node": "entry_drink",
+      "code": "EVENT_CONTEXT_REQUIRED",
+      "events": [
+        "ev_osaka02",
+        "ev_mvkkk7aa"
+      ]
+    },
+    {
+      "node": "entry_age",
+      "code": "UNRESOLVED_VARIABLE_OR_PLACEHOLDER"
+    },
+    {
+      "node": "entry_age",
+      "code": "EVENT_CONTEXT_REQUIRED",
+      "events": [
+        "ev_osaka02",
+        "ev_mvkkk7aa"
+      ]
+    },
+    {
+      "node": "receipt_issue",
+      "code": "UNRESOLVED_VARIABLE_OR_PLACEHOLDER"
+    },
+    {
+      "node": "receipt_issue",
+      "code": "EVENT_CONTEXT_REQUIRED",
+      "events": [
+        "ev_osaka02",
+        "ev_mvkkk7aa"
+      ]
+    },
+    {
+      "node": "receipt_event",
+      "code": "UNRESOLVED_VARIABLE_OR_PLACEHOLDER"
+    },
+    {
+      "node": "receipt_event",
+      "code": "EVENT_CONTEXT_REQUIRED",
+      "events": [
+        "ev_osaka02",
+        "ev_mvkkk7aa"
+      ]
+    },
+    {
+      "node": "goods_ship",
+      "code": "EMPTY_BODY"
+    },
+    {
+      "node": "entry_photo",
+      "code": "UNRESOLVED_VARIABLE_OR_PLACEHOLDER"
+    },
+    {
+      "node": "entry_photo",
+      "code": "EVENT_CONTEXT_REQUIRED",
+      "events": [
+        "ev_osaka02",
+        "ev_mvkkk7aa"
+      ]
+    },
+    {
+      "code": "SOURCE_ADMIN_EXPORT_DIFFERS",
+      "detail": "Captured from the simple editor getAll response, not the legacy admin export."
+    },
+    {
+      "code": "EXPIRED_VARIABLE",
+      "key": "players_guide_url",
+      "date": "2026-10-12"
+    }
+  ],
+  "canCompile": true,
+  "canReleaseProduction": false
+}

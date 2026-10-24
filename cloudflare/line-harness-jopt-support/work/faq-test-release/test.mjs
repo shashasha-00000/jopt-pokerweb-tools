@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import {base,compile} from './build.mjs';
+const source=JSON.parse(fs.readFileSync(path.join(base,'source.json'),'utf8'));
+const r=compile(source), tests=[];
+function check(name,fn){fn();tests.push({name,passed:true});}
+check('all current FAQ nodes included',()=>assert.equal(r.rules.length,Object.keys(source.nodes).length));
+check('Japanese source text preserved',()=>assert.deepEqual(r.data,source));
+check('test-only exact matching and no selected live account',()=>{for(const q of r.rules){assert.equal(q.matchType,'exact');assert.ok(q.keyword.startsWith('faq-test:'));assert.equal(q.lineAccountId,null);}assert.equal(r.deployment.productionEnabled,false);});
+check('valid Flex JSON with bounded postbacks',()=>{for(const q of r.rules){const f=JSON.parse(q.responseContent);assert.equal(f.type,'bubble');for(const b of f.body.contents.filter(x=>x.type==='button'))if(b.action.type==='postback')assert.ok(b.action.data.length<=300);}});
+check('all postback destinations exist or are declared status controls',()=>{const keys=new Set([...r.rules.map(q=>q.keyword),...r.controls.flatMap(c=>[c.resolved,c.handoff])]);for(const q of r.rules)for(const b of JSON.parse(q.responseContent).body.contents.filter(x=>x.type==='button'&&x.action.type==='postback'))assert.ok(keys.has(b.action.data),b.action.data);});
+check('same content creates same release identity',()=>assert.equal(compile(source).releaseId,r.releaseId));
+check('missing root rejected',()=>{const d=structuredClone(source);delete d.nodes.root;assert.ok(compile(d).validation.errors.length);});
+check('broken parent rejected',()=>{const d=structuredClone(source);d.nodes.root.parent='missing';d.nodes[Object.keys(d.nodes).find(k=>k!=='root')].parent='missing';assert.ok(compile(d).validation.errors.length);});
+check('cycle rejected',()=>{const d=structuredClone(source);d.nodes.root.parent='root';assert.ok(compile(d).validation.errors.some(x=>x.startsWith('cycle:')));});
+check('missing channel rejected',()=>{const d=structuredClone(source);const n=Object.values(d.nodes).find(n=>n.channel);delete d.channels[n.channel];assert.ok(compile(d).validation.errors.some(x=>x.startsWith('missing channel:')));});
+check('production release stays blocked with unfinished adapters',()=>assert.equal(r.validation.canReleaseProduction,false));
+const report={tests,passed:tests.length,scope:'offline compiler and package checks only; Harness API and real LINE not exercised'};
+fs.writeFileSync(path.join(base,'test-results.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));

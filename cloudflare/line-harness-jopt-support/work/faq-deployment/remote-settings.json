@@ -1,0 +1,98 @@
+{
+  "result": {
+    "placement": {},
+    "compatibility_date": "2024-12-01",
+    "compatibility_flags": [
+      "nodejs_compat"
+    ],
+    "usage_model": "standard",
+    "tags": [],
+    "tail_consumers": [],
+    "logpush": false,
+    "annotations": {
+      "workers/triggered_by": "version_upload"
+    },
+    "bindings": [
+      {
+        "name": "ADMIN_COOKIE_SAMESITE",
+        "text": "Lax",
+        "type": "plain_text"
+      },
+      {
+        "name": "ADMIN_ORIGIN",
+        "text": "https://line-harness-jopt-support.japanopenpoker.workers.dev",
+        "type": "plain_text"
+      },
+      {
+        "name": "API_KEY",
+        "type": "secret_text"
+      },
+      {
+        "name": "APPWRITE_API_KEY",
+        "type": "secret_text"
+      },
+      {
+        "name": "APPWRITE_BUCKET_ID",
+        "text": "6ad338b3002987cffde2",
+        "type": "plain_text"
+      },
+      {
+        "name": "APPWRITE_ENDPOINT",
+        "text": "https://fra.cloud.appwrite.io/v1",
+        "type": "plain_text"
+      },
+      {
+        "name": "APPWRITE_PROJECT_ID",
+        "text": "6ad33813000dd5ab3dca",
+        "type": "plain_text"
+      },
+      {
+        "name": "ASSETS",
+        "type": "assets"
+      },
+      {
+        "database_id": "e66caeb0-aa14-4f4a-80f0-b18bf87229e9",
+        "id": "e66caeb0-aa14-4f4a-80f0-b18bf87229e9",
+        "name": "DB",
+        "type": "d1"
+      },
+      {
+        "name": "LINE_CHANNEL_ACCESS_TOKEN",
+        "type": "secret_text"
+      },
+      {
+        "name": "LINE_CHANNEL_ID",
+        "text": "2011834690",
+        "type": "plain_text"
+      },
+      {
+        "name": "LINE_CHANNEL_SECRET",
+        "type": "secret_text"
+      },
+      {
+        "name": "LOG_RETENTION_DAYS",
+        "text": "0",
+        "type": "plain_text"
+      },
+      {
+        "class_name": "TenantScheduler",
+        "name": "TENANT_SCHEDULER",
+        "namespace_id": "549bc1669a614f54ade7d13aa26502d9",
+        "type": "durable_object_namespace"
+      },
+      {
+        "name": "WORKER_NAME",
+        "text": "line-harness-jopt-support",
+        "type": "plain_text"
+      },
+      {
+        "name": "WORKER_URL",
+        "text": "https://line-harness-jopt-support.japanopenpoker.workers.dev",
+        "type": "plain_text"
+      }
+    ]
+  },
+  "success": true,
+  "errors": [],
+  "messages": []
+}

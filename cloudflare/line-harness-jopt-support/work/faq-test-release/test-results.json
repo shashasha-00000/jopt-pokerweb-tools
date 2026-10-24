@@ -1,0 +1,58 @@
+{
+  "tests": [
+    {
+      "name": "all current FAQ nodes included",
+      "passed": true
+    },
+    {
+      "name": "Japanese source text preserved",
+      "passed": true
+    },
+    {
+      "name": "test-only exact matching and no selected live account",
+      "passed": true
+    },
+    {
+      "name": "valid Flex JSON with bounded postbacks",
+      "passed": true
+    },
+    {
+      "name": "all postback destinations exist or are declared status controls",
+      "passed": true
+    },
+    {
+      "name": "same content creates same release identity",
+      "passed": true
+    },
+    {
+      "name": "missing root rejected",
+      "passed": true
+    },
+    {
+      "name": "broken parent rejected",
+      "passed": true
+    },
+    {
+      "name": "cycle rejected",
+      "passed": true
+    },
+    {
+      "name": "missing channel rejected",
+      "passed": true
+    },
+    {
+      "name": "production release stays blocked with unfinished adapters",
+      "passed": true
+    }
+  ],
+  "passed": 11,
+  "scope": "offline compiler and package checks only; Harness API and real LINE not exercised",
+  "harnessRuntimeCheck": {
+    "status": "blocked",
+    "reason": "Local @line-crm/shared runtime export messageItems is missing; no dependency changes made"
+  },
+  "browserCheck": {
+    "status": "passed",
+    "verified": "Japanese rendering, menu navigation and answer/confirmation buttons; local preview only"
+  }
+}

@@ -1,0 +1,149 @@
+{
+  "success": true,
+  "data": {
+    "view": {
+      "nodeId": "root",
+      "eventId": null,
+      "text": "JOPTサポート窓口です。\n会場で開催する「JOPTの大会」と、オンラインアプリ「JOPT Games」のどちらについてのお問い合わせですか？\n下のボタンからお選びください。",
+      "buttons": [
+        {
+          "label": "JOPTの問い合わせ",
+          "nodeId": "live"
+        },
+        {
+          "label": "JOPT Games（アプリ）",
+          "nodeId": "games"
+        },
+        {
+          "label": "チケットの種類がわからない",
+          "nodeId": "ticket_which"
+        },
+        {
+          "label": "コイン・選手契約",
+          "nodeId": "coin"
+        },
+        {
+          "label": "店舗様・お仕事",
+          "nodeId": "biz"
+        },
+        {
+          "label": "担当者に相談",
+          "nodeId": "human"
+        }
+      ],
+      "outcome": "browsing"
+    },
+    "lineMessage": {
+      "type": "flex",
+      "altText": "JOPTサポート窓口です。\n会場で開催する「JOPTの大会」と、オンラインアプリ「JOPT Games」のどちらについてのお問い合わせですか？\n下のボタンからお選びください。",
+      "contents": {
+        "type": "bubble",
+        "size": "mega",
+        "styles": {
+          "body": {
+            "backgroundColor": "#FFFFFF"
+          }
+        },
+        "body": {
+          "type": "box",
+          "layout": "vertical",
+          "paddingAll": "16px",
+          "spacing": "sm",
+          "contents": [
+            {
+              "type": "text",
+              "text": "JOPTサポート窓口です。\n会場で開催する「JOPTの大会」と、オンラインアプリ「JOPT Games」のどちらについてのお問い合わせですか？\n下のボタンからお選びください。",
+              "wrap": true,
+              "size": "sm",
+              "color": "#1B2624",
+              "lineSpacing": "5px"
+            },
+            {
+              "type": "separator",
+              "color": "#E0E8E3",
+              "margin": "lg"
+            },
+            {
+              "type": "button",
+              "height": "sm",
+              "style": "secondary",
+              "color": "#EDF5F1",
+              "margin": "sm",
+              "action": {
+                "type": "postback",
+                "label": "JOPTの問い合わせ",
+                "displayText": "JOPTの問い合わせ",
+                "data": "faqv1:faq_1dd82f3b405944b580b1e9300d035528:preview:node:live"
+              }
+            },
+            {
+              "type": "button",
+              "height": "sm",
+              "style": "secondary",
+              "color": "#EDF5F1",
+              "margin": "sm",
+              "action": {
+                "type": "postback",
+                "label": "JOPT Games（アプリ）",
+                "displayText": "JOPT Games（アプリ）",
+                "data": "faqv1:faq_1dd82f3b405944b580b1e9300d035528:preview:node:games"
+              }
+            },
+            {
+              "type": "button",
+              "height": "sm",
+              "style": "secondary",
+              "color": "#EDF5F1",
+              "margin": "sm",
+              "action": {
+                "type": "postback",
+                "label": "チケットの種類がわからない",
+                "displayText": "チケットの種類がわからない",
+                "data": "faqv1:faq_1dd82f3b405944b580b1e9300d035528:preview:node:ticket_which"
+              }
+            },
+            {
+              "type": "button",
+              "height": "sm",
+              "style": "secondary",
+              "color": "#EDF5F1",
+              "margin": "sm",
+              "action": {
+                "type": "postback",
+                "label": "コイン・選手契約",
+                "displayText": "コイン・選手契約",
+                "data": "faqv1:faq_1dd82f3b405944b580b1e9300d035528:preview:node:coin"
+              }
+            },
+            {
+              "type": "button",
+              "height": "sm",
+              "style": "secondary",
+              "color": "#EDF5F1",
+              "margin": "sm",
+              "action": {
+                "type": "postback",
+                "label": "店舗様・お仕事",
+                "displayText": "店舗様・お仕事",
+                "data": "faqv1:faq_1dd82f3b405944b580b1e9300d035528:preview:node:biz"
+              }
+            },
+            {
+              "type": "button",
+              "height": "sm",
+              "style": "secondary",
+              "color": "#EDF5F1",
+              "margin": "sm",
+              "action": {
+                "type": "postback",
+                "label": "担当者に相談",
+                "displayText": "担当者に相談",
+                "data": "faqv1:faq_1dd82f3b405944b580b1e9300d035528:preview:node:human"
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

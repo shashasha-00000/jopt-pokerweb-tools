@@ -1,0 +1,4 @@
+const fs=require('fs');const path=require('path');
+const p=path.join(process.env.USERPROFILE,'.wrangler/config/default.toml');const t=fs.readFileSync(p,'utf8').match(/oauth_token\s*=\s*"([^"]+)"/)[1];
+(async()=>{const base='https://api.cloudflare.com/client/v4/accounts/4d9c9e5363f3e4e66214398c88afd9f4/workers/scripts/line-harness-jopt-support';for(const endpoint of ['settings','subdomain']){let r=await fetch(base+'/'+endpoint,{headers:{Authorization:'Bearer '+t}});let j=await r.json();fs.writeFileSync('work/faq-deployment/remote-'+endpoint+'.json',JSON.stringify(j,null,2));if(endpoint==='settings')console.log(JSON.stringify({success:j.success,errors:j.errors,settings:j.result&&{...j.result,bindings:j.result.bindings?.map(b=>b.type==='plain_text'?{...b,text:'[value saved locally]'}:b)}}));else console.log(j)}})().catch(e=>{console.error(e.message);process.exit(1)});
+

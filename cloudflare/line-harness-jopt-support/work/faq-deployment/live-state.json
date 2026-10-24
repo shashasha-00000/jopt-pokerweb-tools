@@ -1,0 +1,56 @@
+{
+  "releases": [
+    {
+      "id": "faq_1dd82f3b405944b580b1e9300d035528",
+      "accountId": "9ff322c4-32e5-4afc-a361-006361c1f503",
+      "contentHash": "35b24138ec122f2ffd402e89d8648df58c275a1b48c83a031f2e7e704509b833",
+      "validation": {
+        "errors": [],
+        "warnings": [
+          "entry_info: 要確認",
+          "entry_info/ev_osaka02: 本文に未設定の値があります",
+          "entry_info/ev_mvkkk7aa: 本文に未設定の値があります",
+          "receipt_coin: 要確認",
+          "ticket_side/ev_mvkkk7aa: 本文に未設定の値があります",
+          "entry_pay: 要確認",
+          "games_membership: 要確認",
+          "entry_drink/ev_mvkkk7aa: 本文に未設定の値があります",
+          "entry_age/ev_mvkkk7aa: 本文に未設定の値があります",
+          "coin_other_event: 要確認",
+          "receipt_issue/ev_mvkkk7aa: 本文に未設定の値があります",
+          "games_refund: 要確認",
+          "games_online_day1: 要確認",
+          "receipt_event/ev_mvkkk7aa: 本文に未設定の値があります",
+          "coin_change: 要確認",
+          "entry_photo/ev_osaka02: 本文に未設定の値があります",
+          "entry_photo/ev_mvkkk7aa: 本文に未設定の値があります",
+          "ch_dealer: 誘導先が要確認です",
+          "ch_jopt_games: 誘導先が要確認です",
+          "ch_pokerguild: 誘導先が要確認です",
+          "ch_staff: 誘導先が要確認です",
+          "players_guide_url: 有効期限切れ (2026-10-12)"
+        ],
+        "counts": {
+          "answer": 35,
+          "handoff": 12,
+          "menu": 11,
+          "redirect": 9,
+          "check": 8
+        },
+        "productionReady": false
+      },
+      "createdBy": "env-owner",
+      "createdAt": "2026-10-23T17:46:56.615+09:00"
+    }
+  ],
+  "deployments": [
+    {
+      "account_id": "9ff322c4-32e5-4afc-a361-006361c1f503",
+      "audience": "test",
+      "release_id": "faq_1dd82f3b405944b580b1e9300d035528",
+      "test_friend_ids": "[]",
+      "test_open": 1,
+      "updated_at": "2026-10-23T17:46:56.846+09:00"
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+[
+  {
+    "type": "handoff",
+    "node": "goods_trophy",
+    "outcome": "handoff",
+    "buttons": 0
+  },
+  {
+    "type": "check",
+    "node": "games_coupon",
+    "outcome": "handoff",
+    "buttons": 0
+  },
+  {
+    "type": "redirect",
+    "node": "biz_dealer",
+    "outcome": "redirected",
+    "buttons": 3
+  }
+]
