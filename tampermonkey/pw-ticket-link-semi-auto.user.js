@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         PW Ticket Link Semi Auto
 // @namespace    pw-ticket-link-semi-auto
-// @version      1.4.2
+// @version      1.4.3
 // @updateURL    https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
 // @downloadURL  https://raw.githubusercontent.com/shashasha-00000/jopt-pokerweb-tools/main/tampermonkey/pw-ticket-link-semi-auto.user.js
 // @description  Ticketルール表から計画を作成してLinkする。実状態のAuditは独立ボタンで必要時のみ実行する。
@@ -15,7 +15,7 @@
 (function () {
   "use strict";
 
-  const PW_REQUEST_MIN_INTERVAL_MS = 6100;
+  const PW_REQUEST_MIN_INTERVAL_MS = 610;
   const PW_REQUEST_LAST_STARTED_KEY = "PW_TICKET_LINK_LAST_REQUEST_START_V1";
   const pwNativeFetch = globalThis.fetch.bind(globalThis);
   let pwRequestQueue = Promise.resolve();
@@ -163,13 +163,13 @@
   }
 
   function log(...args) {
-    console.log("[PW-TICKET-LINK-v1.4.1]", ...args);
+    console.log("[PW-TICKET-LINK-v1.4.3]", ...args);
     const el = document.querySelector("#pw-ticket-link-status");
     if (el) el.textContent = args.map(String).join(" ");
   }
 
   function warn(...args) {
-    console.warn("[PW-TICKET-LINK-v1.4.1]", ...args);
+    console.warn("[PW-TICKET-LINK-v1.4.3]", ...args);
     const el = document.querySelector("#pw-ticket-link-status");
     if (el) el.textContent = "⚠ " + args.map(String).join(" ");
   }
@@ -324,7 +324,8 @@
   }
 
   function getTournamentNoKeyFromName(name) {
-    const s = norm(name);
+    // Event editions such as 【JOPT 2026 Osaka #02】 are not tournament keys.
+    const s = norm(name).replace(/^(?:【[^】]*】\s*)+/, "");
 
     if (/\bsit\s*(?:(?:&|＆|and)\s*)?go\b/i.test(s) || /^sit$/i.test(s)) {
       const monthDay = extractMonthDayKey(s);
@@ -1964,7 +1965,7 @@
               url: item.url,
               actualName: item.actualName,
               matchedRow: "manual-force-url",
-              source: "ticket-link-v1.4.1-manual-repair"
+              source: "ticket-link-v1.4.3-manual-repair"
             })
           : [];
 
@@ -3046,7 +3047,7 @@
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-      <div style="font-weight:bold;">PW Ticket Link Semi Auto v1.4.1</div>
+      <div style="font-weight:bold;">PW Ticket Link Semi Auto v1.4.3</div>
         <div style="display:flex;gap:4px;">
           <button id="pw-ticket-link-minimize" style="font-size:11px;padding:2px 6px;cursor:pointer;">Min</button>
           <button id="pw-ticket-link-close" style="font-size:11px;padding:2px 6px;cursor:pointer;">x</button>

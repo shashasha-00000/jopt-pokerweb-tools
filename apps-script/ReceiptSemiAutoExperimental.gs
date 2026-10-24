@@ -642,11 +642,17 @@ const RSE = (() => {
       })
       .sort();
     const seenPayments = new Set();
+    const processedGameIds = new Set();
 
     matchedApplicationKeys.forEach(applicationKey => {
-      const app = applications[applicationKey];
-      const gameId = app.gameId;
-      const pwRows = (pwByGameId[gameId] || []).filter(pw => pwMatchesApplicationPeriod_(pw, app));
+      const gameId = applications[applicationKey].gameId;
+      if (processedGameIds.has(gameId)) return;
+      processedGameIds.add(gameId);
+      const requests = matchedApplicationKeys.map(key => applications[key]).filter(app => app.gameId === gameId);
+      const identities = uniqueStrings_(requests.map(app => [
+        compact_(app.name), text_(app.email).toLowerCase(), compact_(removeSama_(app.recipient))
+      ].join('|')));
+      const pwRows = pwByGameId[gameId] || [];
 
       pwRows.forEach(pw => {
         const total = calcTotal_(pw);
@@ -656,6 +662,10 @@ const RSE = (() => {
         });
         const checkKey = paymentKey + '__PWROW__' + pw.rowNo;
         const old = prior[checkKey] || {};
+        const namedRequests = requests.filter(app => compact_(app.eventName) &&
+          compact_(pw.tournament).includes(compact_(app.eventName)));
+        const candidates = namedRequests.length ? namedRequests : requests;
+        const app = candidates.find(app => app.applicationKey === text_(old['申請キー'])) || candidates[0];
         // Game ID CHECK の確定値を下流の唯一の人物情報として扱う。
         // 領収書CHECKの旧値は履歴であり、確定値を逆方向に上書きしてはいけない。
         const finalName = text_(app.name);
@@ -690,6 +700,18 @@ const RSE = (() => {
         let judgement = 'OK';
         let policy = authorityChanged ? '新規発行' : text_(old['処理方針'] || '新規発行');
         let requiresManual = false;
+        const falseDuplicate = text_(old['処理方針']) === '重複として除外' &&
+          text_(old['確認内容']).includes('同じPW TSV内に同一paymentKeyがあります') &&
+          !text_(old.confirmedHash) && !text_(old.PDF_FILE_ID) && !text_(old['Draft ID']) &&
+          !text_(old['送信ステータス']) && identities.length === 1 &&
+          pwRows.filter(item => makePaymentKey_({ gameId, tournament: item.tournament,
+            purchaseTime: item.purchaseTime, type: item.type, total: calcTotal_(item) }) === paymentKey).length === 1;
+        if (falseDuplicate) {
+          policy = '新規発行';
+          judgement = '確認必要';
+          requiresManual = true;
+          messages.push('複数申請による重複誤判定を解除。支払内容を確認して再確定してください');
+        }
 
         if (total <= 0) {
           judgement = '対象外';
@@ -753,6 +775,12 @@ const RSE = (() => {
           }
         }
 
+        if (identities.length > 1) {
+          judgement = '確認必要';
+          requiresManual = true;
+          messages.push('同一Game IDの申請間で本名・メール・宛名が異なります。Game ID CHECKを確認してください');
+        }
+
         const finalHash = receiptFinalHash_({
           sourceHash, finalName, finalEmail, finalRecipient, policy
         });
@@ -760,17 +788,22 @@ const RSE = (() => {
           text_(old.confirmedHash) === finalHash &&
           ['確定済み', '自動確定'].indexOf(text_(old['確認状態'])) >= 0;
         const migratedStillConfirmed = scopeMigration && isReceiptCheckRowResolved_(old);
-        const carriedConfirmation = oldStillConfirmed || migratedStillConfirmed;
-        const autoSelect = !carriedConfirmation && judgement === 'OK' &&
+        const sentDuplicateConfirmed = judgement === '重複済み' &&
+          policy === '重複として除外' && !requiresManual &&
+          Boolean(existingPdf) && text_(existingPdf.status) === '送信済み';
+        const carriedConfirmation = oldStillConfirmed || migratedStillConfirmed || sentDuplicateConfirmed;
+        const autoSelect = !carriedConfirmation && !requiresManual && judgement === 'OK' &&
           ['新規発行', '対象外', '重複として除外'].indexOf(policy) >= 0 &&
           (!text_(old.checkKey) || applyAutoCheckMigration);
-        const preservePendingSelection = !carriedConfirmation &&
+        const preservePendingSelection = !carriedConfirmation && !falseDuplicate && identities.length === 1 &&
           text_(old.sourceHash) === sourceHash && isOn_(old['確認OK']);
         const state = carriedConfirmation
-          ? text_(old['確認状態'])
+          ? (sentDuplicateConfirmed
+            ? (['確定済み', '自動確定'].includes(text_(old['確認状態'])) ? text_(old['確認状態']) : '自動確定')
+            : text_(old['確認状態']))
           : '未確定';
         const confirmedHash = carriedConfirmation
-          ? (migratedStillConfirmed ? finalHash : text_(old.confirmedHash))
+          ? (migratedStillConfirmed || sentDuplicateConfirmed ? finalHash : text_(old.confirmedHash))
           : '';
         const confirmOk = carriedConfirmation ? false : (autoSelect || preservePendingSelection);
 
@@ -784,7 +817,7 @@ const RSE = (() => {
             ? text_(existingRecord && existingRecord['領収書No'])
             : (existingPayment && !existingPdf ? text_(existingPayment['領収書No']) : ''),
           preserveConfirmation: oldStillConfirmed,
-          carryConfirmation: migratedStillConfirmed,
+          carryConfirmation: migratedStillConfirmed || sentDuplicateConfirmed,
           resetDeliveryState: replacement,
           confirmOk
         }));
@@ -906,7 +939,7 @@ const RSE = (() => {
       }
 
       return [
-        status || '未修正', 'PW TSVにGame ID・対象期間の一致なし', originalGameId,
+        status || '未修正', 'PW TSVにGame IDの一致なし', originalGameId,
         app.name || old['本名'] || '', app.email || old['メールアドレス'] || '',
         app.recipient || old['宛名'] || '', app.eventName || old.eventName || '',
         applicationPeriodLabel_(app.startDate !== undefined ? app : originalPeriod), correctedGameId,
@@ -960,7 +993,7 @@ const RSE = (() => {
         const matchingPwRows = (pwResult.byGameId[correctedGameId] || [])
           .filter(pw => pwMatchesApplicationPeriod_(pw, app));
         if (!matchingPwRows.length) {
-          setSkipCorrectionResult_(skipState, row, 'PW未一致', '修正Game ID・対象期間に一致するPW明細がありません', now, actor);
+          setSkipCorrectionResult_(skipState, row, 'PW未一致', '修正Game IDに一致するPW明細がありません', now, actor);
           return;
         }
         const sameGameIdRows = gameState.objects.filter(other =>
@@ -1228,10 +1261,6 @@ const RSE = (() => {
           sourceHash: text_(row.sourceHash), finalName: row['本名'],
           finalEmail: row['メールアドレス'], finalRecipient: row['宛名'], policy
         });
-        if ((text_(row.PDF_FILE_ID) || text_(row['Draft ID'])) && text_(row.confirmedHash) !== confirmedHash) {
-          errors.push(rowNo + '行: PDFまたは草稿作成後の確定値変更はできません。管理記録を人工確認してください');
-          return;
-        }
         if (policy === '新規発行') {
           const data = receiptDataFromCheckRow_(row, settings);
           const paymentKey = makePaymentKey_({
@@ -3849,9 +3878,10 @@ ${usdtBreakdownHtml}
   }
 
   function pwMatchesApplicationPeriod_(pw, app) {
-    if (app && (app.allDates || (!app.startDate && !app.endDate))) return true;
-    const date = pwIsoDate_(pw);
-    return Boolean(date && app && app.startDate && app.endDate && date >= app.startDate && date <= app.endDate);
+    // PW already selects the requested tournaments and participation period.
+    // Payment dates may precede the event for pre-registration; do not filter them again here.
+    // Callers group by the original/corrected Game ID before invoking this predicate.
+    return Boolean(pw && app);
   }
 
   function formStatusDone_(value) {

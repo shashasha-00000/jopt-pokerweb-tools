@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LINE FAQ かんたん編集</title>
+<style>
+:root{
+  --bg:#f3f5f3; --card:#fff; --ink:#1d2421; --sub:#5d6862; --line:#dde2de; --accent:#0f7a52; --accent-soft:#e3f2ea; --accent-mid:#bfe3cf;
+  --auto:#1f7a4c; --auto-soft:#e4f3ea; --check:#6b48c4; --check-soft:#efe9fb; --redir:#2a62c9; --redir-soft:#e6eefb; --human:#c3561d; --human-soft:#fcece2; --menu:#46524c; --menu-soft:#eceeec;
+  --warn:#8a6100; --warn-soft:#fff4d6; --line-green:#06c755; --chatbg:#8cabd9;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.7 "Hiragino Sans","Noto Sans JP","Yu Gothic UI",system-ui,sans-serif}
+button,input,select,textarea{font:inherit;color:inherit}
+.wrap{max-width:1180px;margin:0 auto;padding:18px 18px 50px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.top h1{font-size:20px;margin:0}
+.toplinks{display:flex;gap:8px;align-items:center}
+.search{width:220px;padding:7px 11px;border:1px solid var(--line);border-radius:10px;background:#fff;font-size:14px}
+.btn{border:0;border-radius:10px;padding:9px 20px;cursor:pointer;font-weight:600;text-decoration:none;display:inline-block;white-space:nowrap}
+.btn.pri{background:var(--accent);color:#fff} .btn.pri:disabled{opacity:.5;cursor:default}
+.btn.sec{background:#e9ecea;color:var(--ink)}
+.btn.out{background:#fff;border:1.5px solid var(--accent);color:var(--accent);padding:7px 14px;font-size:14px}
+.results{position:absolute;right:0;top:40px;width:440px;max-width:92vw;max-height:360px;overflow:auto;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.12);z-index:20;padding:6px}
+.results button{display:block;width:100%;text-align:left;background:none;border:0;padding:8px 10px;border-radius:8px;cursor:pointer}
+.results button:hover{background:var(--accent-soft)}
+.results small{color:var(--sub);display:block;font-size:12px}
+/* breadcrumb */
+.crumbs{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:12px;font-size:14px}
+.crumbs button{border:0;background:#fff;border:1px solid var(--line);border-radius:999px;padding:3px 12px;cursor:pointer}
+.crumbs button:hover{border-color:var(--accent)}
+.crumbs .cur{background:var(--accent);border-color:var(--accent);color:#fff;cursor:default}
+.crumbs .sep{color:#9aa59f}
+.main{display:grid;grid-template-columns:340px minmax(0,1fr);gap:16px;align-items:start}
+/* list */
+.list{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.lh{padding:12px 14px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.lv{display:inline-block;background:var(--accent);color:#fff;font-weight:700;font-size:13px;border-radius:7px;padding:1px 9px}
+.lh .when{font-size:12px;color:var(--sub);margin-top:3px}
+.lh .edit{border:0;background:none;color:var(--accent);font-size:13px;cursor:pointer;white-space:nowrap;padding:2px 0}
+.back{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);background:#fafbfa;padding:8px 14px;cursor:pointer;color:var(--sub);font-size:13px}
+.back:hover{color:var(--accent)}
+.btns{padding:10px;display:flex;flex-direction:column;gap:7px}
+.nb{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:#fff;border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer}
+.nb:hover{border-color:#b0bdb5}
+.nb.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.nb .lb{flex:1;font-weight:600;font-size:14.5px;line-height:1.4}
+.nb .go{font-size:12px;color:var(--sub);white-space:nowrap}
+.row2{display:flex;align-items:stretch;gap:6px}
+.row2 .nb{flex:1}
+.plus{flex:0 0 38px;border:1.5px dashed var(--accent-mid);background:#fff;color:var(--accent);border-radius:10px;font-size:18px;font-weight:700;cursor:pointer;line-height:1}
+.plus:hover{background:var(--accent-soft);border-color:var(--accent);border-style:solid}
+.nb.on .go{color:#fff}
+.wdot{width:8px;height:8px;border-radius:50%;background:#e0a400;flex:0 0 8px}
+.addz{padding:0 10px 10px}
+.addbtn{width:100%;border:1.5px dashed var(--accent);background:transparent;color:var(--accent);border-radius:10px;padding:8px;cursor:pointer;font-weight:600}
+.addform{display:flex;flex-direction:column;gap:7px;background:var(--accent-soft);border-radius:10px;padding:10px}
+.addform input{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff}
+.addform .ch button{width:100%;text-align:left;border:1.5px solid var(--line);background:#fff;border-radius:10px;padding:7px 10px;cursor:pointer;font-size:13px;margin-bottom:6px}
+.addform .ch button b{display:block;font-size:14px}
+.addform .ch button:hover{border-color:var(--accent)}
+.empty{color:var(--sub);text-align:center;padding:24px 10px;font-size:13px}
+/* editor */
+.ed{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;min-height:420px}
+.ed.idle{display:flex;align-items:center;justify-content:center;text-align:center;color:var(--sub);border-style:dashed}
+.ed h2{font-size:18px;margin:0 0 4px}
+.ed .path{font-size:12px;color:var(--sub);margin-bottom:12px}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:14px}
+.tab{border:0;background:none;padding:7px 14px;cursor:pointer;color:var(--sub);border-bottom:2.5px solid transparent;margin-bottom:-1px;font-weight:600}
+.tab.on{color:var(--accent);border-bottom-color:var(--accent)}
+.f{margin-bottom:13px}
+.f>label{display:block;font-weight:600;font-size:14px;margin-bottom:5px}
+.hint{font-size:12px;color:var(--sub);font-weight:400;margin-left:6px}
+.f input[type=text],.f select,.f textarea{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:#fff}
+.f textarea{min-height:170px;resize:vertical;line-height:1.65}
+.num{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;margin-right:6px}
+.warnbox{background:var(--warn-soft);color:var(--warn);border-radius:10px;padding:9px 12px;font-size:13px;margin-bottom:13px}
+.warnbox label{display:flex;gap:6px;align-items:center;margin-top:5px;color:var(--ink);font-weight:600;cursor:pointer}
+.shared{font-size:12px;color:var(--warn);margin-top:4px}
+.actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px}
+details.more{margin-top:18px;border-top:1px solid var(--line);padding-top:10px}
+details.more summary{cursor:pointer;color:var(--sub);font-size:13px}
+.morebox{display:flex;flex-direction:column;gap:10px;margin-top:10px;font-size:13px}
+.morebox .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.mv{background:#fff;border:1px solid var(--line);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:13px}
+.mv:disabled{opacity:.4;cursor:default}
+.del{background:none;border:0;color:#b4382b;font-size:13px;cursor:pointer;padding:0}
+.del:disabled{color:#aaa;cursor:default}
+.chat{background:var(--chatbg);border-radius:12px;padding:14px;max-width:460px}
+.bub{display:inline-block;max-width:92%;background:#fff;border-radius:16px;padding:8px 12px;font-size:13.5px;white-space:pre-wrap;word-break:break-word;margin-bottom:6px}
+.bub.me{background:var(--line-green);color:#fff;float:right;clear:both}
+.bub a{color:#2a62c9;word-break:break-all}
+.clr{clear:both}
+.tag{display:inline-block;font-size:11px;font-weight:700;color:#fff;background:rgba(0,0,0,.35);border-radius:6px;padding:0 6px;margin:2px 0 3px}
+.qr{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.qr span{background:#fff;border:1px solid var(--line-green);color:#0a8f43;border-radius:999px;padding:3px 10px;font-size:12px}
+.var{background:var(--warn-soft);color:var(--warn);border-radius:4px;padding:0 3px}
+/* header + sidebar layout */
+body{padding-top:62px}
+.hd{position:fixed;top:0;left:0;right:0;height:62px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:14px;padding:0 18px;z-index:30}
+.hd-l{display:flex;align-items:center;gap:18px;min-width:0}
+.hd-l .ttl{font-weight:700;font-size:17px;white-space:nowrap;color:var(--accent)}
+.mainx .crumbs{margin:0 0 10px}
+.hd .crumbs button{white-space:nowrap}
+.side{position:fixed;top:62px;bottom:0;left:0;width:330px;background:#fff;border-right:1px solid var(--line);overflow-y:auto;padding:12px 10px 40px}
+.mainx{margin-left:330px;padding:18px 22px 50px;max-width:1000px}
+.sbBack{display:block;width:100%;text-align:left;border:0;background:none;color:var(--accent);font-weight:600;font-size:14px;padding:4px 4px 8px;cursor:pointer}
+.sbTitle{padding:4px 6px 12px;border-bottom:1px solid var(--line);margin-bottom:10px}
+.sbTitle .big{display:flex;align-items:center;gap:8px;font-size:18px;font-weight:700;line-height:1.35}
+.sbTitle .lvchip{font-size:12px;color:#fff;border-radius:7px;padding:2px 9px;flex:0 0 auto}
+.sbTitle .sub{font-size:12px;color:var(--sub);margin-top:4px}
+.sbTitle .lnk{border:0;background:none;color:var(--accent);font-size:13px;cursor:pointer;padding:0;margin-top:6px}
+.srow{display:flex;gap:6px;margin-bottom:7px}
+.sb{flex:1;display:flex;align-items:center;gap:8px;text-align:left;border:1.5px solid var(--line);background:#fff;border-radius:11px;padding:11px 12px;cursor:pointer;min-width:0}
+.sb:hover{border-color:#b0bdb5}
+.sb.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.sb .lb{flex:1;font-weight:600;font-size:14.5px;line-height:1.4}
+.sb .meta{font-size:12px;color:var(--sub);white-space:nowrap}
+.sb .chev{font-size:20px;color:#9aa59f;line-height:1;margin-left:2px}
+.sb.on .meta,.sb.on .chev{color:#fff}
+.tagbar{position:fixed;top:62px;left:0;right:0;height:44px;background:#fafbfa;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:6px;padding:0 18px;overflow-x:auto;z-index:29}
+.tagbar .lbl{font-size:12px;color:var(--sub);white-space:nowrap;margin-right:4px}
+.tg{border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:3px 12px;font-size:13px;cursor:pointer;white-space:nowrap;color:var(--ink)}
+.tg .c{font-size:11px;color:var(--sub);margin-left:4px;font-weight:700}
+.tg:hover{border-color:var(--accent)}
+.tg.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.tg.on .c{color:#d9f0e4}
+.ftabs{display:flex;gap:2px;height:62px;align-items:stretch;overflow-x:auto}
+.ft{border:0;background:none;padding:0 12px;cursor:pointer;color:var(--sub);font-size:14px;font-weight:600;border-bottom:3px solid transparent;white-space:nowrap;display:flex;align-items:center;gap:5px}
+.ft:hover{color:var(--ink)}
+.ft.on{color:var(--accent);border-bottom-color:var(--accent)}
+.ft .c{font-size:12px;background:var(--menu-soft);color:var(--menu);border-radius:999px;padding:0 7px;font-weight:700}
+.ft.warn .c{background:#f6d77a;color:#4d3800}
+.ft.warn.zero .c{background:var(--accent-soft);color:var(--accent)}
+.ft.on .c{background:var(--accent);color:#fff}
+.edtools{display:flex;gap:8px;flex-wrap:wrap;margin:-2px 0 14px}
+.edtools button{border:1.5px dashed var(--accent);background:#fff;color:var(--accent);border-radius:9px;padding:5px 12px;cursor:pointer;font-size:13px;font-weight:600}
+.edtools button:hover{background:var(--accent-soft);border-style:solid}
+.choice{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.choice button{border:1.5px solid var(--line);background:#fff;border-radius:12px;padding:12px;cursor:pointer;text-align:left;font-size:12.5px;color:var(--sub)}
+.choice button b{display:block;font-size:15px;color:var(--ink);margin-bottom:2px}
+.choice button.on{border-color:var(--accent);background:var(--accent-soft)}
+.evbox{background:#eef4ff;border:1px solid #c9d8f5;border-radius:10px;padding:10px 12px;margin-bottom:13px;font-size:13px}
+.evbox label{display:flex;gap:8px;align-items:center;font-weight:700;cursor:pointer;color:#1e4fa8}
+.tagins{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.tagins button{border:1px solid #9db8ea;background:#fff;color:#1e4fa8;border-radius:999px;padding:1px 10px;font-size:12px;cursor:pointer}
+.tagins button:hover{background:#e3ecfc}
+.evtag{background:#e3ecfc;color:#1e4fa8;border-radius:4px;padding:0 3px}
+.evoff{opacity:.55}
+.askbtn{display:block;margin-top:12px;border:0;background:none;color:var(--warn);font-weight:700;font-size:13.5px;cursor:pointer;padding:0}
+.askbtn:hover{text-decoration:underline}
+.tagpick{display:flex;flex-wrap:wrap;gap:6px}
+.tp{border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:3px 12px;font-size:13px;cursor:pointer;color:var(--sub)}
+.tp.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.tp.new{border-style:dashed;color:var(--accent);border-color:var(--accent-mid)}
+.flab{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}
+.flab b{font-size:14px}
+.cp{border:1px solid #9db8ea;background:#fff;color:#1e4fa8;border-radius:8px;padding:1px 9px;font-size:12px;cursor:pointer;white-space:nowrap}
+.cp:hover{background:#e3ecfc}
+.rmf{border:0;background:none;color:#b4382b;font-size:12px;cursor:pointer;margin-left:6px}
+.addfield{width:100%;border:1.5px dashed #9db8ea;background:#f7faff;color:#1e4fa8;border-radius:10px;padding:8px;cursor:pointer;font-weight:600;margin:4px 0 14px}
+.stats{margin:0 0 12px}
+.warncard{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;border:1.5px solid #f0cf6a;background:var(--warn-soft);color:var(--warn);border-radius:12px;padding:10px 12px;cursor:pointer;font-weight:700;text-align:left}
+.warncard .n{font-size:22px;line-height:1}
+.warncard small{display:block;font-weight:500;font-size:12px;color:#7a5a00}
+.warncard.on{background:#f6d77a;color:#4d3800}
+.warncard.done{background:var(--accent-soft);border-color:var(--accent-mid);color:var(--accent)}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.chip2{border:1px solid var(--line);background:#fff;border-radius:999px;padding:2px 10px;font-size:12px;cursor:pointer;color:var(--ink)}
+.chip2 b{margin-left:3px}
+.chip2.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.chip2.answer{border-color:#bfe0cc} .chip2.check{border-color:#d6c9f3} .chip2.redirect{border-color:#c6d6f3} .chip2.handoff{border-color:#f3cdb7}
+.fhead{display:flex;justify-content:space-between;align-items:center;margin:4px 2px 10px;font-weight:700}
+.fhead button{border:0;background:none;color:var(--accent);cursor:pointer;font-size:13px}
+.fitem small{display:block;font-size:11.5px;color:var(--sub);font-weight:400}
+.sb.on .fitem small{color:#e7f5ee}
+.rootitem{display:flex;align-items:center;gap:8px;width:100%;border:1.5px solid var(--line);background:#fafbfa;border-radius:10px;padding:8px 10px;cursor:pointer;font-weight:600;font-size:14px;margin-bottom:10px;text-align:left}
+.rootitem.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.cap{display:inline-block;font-size:11.5px;font-weight:700;color:#fff;border-radius:6px;padding:0 8px;margin:6px 0 5px}
+.l0{background:#0f7a52} .l1{background:#2a62c9} .l2{background:#8a4fd0} .l3{background:#c3561d} .l4{background:#5d6862}
+.grp{margin-left:12px;padding-left:10px;border-left:2.5px solid var(--line);margin-bottom:4px}
+.grp.g1{border-color:#bcd0f3} .grp.g2{border-color:#dccbf3} .grp.g3{border-color:#f3d2bf}
+.trow{display:flex;align-items:stretch;gap:5px;margin-bottom:5px}
+.tb{flex:1;display:flex;align-items:center;gap:6px;text-align:left;border:1.5px solid var(--line);background:#fff;border-radius:9px;padding:7px 9px;cursor:pointer;min-width:0}
+.tb:hover{border-color:#b0bdb5}
+.tb.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.tb .car{width:14px;color:var(--sub);font-size:11px;flex:0 0 14px}
+.tb.on .car{color:#fff}
+.tb .lb{flex:1;font-weight:600;font-size:13.5px;line-height:1.35;overflow:hidden;text-overflow:ellipsis}
+.tb .go{font-size:11px;color:var(--sub);white-space:nowrap}
+.tb.on .go{color:#e7f5ee}
+.tplus{flex:0 0 32px;border:1.5px dashed var(--accent-mid);background:#fff;color:var(--accent);border-radius:9px;font-size:16px;font-weight:700;cursor:pointer}
+.tplus:hover{background:var(--accent-soft);border-style:solid;border-color:var(--accent)}
+.tadd{display:block;width:100%;border:1.5px dashed var(--accent-mid);background:transparent;color:var(--accent);border-radius:9px;padding:5px;cursor:pointer;font-size:13px;font-weight:600;margin:2px 0 8px}
+.tadd:hover{border-color:var(--accent);background:var(--accent-soft)}
+.dangerzone{margin-top:22px;padding-top:12px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.btn.danger{background:#fff;border:1.5px solid #e4b4ad;color:#b4382b;padding:7px 14px;font-size:14px}
+.btn.danger:hover{background:#fdf1ef}
+@media (max-width:980px){ .hd .ttl{display:none} .search{width:130px} } @media (max-width:820px){ .side{position:static;width:auto;border-right:0;border-bottom:1px solid var(--line)} .mainx{margin-left:0} }
+.mbg{position:fixed;inset:0;background:rgba(20,30,25,.38);display:flex;align-items:center;justify-content:center;z-index:60;padding:16px}
+.mbox{background:#fff;border-radius:16px;max-width:460px;width:100%;padding:20px 22px;box-shadow:0 20px 50px rgba(0,0,0,.2)}
+.mbox h3{margin:0 0 8px;font-size:18px}
+.mbox p{margin:0 0 12px;color:var(--sub);font-size:14px;white-space:pre-wrap}
+.mbox .mflow{display:flex;align-items:center;gap:8px;margin:4px 0 14px;font-size:13px;flex-wrap:wrap}
+.mbox .mflow span{background:var(--menu-soft);border-radius:8px;padding:4px 9px}
+.mbox .mflow b{background:var(--accent-soft);color:var(--accent);border-radius:8px;padding:4px 9px}
+.mbox label{display:block;font-weight:600;font-size:14px;margin-bottom:5px}
+.mbox input{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:10px;margin-bottom:14px}
+.mbtns{display:flex;justify-content:flex-end;gap:8px}
+.btn.red{background:#c0392b;color:#fff}
+.btn{transition:transform .08s,box-shadow .15s,background .15s}
+.btn:active{transform:scale(.95)}
+.btn.pri:hover{box-shadow:0 3px 10px rgba(15,122,82,.3)}
+.btn.loading{opacity:.85;pointer-events:none}
+.spin{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.5);border-top-color:#fff;border-radius:50%;margin-right:7px;vertical-align:-2px;animation:sp .7s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.savedbar{display:flex;align-items:center;gap:8px;background:#e1f5ea;border:1.5px solid #7cc79f;color:#0b5e3e;border-radius:10px;padding:8px 12px;font-weight:700;margin:0 0 12px;animation:pop .35s ease-out}
+.savedbar .ck{width:22px;height:22px;border-radius:50%;background:#0f7a52;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:13px}
+.savedbar small{font-weight:500;color:#2f6f52;margin-left:auto}
+@keyframes pop{0%{transform:scale(.96);opacity:0}60%{transform:scale(1.01);opacity:1}100%{transform:scale(1)}}
+.flash{animation:fl 1.6s ease-out}
+@keyframes fl{0%,30%{box-shadow:0 0 0 4px #7cc79f}100%{box-shadow:0 0 0 0 rgba(124,199,159,0)}}
+.toast.ok{background:#0f7a52;font-weight:700;padding:11px 22px;font-size:15px}
+.sim[hidden],.simbg[hidden]{display:none!important}
+.simbg{position:fixed;inset:0;background:rgba(20,30,25,.25);z-index:40}
+.sim{position:fixed;top:0;right:0;bottom:0;width:420px;max-width:100vw;background:#fff;z-index:41;display:flex;flex-direction:column;box-shadow:-10px 0 30px rgba(0,0,0,.15)}
+.simh{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.simh b{font-size:15px;margin-right:auto}
+.simchat{flex:1;overflow-y:auto;background:var(--chatbg);padding:14px}
+.simqr{display:flex;gap:6px;overflow-x:auto;padding:10px 12px;border-top:1px solid var(--line);background:#f7f8f7;min-height:54px;align-items:center}
+.simqr button{flex:0 0 auto;border:1.5px solid var(--line-green);background:#fff;color:#0a8f43;border-radius:999px;padding:6px 14px;font-size:13px;cursor:pointer;font-weight:600}
+.simqr button:hover{background:#eafaf0}
+.simqr button.sub{border-color:#ccc;color:var(--sub);font-weight:400}
+.secttl{font-size:13px;font-weight:700;color:var(--sub);margin:14px 4px 8px;display:flex;justify-content:space-between;align-items:center}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#1d2421;color:#fff;padding:9px 18px;border-radius:999px;font-size:14px;opacity:0;transition:.2s;pointer-events:none;z-index:50}
+.toast.on{opacity:1}
+.loading{padding:60px;text-align:center;color:var(--sub)}
+footer{margin-top:18px;font-size:12px;color:var(--sub);text-align:right}
+footer a{color:var(--sub)}
+@media (max-width:820px){ .main{grid-template-columns:1fr} .search{width:150px} }
+</style>
+</head>
+<body>
+<header class="hd">
+  <div class="hd-l"><span class="ttl">LINE FAQ かんたん編集</span><nav class="ftabs" id="ftabs"></nav></div>
+  <div class="toplinks" style="position:relative;display:flex;gap:8px;align-items:center">
+    <select id="typeF" class="search" style="width:auto;padding:7px 8px" title="対応方法で絞り込み"><option value="">対応方法：すべて</option><option value="answer">ボットで回答</option><option value="check">ボット聞き取り→担当者</option><option value="redirect">別のLINEへ誘導</option><option value="handoff">担当者が対応</option></select>
+    <select id="tagF" class="search" style="width:auto;padding:7px 8px" title="カテゴリで絞り込み"></select>
+    <input class="search" id="q" type="search" placeholder="🔍 ボタンを探す">
+    <button class="btn out" id="tryBtn">📱 LINEで試す</button>
+    <div class="results" id="res" hidden></div>
+  </div>
+</header>
+<aside class="side" id="side"><div class="loading">読み込み中…</div></aside>
+<main class="mainx">
+  <div class="crumbs" id="crumbs"></div>
+  <div class="ed idle" id="ed"></div>
+  <footer>保存した内容はスプレッドシートに記録され、変更履歴が残ります。　<a href="#" id="adminLink" target="_top">詳細設定（管理者向け）</a></footer>
+</main>
+<div class="toast" id="toast"></div>
+<div class="simbg" id="simbg" hidden></div>
+<aside class="sim" id="sim" hidden>
+  <div class="simh"><b>📱 LINEで試す</b><span class="hint" style="margin:0">お客様と同じように押して確認できます</span><button id="simReset" class="mv">最初から</button><button id="simClose" class="mv">✕ 閉じる</button></div>
+  <div class="simchat" id="simChat"></div>
+  <div class="simqr" id="simQr"></div>
+</aside>
+<script>
+(()=>{
+const URL_BASE="https://script.google.com/a/macros/japanopenpoker.com/s/AKfycbxYnHkRif6scTpk6yrbKhlwfxVIB0WYQ5jU1vyM-LGtJnCgMSzivshc386MMrzmEsvt-g/exec";
+
+document.getElementById("adminLink").href=URL_BASE+"?mode=admin";
+const S={nodes:{},channels:{},handoffs:{},vars:{},messages:{},events:{}};
+const TYPES={answer:"ボットで回答（ここで終わり）",check:"ボットが確認・聞き取り → 担当者へ引き継ぎ",redirect:"別の公式LINEへ誘導",handoff:"担当者が対応"};
+const TNAME={answer:"ボットで回答",check:"ボット聞き取り→担当者",redirect:"別のLINEへ誘導",handoff:"担当者が対応"};
+const GO={answer:"ボット回答",check:"聞き取り→担当者",redirect:"別LINEへ",handoff:"担当者"};
+let typeF=null, filter=null, sel=null, level="root", dirty=false, busy=false, addingAt=null, tab="edit";
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let lastSaved=0, flashId=null;
+function toast(t){ const e=$("#toast"), ok=/^(保存しました|追加しました|削除しました|並び順を変えました)/.test(t);
+  e.textContent=(ok?"✓ ":"")+t; e.classList.toggle("ok",ok); e.classList.add("on"); clearTimeout(e._t); e._t=setTimeout(()=>e.classList.remove("on"),ok?2600:2200);
+  if(/^保存しました/.test(t)){ lastSaved=Date.now(); flashId=sel; setTimeout(()=>{ const b=document.querySelector(".savedbar"); if(b&&Date.now()-lastSaved>=3900){ b.style.transition="opacity .4s"; b.style.opacity="0"; setTimeout(()=>b.remove(),400); } },4000); }
+  else if(!ok) document.querySelectorAll(".btn.loading").forEach(b=>{ b.classList.remove("loading"); b.textContent=b.dataset.label||"保存"; b.disabled=false; });
+  if(!ok) busy=false;
+}
+document.addEventListener("click",e=>{ const b=e.target.closest("#e_save,#m_save,#r_save,#v_save"); if(b&&!b.classList.contains("loading")){ b.dataset.label=b.textContent; b.classList.add("loading"); b.innerHTML='<span class="spin"></span>保存中…'; } },true);
+function gs(fn,...a){return new Promise((res,rej)=>google.script.run.withSuccessHandler(res).withFailureHandler(rej)[fn](...a));}
+function apply(d){["nodes","channels","handoffs","vars","messages","events"].forEach(k=>S[k]=d[k]||{});}
+const kids=p=>Object.values(S.nodes).filter(n=>n.parent===p&&n.id!=="root").sort((a,b)=>(a.order||0)-(b.order||0));
+const anc=id=>{const a=[];let n=S.nodes[id];while(n&&n.id!=="root"){a.unshift(n.id);n=S.nodes[n.parent];}return a;};
+const depth=id=>id==="root"?0:anc(id).length;
+const EVF={"大会名":"name","日程":"dates","会場":"venue","ガイドURL":"guide_url","領収書フォーム":"receipt_form","領収書送付期限":"receipt_deadline","年齢制限":"age_note","写真アルバム":"photo_url","メディア申請":"media_form"};
+const activeEvents=()=>Object.values(S.events).filter(e=>e.active).sort((a,b)=>(a.order||0)-(b.order||0));
+const customFields=()=>{ try{ return JSON.parse((S.messages.msg_event_fields&&S.messages.msg_event_fields.text)||"[]"); }catch(e){ return []; } };
+const allTags=()=>Object.keys(EVF).concat(customFields());
+const extraOf=ev=>{ try{ return JSON.parse(ev.extra||"{}"); }catch(e){ return {}; } };
+function evVal(ev,k){ return EVF[k]?ev[EVF[k]]:extraOf(ev)[k]; }
+function expandEv(t,ev){ const tags=allTags(); return String(t||"").replace(/【([^】]+)】/g,(m,k)=>tags.includes(k)?(ev?(evVal(ev,k)||`（${k}未入力）`):m):m); }
+function copyText(t){
+  const ok=()=>toast(`${t} をコピーしました。返信文に貼り付けてください`);
+  try{ if(navigator.clipboard&&window.isSecureContext){ navigator.clipboard.writeText(t).then(ok,()=>fallback()); return; } }catch(e){}
+  fallback();
+  function fallback(){ const ta=document.createElement("textarea"); ta.value=t; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.select(); try{ document.execCommand("copy"); ok(); }catch(e){ toast("コピーできませんでした: "+t); } ta.remove(); }
+}
+function expand(t){
+  return esc(t).replace(/\{\{\s*(\w+)\s*\}\}/g,(m,k)=>{
+    if(S.messages[k]) return esc(S.messages[k].text);
+    if(S.vars[k]&&S.vars[k].value) return esc(S.vars[k].value);
+    if(S.channels[k]) return esc(S.channels[k].url);
+    return `<span class="var">{{${esc(k)}}}</span>`;
+  }).replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener">$1</a>');
+}
+function modal({title,text="",flow="",input=null,ok="OK",danger=false}){
+  return new Promise(res=>{
+    const bg=document.createElement("div"); bg.className="mbg";
+    bg.innerHTML=`<div class="mbox"><h3>${title}</h3>${flow?`<div class="mflow">${flow}</div>`:""}${text?`<p>${text}</p>`:""}${input?`<label>${esc(input.label)}</label><input id="mIn" value="${esc(input.value||"")}">`:""}<div class="mbtns"><button class="btn sec" data-m="no">やめる</button><button class="btn ${danger?"red":"pri"}" data-m="ok">${ok}</button></div></div>`;
+    document.body.appendChild(bg);
+    const done=v=>{ bg.remove(); res(v); };
+    bg.querySelector('[data-m=no]').onclick=()=>done(null);
+    bg.querySelector('[data-m=ok]').onclick=()=>done(input?(bg.querySelector("#mIn").value.trim()||input.value||""):true);
+    bg.onclick=e=>{ if(e.target===bg) done(null); };
+    const mi=bg.querySelector("#mIn"); if(mi){ mi.focus(); mi.select(); mi.onkeydown=e=>{ if(e.key==="Enter") bg.querySelector('[data-m=ok]').click(); if(e.key==="Escape") done(null); }; }
+  });
+}
+function leave(){ if(!dirty) return true; if(confirm("保存していない変更があります。破棄して移動しますか？")){dirty=false;return true;} return false; }
+function go(id){ sel=id||null; tab="edit"; addingAt=null;
+  if(!sel||sel==="__root") level="root"; else { const n=S.nodes[sel]; level=n.type==="menu"?n.id:(n.parent||"root"); }
+  render(); }
+const parentOf=id=>(S.nodes[id]&&S.nodes[id].parent)||"root";
+
+/* ---------- ヘッダー（パンくず） ---------- */
+function renderCrumbs(){
+  const chain=level==="root"?[]:anc(level);
+  $("#crumbs").innerHTML=`<button data-cr="" class="${chain.length?"":"cur"}">トップ</button>`+chain.map((id,i)=>`<span class="sep">›</span><button data-cr="${esc(id)}" class="${i===chain.length-1?"cur":""}">${esc(S.nodes[id].label)}</button>`).join("");
+  $("#crumbs").querySelectorAll("button:not(.cur)").forEach(b=>b.onclick=()=>{ if(leave()){ filter=null; go(b.dataset.cr||null); } });
+}
+/* ---------- サイドバー（ツリー） ---------- */
+function wireStats(sd){ sd.querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{ filter=filter===b.dataset.f?null:b.dataset.f; render(); }); }
+function doFlash(sd){ if(!flashId||Date.now()-lastSaved>1500) return; const id=String(flashId).replace(/^ev:/,""); const b=sd.querySelector(`[data-id="${id}"],[data-fid="${id}"],[data-ev="${id}"]`); if(b){ b.classList.add("flash"); } flashId=null; }
+function tagList(){ let t=[]; try{ t=JSON.parse((S.messages.msg_tags&&S.messages.msg_tags.text)||"[]"); }catch(e){} Object.values(S.nodes).forEach(n=>(n.tags||[]).forEach(x=>{ if(x&&!t.includes(x)) t.push(x); })); return t; }
+async function saveTagList(list){ const m=Object.assign({id:"msg_tags",title:"カテゴリ一覧"},S.messages.msg_tags||{},{text:JSON.stringify(list)}); apply(await gs("saveDoc","messages",m)); }
+const LVC=["#0f7a52","#2a62c9","#8a4fd0","#c3561d","#5d6862"];
+function render(){
+  if(level!=="root"&&!S.nodes[level]) level="root";
+  renderCrumbs();
+  const sd=$("#side"), d=depth(level), list=kids(level), ln=S.nodes[level];
+  const all=Object.values(S.nodes).filter(n=>n.id!=="root");
+  const leaves=all.filter(n=>n.type!=="menu");
+  const w=all.filter(n=>n.status==="要確認").length, tl=tagList(), tc=t=>leaves.filter(n=>(n.tags||[]).includes(t)&&(!typeF||n.type===typeF)).length;
+  $("#typeF").value=typeF||"";
+  $("#ftabs").innerHTML=`<button class="ft ${!filter?"on":""}" data-f="">すべて</button><button class="ft ${filter==="events"?"on":""}" data-f="events">📅 開催大会<span class="c">${activeEvents().length}</span></button><button class="ft warn ${w?"":"zero"} ${filter==="warn"?"on":""}" data-f="warn">⚠ 要確認<span class="c">${w}</span></button><button class="ft ${filter==="settings"?"on":""}" data-f="settings">⚙ 設定</button>`;
+  $("#tagF").innerHTML=`<option value="">カテゴリ：すべて</option>`+tl.map(t=>`<option value="tag:${esc(t)}" ${filter==="tag:"+t?"selected":""}>${esc(t)}（${tc(t)}）</option>`).join("");
+  $("#ftabs").querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{ if(!leave())return; filter=b.dataset.f||null; render(); });
+  let h="";
+  if(filter==="settings"){
+    const chs=Object.values(S.channels), MS=Object.values(S.messages).filter(m=>!["msg_tags","msg_event_fields"].includes(m.id));
+    h+=`<div class="sbTitle"><div class="big">⚙ 設定</div><div class="sub">案内先のLINEのリンクや、共通で使うメッセージを編集します。</div></div>`;
+    h+=`<div class="secttl">🔗 誘導先LINE（他の公式LINE）</div>`;
+    chs.forEach(c=>{ h+=`<div class="srow"><button class="sb ${sel==="ch:"+c.id?"on":""}" data-ch="${esc(c.id)}"><span class="lb fitem">${esc(c.name||c.id)}<small>${esc(c.url||"URL未入力")}</small></span></button></div>`; });
+    h+=`<button class="tadd" id="chAdd">＋ LINE窓口を追加</button>`;
+    h+=`<div class="secttl">💬 共通メッセージ</div>`;
+    MS.forEach(m=>{ h+=`<div class="srow"><button class="sb ${sel==="msg:"+m.id?"on":""}" data-msg="${esc(m.id)}"><span class="lb fitem">${esc(m.title||m.id)}<small>${esc((m.text||"").split("\n")[0])}</small></span></button></div>`; });
+    sd.innerHTML=h; doFlash(sd);
+    sd.querySelectorAll("[data-ch]").forEach(b=>b.onclick=()=>{ if(!leave())return; sel="ch:"+b.dataset.ch; render(); });
+    sd.querySelectorAll("[data-msg]").forEach(b=>b.onclick=()=>{ if(!leave())return; sel="msg:"+b.dataset.msg; render(); });
+    $("#chAdd").onclick=async()=>{ if(!leave())return; const name=await modal({title:"🔗 LINE窓口を追加",input:{label:"窓口名（例：JOPT Gamesお問い合わせ）",value:""},ok:"追加する"}); if(!name) return;
+      const c={id:"ch_"+Date.now().toString(36),name,url:"",scope:"",status:"確認済",note:""};
+      try{ apply(await gs("saveDoc","channels",c)); sel="ch:"+c.id; render(); toast("追加しました。右でリンク（URL）を入力してください"); }catch(e){ toast("追加できませんでした"); } };
+    return renderEditor();
+  }
+  if(filter==="events"){
+    const evs=Object.values(S.events).sort((a,b)=>(a.order||0)-(b.order||0));
+    h+=`<div class="sbTitle"><div class="big">📅 開催大会</div><div class="sub">最近開催する大会を登録します。「日程・会場」などのボタンは、ここの内容を使って自動で返信します。</div></div>`;
+    evs.forEach(e=>{ h+=`<div class="srow"><button class="sb ${sel==="ev:"+e.id?"on":""} ${e.active?"":"evoff"}" data-ev="${esc(e.id)}"><span class="lb fitem">${esc(e.name||"（大会名なし）")}<small>${esc(e.dates||"日程未入力")}</small></span><span class="meta">${e.active?"LINEに表示中":"非表示"}</span></button></div>`; });
+    if(!evs.length) h+=`<div class="empty">まだ大会が登録されていません</div>`;
+    h+=`<button class="tadd" id="evAdd" style="padding:9px">＋ 大会を追加</button>`;
+    sd.innerHTML=h; doFlash(sd);
+    sd.querySelectorAll("[data-ev]").forEach(b=>b.onclick=()=>{ if(!leave())return; sel="ev:"+b.dataset.ev; tab="edit"; render(); });
+    $("#evAdd").onclick=async()=>{ if(!leave())return; const name=await modal({title:"📅 大会を追加",input:{label:"大会名（例：JOPT 2026 Tokyo #04）",value:""},ok:"追加する"}); if(!name) return;
+      const e={id:"ev_"+Date.now().toString(36),order:Object.keys(S.events).length+1,active:true,name,dates:"",venue:"",guide_url:"",receipt_form:"",receipt_deadline:"",age_note:"",photo_url:"",media_form:"",note:""};
+      try{ apply(await gs("saveDoc","events",e)); sel="ev:"+e.id; render(); toast("追加しました。右で日程・会場などを入力してください"); }catch(err){ toast("追加できませんでした"); } };
+    return renderEditor();
+  }
+  if(filter||typeF){
+    const tg=filter&&filter.startsWith("tag:")?filter.slice(4):null;
+    const hits=(filter==="warn"?all:leaves).filter(n=>(filter!=="warn"||n.status==="要確認")&&(!tg||(n.tags||[]).includes(tg))&&(!typeF||n.type===typeF));
+    const title=[filter==="warn"?"⚠ 要確認":tg?esc(tg):"", typeF?TNAME[typeF]:""].filter(Boolean).join(" × ");
+    h+=`<div class="fhead"><span>${title}　${hits.length}件</span><button id="fClear">× すべてに戻る</button></div>`;
+    hits.forEach(n=>{ const p=anc(n.id).slice(0,-1).map(x=>S.nodes[x].label).join(" › ")||"トップ";
+      h+=`<div class="srow"><button class="sb ${sel===n.id?"on":""}" data-fid="${esc(n.id)}">${n.status==="要確認"?'<span class="wdot"></span>':""}<span class="lb fitem">${esc(n.label)}<small>${esc(p)}</small></span><span class="meta">${GO[n.type]||""}</span></button></div>`; });
+    if(!hits.length) h+=`<div class="empty">該当するボタンはありません</div>`;
+    sd.innerHTML=h; doFlash(sd);
+    $("#fClear").onclick=()=>{ filter=null; typeF=null; render(); };
+    sd.querySelectorAll("[data-fid]").forEach(b=>b.onclick=()=>{ if(!leave())return; const id=b.dataset.fid; const keep=filter, kt=typeF; go(id); filter=keep; typeF=kt; render(); });
+    return renderEditor();
+  }
+  if(level!=="root"){ const p=parentOf(level); h+=`<button class="sbBack" id="sbBack">‹ ${esc(p==="root"?"トップ":S.nodes[p].label)} に戻る</button>`; }
+  h+=`<div class="sbTitle"><div class="big"><span class="lvchip" style="background:${LVC[Math.min(d,4)]}">${d+1}回目の選択</span>${level==="root"?"最初の選択ボタン":esc(ln.label)}</div>
+      <div class="sub">${level==="root"?"お客様がトークを開いた時に出る選択ボタン":`「${esc(ln.label)}」を選んだ後に出る選択ボタン`}</div>
+      <button class="lnk" id="sbEdit">✎ ${level==="root"?"最初の案内文を編集":"このボタン自体を編集"}</button></div>`;
+  if(!list.length) h+=`<div class="empty">まだ選択ボタンがありません。<br>下の「＋ ここに選択ボタンを追加」から作成してください。</div>`;
+  list.forEach(n=>{
+    const isMenu=n.type==="menu";
+    h+=`<div class="srow"><button class="sb ${sel===n.id?"on":""}" data-id="${esc(n.id)}">${n.status==="要確認"?'<span class="wdot" title="要確認"></span>':""}<span class="lb">${esc(n.label||"（名前なし）")}</span>${isMenu?`<span class="meta">${kids(n.id).length}個</span><span class="chev">›</span>`:`<span class="meta">${n.per_event?"📅 ":""}${GO[n.type]||""}</span>`}</button></div>`;
+  });
+  h+=`<button class="tadd" data-add="${esc(level)}" style="padding:9px">＋ ここに選択ボタンを追加</button>`;
+  sd.innerHTML=h; doFlash(sd);
+  const bk=$("#sbBack"); if(bk) bk.onclick=()=>{ if(!leave())return; const p=parentOf(level); sel=null; level=p; addingAt=null; render(); };
+  $("#sbEdit").onclick=()=>{ if(!leave())return; if(level==="root") go("__root"); else go(level); };
+  sd.querySelectorAll(".sb").forEach(b=>b.onclick=()=>{ if(!leave())return; const n=S.nodes[b.dataset.id];
+    if(n.type==="menu"){ level=n.id; sel=null; addingAt=null; tab="edit"; render(); } else go(n.id); });
+  sd.querySelectorAll("[data-add]").forEach(b=>b.onclick=()=>{ if(leave()) chooseAdd(b.dataset.add); });
+  renderEditor();
+}
+function chooseAdd(parent){
+  const where=parent==="root"?"最初の選択ボタン（トークを開いた時）":`「${S.nodes[parent].label}」を選んだ後の選択ボタン（${depth(parent)+1}回目の選択）`;
+  const bg=document.createElement("div"); bg.className="mbg"; let kind="answer";
+  bg.innerHTML=`<div class="mbox"><h3>＋ 選択ボタンを追加</h3><p>追加する場所：<b>${esc(where)}</b></p>
+    <label>ボタン名（20文字まで）</label><input id="cName" maxlength="20" placeholder="例：日程・会場">
+    <label>このボタンを押したら？</label>
+    <div class="choice"><button data-k="answer" class="on"><b>💬 返信する</b>返信文を送って終わり</button><button data-k="menu"><b>▶ さらに選択ボタンを出す</b>次の選択ボタンを表示</button></div>
+    <div class="mbtns"><button class="btn sec" data-m="no">やめる</button><button class="btn pri" data-m="ok">追加する</button></div></div>`;
+  document.body.appendChild(bg);
+  const close=()=>bg.remove();
+  bg.querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>{ kind=b.dataset.k; bg.querySelectorAll("[data-k]").forEach(x=>x.classList.toggle("on",x===b)); });
+  bg.querySelector("[data-m=no]").onclick=close; bg.onclick=e=>{ if(e.target===bg) close(); };
+  const inp=bg.querySelector("#cName"); inp.focus();
+  bg.querySelector("[data-m=ok]").onclick=async()=>{
+    const name=inp.value.trim(); if(!name){ inp.focus(); toast("ボタン名を入力してください"); return; }
+    const sib=kids(parent);
+    const n={id:"n_"+Date.now().toString(36),parent,order:(sib.length?Math.max(...sib.map(s=>s.order||0)):0)+1,label:name,type:kind,
+      body:kind==="menu"?"お選びください。":"",channel:null,handoff:kind==="menu"?null:"H_GENERAL",follow:kind!=="menu",links:[],status:"要確認",review:"新しく追加したボタンです",evidence:""};
+    if(kind!=="menu"){ const sibT=(sib.find(x=>(x.tags||[]).length)||{}).tags; const ft=filter&&filter.startsWith("tag:")?[filter.slice(4)]:null; n.tags=(sibT||ft||[]).slice(); }
+    try{ close(); toast("追加中…"); apply(await gs("saveDoc","nodes",n)); filter=null; go(n.id);
+      toast(kind==="menu"?"追加しました。「＋ この質問に選択ボタンを追加」で次の選択ボタンを作れます":"追加しました。返信文を入力して保存してください"); }
+    catch(e){ toast("追加できませんでした"); }
+  };
+  inp.onkeydown=e=>{ if(e.key==="Enter") bg.querySelector("[data-m=ok]").click(); if(e.key==="Escape") close(); };
+}
+function wireAsk(n){ const b=$("#askChk"); if(!b) return; b.onclick=async()=>{ if(!leave()) return;
+  const isW=n.status==="要確認";
+  const t=await modal({title:isW?"✎ 確認してほしい内容":"⚠ 同僚に確認を依頼する",text:"このボタンが「⚠ 要確認」の一覧に表示され、同僚が内容を確認・修正できるようになります。",input:{label:"確認してほしいこと（例：金額が最新か確認してください）",value:isW?(n.review||""):""},ok:isW?"保存する":"要確認にする"});
+  if(t===null) return;
+  try{ apply(await gs("saveDoc","nodes",Object.assign({},n,{status:"要確認",review:t||"内容が正しいか確認してください"}))); toast("保存しました（要確認に追加）"); render(); }catch(e){ toast("保存できませんでした"); } }; }
+function toolbar(n){ return `<div class="edtools"><button id="t_under">＋ この質問に選択ボタンを追加</button></div>`; }
+function wireToolbar(n){ const a=$("#t_same"), b=$("#t_under"); if(a) a.onclick=()=>{ if(leave()) chooseAdd(n.parent||"root"); }; if(b) b.onclick=()=>{ if(leave()) addUnder(n.id); }; }
+async function deleteNode(n){
+  const all=[]; const walk=id=>{ kids(id).forEach(c=>{ walk(c.id); }); all.push(id); }; walk(n.id);
+  const msg=all.length>1?`「${n.label}」と、その下のボタン ${all.length-1}個 をすべて削除します。よろしいですか？`:`「${n.label}」を削除しますか？`;
+  if(!await modal({title:"🗑 ボタンを削除",text:msg+"\n\n※ 間違えて削除した場合は、管理者に連絡すれば元に戻せます。",ok:"削除する",danger:true})) return;
+  try{ toast("削除中…"); for(const id of all) apply(await gs("deleteDoc","nodes",id)); dirty=false; sel=null; level=(n.parent&&S.nodes[n.parent])?n.parent:"root"; render(); toast("削除しました"); }
+  catch(e){ toast("削除できませんでした"); render(); }
+}
+
+/* ---------- 右：編集 ---------- */
+function head(title,id){
+  const p=id&&id!=="__root"?anc(id).map(x=>S.nodes[x].label).join(" › "):"トップ";
+  const sb=Date.now()-lastSaved<4000?`<div class="savedbar"><span class="ck">✓</span>保存しました<small>スプレッドシートに反映済み・${new Date(lastSaved).toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"})}</small></div>`:"";
+  return `${sb}<h2>${title}</h2><div class="path">${esc(p)}</div>`;
+}
+function tabs(){ return `<div class="tabs"><button class="tab ${tab==="edit"?"on":""}" data-tab="edit">✏️ 編集</button><button class="tab ${tab==="pv"?"on":""}" data-tab="pv">📱 LINEでの見え方</button></div>`; }
+function wireTabs(rerender){ document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{ tab=b.dataset.tab; rerender(); }); }
+function renderEditor(){
+  const el=$("#ed");
+  if(!sel){ el.className="ed idle"; el.innerHTML=`<div>👈 左からボタンを選んでください<br><small>「›」の付いたボタンを押すと、その次の選択ボタンが表示されます。</small></div>`; return; }
+  el.className="ed";
+  if(sel==="__root") return rootEditor(el);
+  if(String(sel).startsWith("ev:")) return eventEditor(el,S.events[sel.slice(3)]);
+  if(String(sel).startsWith("ch:")) return channelEditor(el,S.channels[sel.slice(3)]);
+  if(String(sel).startsWith("msg:")) return messageEditor(el,S.messages[sel.slice(4)]);
+  const n=S.nodes[sel]; if(!n){ sel=null; return renderEditor(); }
+  if(n.type==="menu") return menuEditor(el,n);
+  return leafEditor(el,n);
+}
+function rootEditor(el){
+  const m=S.messages.msg_root||{id:"msg_root",title:"最初の案内文",text:""};
+  let text=m.text;
+  const draw=()=>{
+    el.innerHTML=head("最初の案内文","__root")+tabs()+(tab==="edit"?
+      `<div class="f"><label>トークを開いた時、最初の選択ボタンの上に送る文</label><textarea id="r_text">${esc(text)}</textarea></div><div class="actions"><button class="btn pri" id="r_save">保存</button></div>`:
+      `<div class="chat"><div class="bub">${esc(text)}</div><div class="qr">${kids("root").map(k=>`<span>${esc(k.label)}</span>`).join("")}</div></div>`);
+    wireTabs(draw);
+    if(tab==="edit"){ $("#r_text").addEventListener("input",e=>{text=e.target.value;dirty=true;});
+      $("#r_save").onclick=async()=>{ try{ apply(await gs("saveDoc","messages",Object.assign({},m,{text}))); dirty=false; toast("保存しました"); render(); }catch(e){ toast("保存できませんでした"); } }; }
+  }; draw();
+}
+function menuEditor(el,n){
+  const ch=kids(n.id); let d={label:n.label,body:n.body,ok:false};
+  const draw=()=>{
+    el.innerHTML=head(`「${esc(n.label)}」を押した時（さらに選択ボタンを出す）`,n.id)+toolbar(n)+tabs()+(tab==="edit"?`
+      <div class="f"><label>ボタン名<span class="hint">20文字まで</span></label><input type="text" id="m_label" maxlength="20" value="${esc(d.label)}"></div>
+      <div class="f"><label>押した時に送る案内文<span class="hint">選択ボタンの上に表示</span></label><textarea id="m_body" style="min-height:90px">${esc(d.body)}</textarea></div>
+      ${n.status==="要確認"?`<div class="warnbox"><b>要確認</b>${n.review?"："+esc(n.review):""}<label><input type="checkbox" id="e_ok" ${d.ok?"checked":""}>確認しました</label></div>`:""}
+      <div class="actions"><button class="btn pri" id="m_save">保存</button></div>${n.status!=="要確認"?'<button class="askbtn" id="askChk">⚠ 同僚に確認を依頼する</button>':'<button class="askbtn" id="askChk">✎ 確認してほしい内容を編集</button>'}
+      <details class="more"><summary>その他の操作</summary><div class="morebox">
+        <div class="row">並び順：${moveBtns(n)}</div>
+      </div></details>
+      <div class="dangerzone"><span class="hint" style="margin:0">${ch.length?`この下に ${ch.length}個 のボタンがあります`:""}</span><button class="btn danger" id="m_del">🗑 このボタンを削除</button></div>`:
+      `<div class="chat"><div class="bub me">${esc(d.label)}</div><div class="clr"></div><div class="bub">${expand(d.body)}</div><div class="qr">${ch.map(k=>`<span>${esc(k.label)}</span>`).join("")||"<span>（まだボタンがありません）</span>"}</div></div>`);
+    wireTabs(draw); wireToolbar(n);
+    if(tab!=="edit") return;
+    $("#m_label").addEventListener("input",e=>{d.label=e.target.value;dirty=true;});
+    $("#m_body").addEventListener("input",e=>{d.body=e.target.value;dirty=true;});
+    const ok=$("#e_ok"); if(ok) ok.onchange=e=>{d.ok=e.target.checked;dirty=true;};
+    $("#m_save").onclick=async()=>{ if(!d.label.trim()){toast("ボタン名を入力してください");return;}
+      try{ apply(await gs("saveDoc","nodes",Object.assign({},n,{label:d.label.trim(),body:d.body,status:d.ok?"確認済":n.status}))); dirty=false; toast("保存しました"); render(); }catch(e){ toast("保存できませんでした"); } };
+    $("#m_del").onclick=()=>deleteNode(n); wireAsk(n);
+    wireMove(n);
+  }; draw();
+}
+function moveBtns(n){ const sib=kids(n.parent), i=sib.findIndex(x=>x.id===n.id);
+  return `<button class="mv" id="mvUp" ${i<=0?"disabled":""}>↑ 上へ</button><button class="mv" id="mvDn" ${i>=sib.length-1?"disabled":""}>↓ 下へ</button>`; }
+function wireMove(n){
+  const sw=async dir=>{ if(!leave())return; const sib=kids(n.parent), i=sib.findIndex(x=>x.id===n.id), j=i+dir; if(j<0||j>=sib.length)return;
+    const a=Object.assign({},sib[i]), b=Object.assign({},sib[j]); const oa=a.order??i, ob=b.order??j; a.order=ob; b.order=oa===ob?ob-dir:oa;
+    try{ await gs("saveDoc","nodes",b); apply(await gs("saveDoc","nodes",a)); render(); toast("並び順を変えました"); }catch(e){ toast("変更できませんでした"); } };
+  const u=$("#mvUp"), dn=$("#mvDn"); if(u) u.onclick=()=>sw(-1); if(dn) dn.onclick=()=>sw(1);
+}
+function leafEditor(el,n){
+  const fieldsOf=h=>((S.handoffs[h]&&S.handoffs[h].fields)||[]).join("\n");
+  let d={label:n.label,type:n.type,body:n.body,channel:n.channel,handoff:n.handoff,fields:fieldsOf(n.handoff),ok:false,per_event:!!n.per_event,tags:(n.tags||[]).slice()};
+  const chOpts=()=>Object.values(S.channels).map(c=>`<option value="${esc(c.id)}" ${c.id===d.channel?"selected":""}>${esc(c.name)}</option>`).join("");
+  const hOpts=()=>Object.values(S.handoffs).map(h=>`<option value="${esc(h.id)}" ${h.id===d.handoff?"selected":""}>${esc(h.name)}</option>`).join("");
+  const draw=()=>{
+    const showCh=d.type==="redirect", showF=d.type==="handoff"||(d.type==="check"&&d.handoff);
+    const others=Object.values(S.nodes).filter(x=>x.handoff===d.handoff&&x.id!==n.id&&(x.type==="handoff"||x.type==="check")).map(x=>"「"+x.label+"」");
+    el.innerHTML=head(`「${esc(n.label)}」を押した時`,n.id)+toolbar(n)+tabs()+(tab==="edit"?`
+      <div class="f"><label>ボタン名<span class="hint">20文字まで</span></label><input type="text" id="e_label" maxlength="20" value="${esc(d.label)}"></div>
+      <div class="f"><label>カテゴリ<span class="hint">右上の「カテゴリ」で絞り込む時に使います（複数選べます）</span></label>
+        <div class="tagpick">${tagList().map(t=>`<button class="tp ${d.tags.includes(t)?"on":""}" data-tp="${esc(t)}">${d.tags.includes(t)?"✓ ":""}${esc(t)}</button>`).join("")}<button class="tp new" id="tpNew">＋ 新しいカテゴリ</button></div></div>
+      <div class="evbox"><label><input type="checkbox" id="e_pe" ${d.per_event?"checked":""}>📅 大会ごとに内容が変わる</label>
+        <div class="hint" style="margin:2px 0 0 26px">${d.per_event?"お客様に先に大会を選んでもらい、「開催大会」に登録した内容で返信します。返信文の入れたい場所をクリックしてから、下のボタンを押すと差し込めます。":"日程・会場など、大会ごとに違う内容ならチェックしてください。"}</div>
+        ${d.per_event?`<div class="tagins" style="margin-left:26px">${allTags().map(k=>`<button data-ins="${k}">＋${k}</button>`).join("")}</div>`:""}</div>
+      <div class="f"><label><span class="num">1</span>返信文</label><textarea id="e_body" placeholder="お客様に送る文面">${esc(d.body)}</textarea></div>
+      <div class="f"><label>返信のあと</label><select id="e_type">${Object.entries(TYPES).map(([k,t])=>`<option value="${k}" ${d.type===k?"selected":""}>${t}</option>`).join("")}</select></div>
+      ${showCh?`<div class="f"><label>案内する公式LINE</label><select id="e_ch"><option value="">（選んでください）</option>${chOpts()}</select></div>`:""}
+      ${showF?`<div class="f"><label><span class="num">2</span>${d.type==="check"?"「担当者に相談」を押した時に聞く項目":"続けて、お客様に聞く項目"}<span class="hint">1行に1つ</span></label>
+        <textarea id="e_fields" style="min-height:100px">${esc(d.fields)}</textarea>
+        ${others.length?`<div class="shared">※ ${others.join("")} でも同じ項目を使っています</div>`:""}</div>`:""}
+      ${n.status==="要確認"?`<div class="warnbox"><b>要確認</b>${n.review?"："+esc(n.review):""}<label><input type="checkbox" id="e_ok" ${d.ok?"checked":""}>確認しました</label></div>`:""}
+      <div class="actions"><button class="btn pri" id="e_save">保存</button><button class="btn sec" id="e_cancel">元に戻す</button></div>${n.status!=="要確認"?'<button class="askbtn" id="askChk">⚠ 同僚に確認を依頼する</button>':'<button class="askbtn" id="askChk">✎ 確認してほしい内容を編集</button>'}
+      <details class="more"><summary>その他の操作</summary><div class="morebox">
+        <div class="row">並び順：${moveBtns(n)}</div>
+        ${showF?`<div class="row">担当者の種類：<select id="e_h" style="padding:4px 8px;border:1px solid var(--line);border-radius:8px">${hOpts()}</select></div>`:""}
+      </div></details>
+      <div class="dangerzone"><span></span><button class="btn danger" id="e_del">🗑 このボタンを削除</button></div>`:previewHtml(d));
+    wireTabs(draw); wireToolbar(n);
+    if(tab!=="edit") return;
+    const bind=(id,k,re)=>{ const x=$(id); if(!x)return; x.addEventListener(x.tagName==="SELECT"?"change":"input",e=>{ d[k]=e.target.value||null; dirty=true; if(re){ if(k==="handoff") d.fields=fieldsOf(d.handoff); draw(); } }); };
+    bind("#e_label","label"); bind("#e_body","body"); bind("#e_type","type",true); bind("#e_ch","channel"); bind("#e_fields","fields"); bind("#e_h","handoff",true);
+    const ok=$("#e_ok"); if(ok) ok.onchange=e=>{d.ok=e.target.checked;dirty=true;};
+    $("#e_pe").onchange=e=>{ d.per_event=e.target.checked; dirty=true; draw(); };
+    el.querySelectorAll("[data-tp]").forEach(b=>b.onclick=()=>{ const t=b.dataset.tp; d.tags=d.tags.includes(t)?d.tags.filter(x=>x!==t):d.tags.concat([t]); dirty=true; draw(); });
+    $("#tpNew").onclick=async()=>{ const nm=await modal({title:"＋ 新しいカテゴリ",text:"右上の「カテゴリ」に表示される分類を追加します。",input:{label:"カテゴリ名（例：キャンペーン）",value:""},ok:"追加する"}); if(!nm) return;
+      const t=nm.trim(); if(!tagList().includes(t)){ try{ await saveTagList(tagList().concat([t])); }catch(x){ toast("追加できませんでした"); return; } }
+      if(!d.tags.includes(t)) d.tags.push(t); dirty=true; draw(); toast(`「${t}」を追加しました。保存してください`); };
+    el.querySelectorAll("[data-ins]").forEach(b=>b.onclick=()=>{ const ta=$("#e_body"), t="【"+b.dataset.ins+"】", p=ta.selectionStart??ta.value.length;
+      ta.value=ta.value.slice(0,p)+t+ta.value.slice(ta.selectionEnd??p); d.body=ta.value; dirty=true; ta.focus(); ta.selectionStart=ta.selectionEnd=p+t.length; });
+    $("#e_cancel").onclick=()=>{ dirty=false; renderEditor(); };
+    $("#e_save").onclick=async()=>{
+      const out=Object.assign({},n,{label:(d.label||"").trim(),type:d.type,body:d.body||"",channel:d.type==="redirect"?d.channel:(d.type==="check"?n.channel:null),handoff:d.handoff,per_event:!!d.per_event,tags:d.tags,status:d.ok?"確認済":n.status});
+      if(!out.label){ toast("ボタン名を入力してください"); return; }
+      if(out.type==="redirect"&&!out.channel){ toast("案内する公式LINEを選んでください"); return; }
+      if(out.type==="handoff"&&!out.handoff) out.handoff="H_GENERAL";
+      if(busy) return; busy=true; $("#e_save").disabled=true; $("#e_save").textContent="保存中…";
+      try{
+        const nf=(d.fields||"").split(/\n/).map(x=>x.trim()).filter(Boolean), hd=S.handoffs[out.handoff];
+        if(hd&&(out.type==="handoff"||out.type==="check")&&JSON.stringify(hd.fields||[])!==JSON.stringify(nf)) apply(await gs("saveDoc","handoffs",Object.assign({},hd,{fields:nf})));
+        apply(await gs("saveDoc","nodes",out)); dirty=false; toast("保存しました"); render();
+      }catch(e){ toast("保存できませんでした。もう一度お試しください"); }
+      busy=false;
+    };
+    $("#e_del").onclick=()=>deleteNode(n); wireAsk(n);
+    wireMove(n);
+  }; draw();
+}
+async function addUnder(id){
+  const n=S.nodes[id]; if(!n) return;
+  if(n.type==="menu"){ chooseAdd(n.id); return; }
+  const q=await modal({title:`「${esc(n.label)}」に選択ボタンを追加`,
+    flow:`<span>${esc(n.label)}</span>→<b>どの大会？など</b>→<span>選択ボタン</span>`,
+    text:"このボタンを押した時、返信文の代わりに「選択ボタン」が表示されるようになります。\n今の返信文はメモとして残るので、あとで選択ボタンの返信に使えます。",
+    input:{label:"選択ボタンの上に送る質問文",value:"どの大会についてのお問い合わせですか？"},ok:"次へ（ボタンを追加する）"});
+  if(q===null) return;
+  const out=Object.assign({},n,{type:"menu",body:q||"お選びください。",channel:null,handoff:null,follow:false,status:"要確認",review:n.body?"元の返信文：\n"+n.body:""});
+  try{ apply(await gs("saveDoc","nodes",out)); go(n.id); chooseAdd(n.id); }catch(e){ toast("変更できませんでした"); }
+}
+function eventEditor(el,e){
+  if(!e){ sel=null; return renderEditor(); }
+  const F=[["name","大会名","例：JOPT 2026 Tokyo #04"],["dates","日程","例：2026年12月5日（土）〜12月8日（火）"],["venue","会場","会場名と住所"],["guide_url","プレイヤーズガイドURL",""],["receipt_form","領収書申請フォームURL","大会期間中の電子領収書フォーム"],["receipt_deadline","領収書の送付期限","例：2026年12月15日"],["age_note","年齢制限の案内","例：期間中、20歳未満の方の入場を制限する日はありません。"],["photo_url","写真アルバムURL",""],["media_form","メディアパス申請フォームURL",""]];
+  let d=Object.assign({},e); const ex=extraOf(e);
+  const users=Object.values(S.nodes).filter(n=>n.per_event).map(n=>"「"+n.label+"」");
+  el.innerHTML=`${Date.now()-lastSaved<4000?`<div class="savedbar"><span class="ck">✓</span>保存しました<small>スプレッドシートに反映済み</small></div>`:""}<h2>📅 ${esc(e.name||"大会")}</h2><div class="path">開催大会</div>
+    <div class="evbox" style="margin-top:6px"><label><input type="checkbox" id="v_active" ${d.active?"checked":""}>LINEに表示する（開催中・開催予定）</label><div class="hint" style="margin:2px 0 0 26px">大会が終わったらチェックを外してください。お客様の選択肢から消えます。</div></div>
+    <div class="hint" style="margin:0 0 12px">📋 ボタンを押すと【項目名】がコピーされます。ボタンの返信文に貼り付けると、お客様にはこの大会の内容に置き換わって表示されます。</div>
+    ${F.map(([k,l,ph])=>{ const tag=Object.keys(EVF).find(x=>EVF[x]===k); return `<div class="f"><div class="flab"><b>${l}</b><button class="cp" data-cp="【${tag}】">📋 【${tag}】をコピー</button></div><input type="text" data-k="${k}" value="${esc(d[k]||"")}" placeholder="${esc(ph)}"></div>`; }).join("")}
+    ${customFields().map(c=>`<div class="f"><div class="flab"><b>${esc(c)}<button class="rmf" data-rmf="${esc(c)}">× 項目を削除</button></b><button class="cp" data-cp="【${esc(c)}】">📋 【${esc(c)}】をコピー</button></div><input type="text" data-x="${esc(c)}" value="${esc(ex[c]||"")}"></div>`).join("")}
+    <button class="addfield" id="v_addf">＋ 項目を追加（例：受付時間、駐車場）</button>
+    <div class="hint" style="margin:0 0 12px">この内容を使うボタン：${users.join("") || "なし"}</div>
+    <div class="actions"><button class="btn pri" id="v_save">保存</button></div>
+    <div class="dangerzone"><span></span><button class="btn danger" id="v_del">🗑 この大会を削除</button></div>`;
+  el.querySelectorAll("[data-k]").forEach(i=>i.addEventListener("input",()=>{ d[i.dataset.k]=i.value; dirty=true; }));
+  el.querySelectorAll("[data-x]").forEach(i=>i.addEventListener("input",()=>{ ex[i.dataset.x]=i.value; dirty=true; }));
+  el.querySelectorAll("[data-cp]").forEach(b=>b.onclick=()=>copyText(b.dataset.cp));
+  const saveFields=async list=>{ const m=Object.assign({id:"msg_event_fields",title:"開催大会の追加項目"},S.messages.msg_event_fields||{},{text:JSON.stringify(list)}); apply(await gs("saveDoc","messages",m)); };
+  $("#v_addf").onclick=async()=>{ if(!leave())return;
+    const name=await modal({title:"＋ 項目を追加",text:"すべての大会に共通の項目として追加されます。\n大会ごとに内容を入力し、返信文では【項目名】で使えます。",input:{label:"項目名（例：受付時間）",value:""},ok:"追加する"});
+    if(!name) return; const nm=name.replace(/[【】]/g,"").trim(); if(!nm) return;
+    if(allTags().includes(nm)){ toast("同じ名前の項目があります"); return; }
+    try{ await saveFields(customFields().concat([nm])); renderEditor(); toast(`「${nm}」を追加しました。内容を入力して保存してください`); }catch(x){ toast("追加できませんでした"); } };
+  el.querySelectorAll("[data-rmf]").forEach(b=>b.onclick=async()=>{ const nm=b.dataset.rmf;
+    const used=Object.values(S.nodes).filter(n=>(n.body||"").includes("【"+nm+"】")).map(n=>"「"+n.label+"」");
+    if(!await modal({title:"項目を削除",text:`「${esc(nm)}」をすべての大会から削除しますか？`+(used.length?`\n\n⚠ 次のボタンの返信文で使われています：${used.join("")}`:""),ok:"削除する",danger:true})) return;
+    try{ await saveFields(customFields().filter(x=>x!==nm)); renderEditor(); toast("削除しました"); }catch(x){ toast("削除できませんでした"); } });
+  $("#v_active").onchange=x=>{ d.active=x.target.checked; dirty=true; };
+  $("#v_save").onclick=async()=>{ if(!(d.name||"").trim()){ toast("大会名を入力してください"); return; }
+    d.extra=JSON.stringify(ex);
+    try{ apply(await gs("saveDoc","events",d)); dirty=false; toast("保存しました"); render(); }catch(x){ toast("保存できませんでした"); } };
+  $("#v_del").onclick=async()=>{ if(!await modal({title:"🗑 大会を削除",text:`「${esc(e.name)}」を削除しますか？\n終わった大会は、削除せず「LINEに表示する」のチェックを外すだけでもOKです。`,ok:"削除する",danger:true})) return;
+    try{ apply(await gs("deleteDoc","events",e.id)); dirty=false; sel=null; toast("削除しました"); render(); }catch(x){ toast("削除できませんでした"); } };
+}
+function sbar(){ return Date.now()-lastSaved<4000?`<div class="savedbar"><span class="ck">✓</span>保存しました<small>スプレッドシートに反映済み</small></div>`:""; }
+function channelEditor(el,c){
+  if(!c){ sel=null; return renderEditor(); }
+  const d=Object.assign({},c), users=Object.values(S.nodes).filter(n=>n.channel===c.id||(n.body||"").includes("{{"+c.id+"}}"));
+  el.innerHTML=`${sbar()}<h2>🔗 ${esc(c.name||"LINE窓口")}</h2><div class="path">設定 › 誘導先LINE</div>
+    <div class="f"><label>窓口名</label><input type="text" data-k="name" value="${esc(d.name||"")}"></div>
+    <div class="f"><label>リンク（URL）<span class="hint">LINEの友だち追加URL（https://lin.ee/… など）</span></label><input type="text" data-k="url" value="${esc(d.url||"")}"></div>
+    <div class="f"><label>どんな問い合わせを案内するか</label><textarea data-k="scope" style="min-height:70px">${esc(d.scope||"")}</textarea></div>
+    <div class="f"><label>メモ</label><textarea data-k="note" style="min-height:60px">${esc(d.note||"")}</textarea></div>
+    <div class="hint" style="margin:0 0 12px">この窓口を案内しているボタン：${users.map(n=>"「"+esc(n.label)+"」").join("")||"なし"}</div>
+    <div class="actions"><button class="btn pri" id="c_save">保存</button>${d.url?`<a class="btn sec" href="${esc(d.url)}" target="_blank" rel="noopener">リンクを開いて確認</a>`:""}</div>
+    <div class="dangerzone"><span class="hint" style="margin:0">${users.length?"使われているため削除できません":""}</span><button class="btn danger" id="c_del" ${users.length?"disabled":""}>🗑 この窓口を削除</button></div>`;
+  el.querySelectorAll("[data-k]").forEach(i=>i.addEventListener("input",()=>{ d[i.dataset.k]=i.value; dirty=true; }));
+  $("#c_save").onclick=async()=>{ if(!(d.name||"").trim()){ toast("窓口名を入力してください"); return; }
+    try{ apply(await gs("saveDoc","channels",d)); dirty=false; toast("保存しました"); render(); }catch(e){ toast("保存できませんでした"); } };
+  $("#c_del").onclick=async()=>{ if(users.length) return; if(!await modal({title:"🗑 窓口を削除",text:`「${esc(c.name)}」を削除しますか？`,ok:"削除する",danger:true})) return;
+    try{ apply(await gs("deleteDoc","channels",c.id)); dirty=false; sel=null; toast("削除しました"); render(); }catch(e){ toast("削除できませんでした"); } };
+}
+const MSG_HELP={msg_root:"お客様がトークを開いた時、最初の選択ボタンの上に送ります。",msg_followup:"ボットが回答したあとに「解決しましたか？」と聞く文です。",msg_resolved:"お客様が「解決した」を押した時に送ります。",msg_handoff_in:"担当者につなぐ時（営業時間内）に送ります。{{fields}} の所に、お客様に聞く項目が入ります。",msg_handoff_out:"担当者につなぐ時（営業時間外）に送ります。{{fields}} の所に、お客様に聞く項目が入ります。",msg_ticket_open:"担当者が対応中に、お客様が追加でメッセージを送った時に返します。",msg_freetext:"お客様がボタンを押さずに文字を送った時に返します。"};
+function messageEditor(el,m){
+  if(!m){ sel=null; return renderEditor(); }
+  let text=m.text||"";
+  el.innerHTML=`${sbar()}<h2>💬 ${esc(m.title||m.id)}</h2><div class="path">設定 › 共通メッセージ</div>
+    <div class="infobox">${esc(MSG_HELP[m.id]||"共通で使うメッセージです。")}</div>
+    <div class="f"><label>文面</label><textarea id="g_text">${esc(text)}</textarea></div>
+    <div class="actions"><button class="btn pri" id="g_save">保存</button></div>`;
+  $("#g_text").addEventListener("input",e=>{ text=e.target.value; dirty=true; });
+  $("#g_save").onclick=async()=>{ try{ apply(await gs("saveDoc","messages",Object.assign({},m,{text}))); dirty=false; toast("保存しました"); render(); }catch(e){ toast("保存できませんでした"); } };
+}
+/* ---------- LINEで試す ---------- */
+const SIM={log:[],qr:[]};
+function simOpen(){ $("#sim").hidden=false; $("#simbg").hidden=false; simStart(); }
+function simClose(){ $("#sim").hidden=true; $("#simbg").hidden=true; }
+function simBot(t){ SIM.log.push({who:"bot",html:expand(t)}); }
+function simMe(t){ SIM.log.push({who:"me",html:esc(t)}); }
+function simDraw(){
+  $("#simChat").innerHTML=SIM.log.map(m=>`<div class="bub ${m.who==="me"?"me":""}">${m.html}</div><div class="clr"></div>`).join("");
+  $("#simQr").innerHTML=SIM.qr.map((q,i)=>`<button data-q="${i}" class="${q.sub?"sub":""}">${esc(q.label)}</button>`).join("");
+  $("#simQr").querySelectorAll("[data-q]").forEach(b=>b.onclick=()=>{ const q=SIM.qr[+b.dataset.q]; simMe(q.label); q.go(); simDraw(); });
+  const c=$("#simChat"); c.scrollTop=c.scrollHeight;
+}
+const TOP={label:"最初に戻る",sub:true,go:()=>simMenu("root")};
+function simMenu(id){
+  if(id==="root"){ simBot((S.messages.msg_root&&S.messages.msg_root.text)||"お選びください。"); }
+  else simBot(S.nodes[id].body||"お選びください。");
+  SIM.qr=kids(id).map(n=>({label:n.label,go:()=>simNode(n)})); if(id!=="root") SIM.qr.push(TOP);
+}
+function simFields(h){ const hd=S.handoffs[h]; const t=(S.messages.msg_handoff_in&&S.messages.msg_handoff_in.text)||"担当者が確認します。\n{{fields}}"; return t.replace("{{fields}}",((hd&&hd.fields)||[]).map(x=>"・"+x+"：").join("\n")); }
+function simNode(n,ev){
+  if(n.type==="menu") return simMenu(n.id);
+  if(n.per_event&&!ev){ const evs=activeEvents();
+    if(evs.length>1){ simBot("どの大会についてのお問い合わせですか？"); SIM.qr=evs.map(e=>({label:e.name,go:()=>simNode(n,e)})).concat([TOP]); return; }
+    ev=evs[0]; }
+  let body=n.per_event?expandEv(n.body,ev):n.body;
+  if(n.type==="redirect"&&n.channel&&!/\{\{\s*ch_/.test(body||"")) body=(body?body+"\n":"")+"{{"+n.channel+"}}";
+  simBot(body||"（返信文が未入力です）");
+  if(n.type==="handoff"){ simBot(simFields(n.handoff)); SIM.qr=[TOP]; return; }
+  if(n.type==="redirect"){ SIM.qr=[TOP]; return; }
+  simBot((S.messages.msg_followup&&S.messages.msg_followup.text)||"ご不明点は解決しましたか？");
+  SIM.qr=[{label:"解決した",go:()=>{ simBot((S.messages.msg_resolved&&S.messages.msg_resolved.text)||"ありがとうございました。"); SIM.qr=[TOP]; }}];
+  if(n.handoff) SIM.qr.push({label:"担当者に相談",go:()=>{ simBot(simFields(n.handoff)); SIM.qr=[TOP]; }});
+  SIM.qr.push(TOP);
+}
+function simStart(){ SIM.log=[]; simMenu("root"); simDraw(); }
+function previewHtml(d){
+  let h=`<div class="chat"><div class="bub me">${esc(d.label||"（ボタン名）")}</div><div class="clr"></div>`;
+  let body=d.body||"";
+  if(d.per_event){ const evs=activeEvents();
+    if(!evs.length) return h+`<div class="bub">⚠ 「開催大会」にLINE表示中の大会がありません。上の「📅 開催大会」から登録してください。</div></div>`;
+    if(evs.length>1){ h+=`<div class="bub">どの大会についてのお問い合わせですか？</div><div class="qr">${evs.map(e=>`<span>${esc(e.name)}</span>`).join("")}</div><div class="bub me" style="margin-top:8px">${esc(evs[0].name)}</div><div class="clr"></div>`; }
+    body=expandEv(body,evs[0]); }
+  if(d.type==="redirect"&&d.channel&&S.channels[d.channel]&&!/\{\{\s*ch_/.test(body)) body+=(body?"\n":"")+"{{"+d.channel+"}}";
+  h+=`<div><span class="tag">①</span></div><div class="bub">${expand(body)||"（返信文）"}</div>`;
+  const fl=(d.fields||"").split(/\n/).map(x=>x.trim()).filter(Boolean);
+  const fm=()=>{ const t=(S.messages.msg_handoff_in&&S.messages.msg_handoff_in.text)||"担当者が確認してご返信いたします。\n{{fields}}"; return esc(t).replace("{{fields}}",esc(fl.map(x=>"・"+x+"：").join("\n"))); };
+  let qr=[];
+  if(d.type==="handoff") h+=`<div><span class="tag">②</span></div><div class="bub">${fm()}</div>`;
+  else if(d.type==="answer"||d.type==="check"){ qr=["解決した"]; if(d.handoff) qr.push("担当者に相談"); }
+  qr.push("最初に戻る");
+  h+=`<div class="qr">${qr.map(x=>`<span>${esc(x)}</span>`).join("")}</div>`;
+  if(d.type==="check"&&d.handoff) h+=`<div style="color:#fff;margin-top:10px;font-size:12px">「担当者に相談」を押すと：</div><div><span class="tag">②</span></div><div class="bub">${fm()}</div>`;
+  return h+`</div>`;
+}
+
+/* ---------- 検索 ---------- */
+function doSearch(){
+  const q=$("#q").value.trim().toLowerCase(), r=$("#res");
+  if(!q){ r.hidden=true; return; }
+  const hits=Object.values(S.nodes).filter(n=>n.id!=="root"&&((n.label||"")+" "+(n.body||"")).toLowerCase().includes(q)).slice(0,50);
+  r.innerHTML=hits.length?hits.map(n=>`<button data-id="${esc(n.id)}">${esc(n.label)}<small>${esc(anc(n.id).slice(0,-1).map(x=>S.nodes[x].label).join(" › ")||"トップ")}</small></button>`).join(""):'<div class="empty">見つかりませんでした</div>';
+  r.hidden=false;
+  r.querySelectorAll("button").forEach(b=>b.onclick=()=>{ if(!leave())return; const n=S.nodes[b.dataset.id]; r.hidden=true; $("#q").value="";
+    go(n.id); });
+}
+$("#q").addEventListener("input",doSearch);
+$("#tryBtn").onclick=simOpen; $("#simClose").onclick=simClose; $("#simbg").onclick=simClose; $("#simReset").onclick=simStart;
+$("#tagF").addEventListener("change",e=>{ if(!leave()){ render(); return; } filter=e.target.value||null; render(); });
+$("#typeF").addEventListener("change",e=>{ if(!leave()){ e.target.value=typeF||""; return; } typeF=e.target.value||null; if(filter==="events") filter=null; render(); });
+document.addEventListener("click",e=>{ if(!e.target.closest(".toplinks")) $("#res").hidden=true; });
+window.addEventListener("beforeunload",e=>{ if(dirty){ e.preventDefault(); e.returnValue=""; } });
+gs("getAll").then(d=>{ apply(d); render(); }).catch(()=>{ $("#side").innerHTML='<div class="loading">読み込めませんでした。ページを再読み込みしてください。</div>'; });
+})();
+</script>
+</body>
+</html>

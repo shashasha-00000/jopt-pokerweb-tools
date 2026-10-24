@@ -1,0 +1,548 @@
+<title>JOPT LINE FAQ データベース</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Zen+Kaku+Gothic+New:wght@700;900&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: 上部にタブ、各タブは「一覧＋編集」の2カラム。プレビューはスマホ枠＋右に裏側の処理（Slack/Harness）。 */
+:root{
+  --bg:#f3f5f2; --surface:#ffffff; --sunken:#e9ece7; --ink:#1b2624; --muted:#5d6b67; --line:#d5dbd5;
+  --accent:#0d6b58; --accent-ink:#ffffff; --accent-soft:#dcefe9;
+  --answer:#1f7a4d; --answer-soft:#e1f2e8; --redirect:#2456a6; --redirect-soft:#e3ebf8;
+  --handoff:#b4541a; --handoff-soft:#fbeadf; --menu:#56605d; --menu-soft:#eceeec; --check:#6a4bb0; --check-soft:#ece6f8;
+  --warn:#9a6a00; --warn-soft:#fff3cf; --danger:#b42318;
+  --chat-bg:#c9d6df; --bubble-bot:#ffffff; --bubble-user:#8de08a; --bubble-ink:#1b2624;
+  --f-display:"Zen Kaku Gothic New","Hiragino Sans","Noto Sans JP",sans-serif;
+  --f-body:"Noto Sans JP","Hiragino Sans","Yu Gothic",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121816; --surface:#1a2220; --sunken:#0f1413; --ink:#e4ebe8; --muted:#9aa8a3; --line:#2c3633;
+  --accent:#3fb59a; --accent-ink:#06201a; --accent-soft:#163a32;
+  --answer:#5cc58d; --answer-soft:#173a28; --redirect:#7ea6ee; --redirect-soft:#1b2a44;
+  --handoff:#f0965d; --handoff-soft:#40261a; --menu:#a7b1ad; --menu-soft:#262e2c; --check:#b9a3f2; --check-soft:#2e2546;
+  --warn:#e6b84a; --warn-soft:#3a3016; --danger:#f2786b;
+  --chat-bg:#26323a; --bubble-bot:#33403e; --bubble-user:#2f6b3a; --bubble-ink:#e8efec; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121816; --surface:#1a2220; --sunken:#0f1413; --ink:#e4ebe8; --muted:#9aa8a3; --line:#2c3633;
+  --accent:#3fb59a; --accent-ink:#06201a; --accent-soft:#163a32;
+  --answer:#5cc58d; --answer-soft:#173a28; --redirect:#7ea6ee; --redirect-soft:#1b2a44;
+  --handoff:#f0965d; --handoff-soft:#40261a; --menu:#a7b1ad; --menu-soft:#262e2c; --check:#b9a3f2; --check-soft:#2e2546;
+  --warn:#e6b84a; --warn-soft:#3a3016; --danger:#f2786b;
+  --chat-bg:#26323a; --bubble-bot:#33403e; --bubble-user:#2f6b3a; --bubble-ink:#e8efec; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.65}
+.wrap{max-width:1240px;margin:0 auto;padding-block:20px 60px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:14px}
+h1{font-family:var(--f-display);font-weight:900;font-size:clamp(20px,3vw,28px);letter-spacing:.01em;margin:0;text-wrap:balance}
+.sub{color:var(--muted);font-size:13px;margin:2px 0 0}
+.counts{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:500;white-space:nowrap;border:1px solid transparent}
+.t-menu{background:var(--menu-soft);color:var(--menu)} .t-answer{background:var(--answer-soft);color:var(--answer)}
+.t-redirect{background:var(--redirect-soft);color:var(--redirect)} .t-handoff{background:var(--handoff-soft);color:var(--handoff)} .t-check{background:var(--check-soft);color:var(--check)}
+.t-warn{background:var(--warn-soft);color:var(--warn)} .t-ok{background:var(--accent-soft);color:var(--accent)}
+nav.tabs{display:flex;gap:2px;overflow-x:auto;border-bottom:1px solid var(--line);margin-bottom:18px;scrollbar-width:thin}
+nav.tabs button{font:inherit;font-weight:500;background:none;border:0;border-bottom:3px solid transparent;color:var(--muted);padding:10px 14px;cursor:pointer;white-space:nowrap}
+nav.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+nav.tabs button:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.banner{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:12px 14px;margin-bottom:16px;color:var(--muted);font-size:13px}
+.banner strong{color:var(--ink)}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:18px;align-items:start}
+@media (max-width:860px){.grid2{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;min-width:0}
+.panel h2{font-family:var(--f-display);font-size:16px;margin:0 0 10px}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;align-items:center}
+input[type=search],input[type=text],select,textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 9px;width:100%}
+textarea{min-height:150px;resize:vertical;line-height:1.6}
+.toolbar input[type=search]{flex:1 1 180px;width:auto}
+.toolbar select{width:auto}
+.btn{font:inherit;font-weight:500;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:7px 12px;cursor:pointer}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.danger{color:var(--danger)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.tree{list-style:none;margin:0;padding:0;max-height:70vh;overflow:auto}
+.tree li button{all:unset;box-sizing:border-box;display:flex;gap:8px;align-items:center;width:100%;padding:6px 8px;border-radius:7px;cursor:pointer}
+.tree li button:hover{background:var(--sunken)}
+.tree li button[aria-current="true"]{background:var(--accent-soft)}
+.tree li button:focus-visible{outline:2px solid var(--accent)}
+.tree .lbl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tree .dot{width:9px;height:9px;border-radius:50%;flex:none}
+.d-menu{background:var(--menu)} .d-answer{background:var(--answer)} .d-redirect{background:var(--redirect)} .d-handoff{background:var(--handoff)} .d-check{background:var(--check)}
+.warnflag{color:var(--warn);font-size:12px;font-weight:700}
+.form{display:grid;gap:10px}
+.form .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.form label{display:grid;gap:4px;font-size:12px;color:var(--muted);font-weight:500}
+.form .hint{font-size:12px;color:var(--muted)}
+.form .over{color:var(--danger)}
+.check{display:flex!important;align-items:center;gap:8px;grid-template-columns:none!important}
+.check input{width:auto}
+.empty{padding:28px 10px;text-align:center;color:var(--muted)}
+.empty b{display:block;color:var(--ink);font-size:15px;margin-bottom:4px}
+table.data{width:100%;border-collapse:collapse;font-size:13px}
+.tablebox{overflow-x:auto}
+table.data th,table.data td{text-align:left;padding:8px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+table.data th{font-size:12px;color:var(--muted);font-weight:500;white-space:nowrap}
+table.data tr{cursor:pointer} table.data tr:hover td{background:var(--sunken)}
+table.data tr[aria-current="true"] td{background:var(--accent-soft)}
+.mono{font-family:var(--f-mono);font-size:12px}
+.url{font-family:var(--f-mono);font-size:12px;word-break:break-all}
+/* preview */
+.pv{display:grid;grid-template-columns:minmax(0,380px) minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:860px){.pv{grid-template-columns:minmax(0,1fr)}}
+.phone{background:var(--chat-bg);border-radius:22px;border:8px solid var(--ink);overflow:hidden;display:flex;flex-direction:column;height:640px;max-height:80vh}
+.phone .bar{background:var(--surface);padding:10px 14px;font-weight:700;font-size:13px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line)}
+.log{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px}
+.bub{max-width:86%;padding:8px 11px;border-radius:14px;white-space:pre-wrap;word-break:break-word;font-size:13px;line-height:1.55;color:var(--bubble-ink)}
+.bub.bot{background:var(--bubble-bot);align-self:flex-start;border-top-left-radius:4px}
+.bub.user{background:var(--bubble-user);align-self:flex-end;border-top-right-radius:4px}
+.bub .var{background:var(--warn-soft);color:var(--warn);border-radius:4px;padding:0 3px}
+.bub a{color:var(--redirect);word-break:break-all}
+.sys{align-self:center;font-size:11px;color:var(--muted);background:var(--surface);border-radius:999px;padding:2px 10px;opacity:.9}
+.qr{display:flex;gap:6px;overflow-x:auto;padding:8px 10px;background:var(--surface);border-top:1px solid var(--line);min-height:48px}
+.qr button{flex:none;font:inherit;font-size:12px;border:1px solid var(--accent);color:var(--accent);background:var(--surface);border-radius:999px;padding:5px 11px;cursor:pointer;white-space:nowrap}
+.compose{display:flex;gap:6px;padding:8px;background:var(--surface);border-top:1px solid var(--line)}
+.compose input{flex:1}
+.side h3{font-family:var(--f-display);font-size:14px;margin:0 0 8px}
+.slack{border:1px solid var(--line);border-left:4px solid var(--handoff);border-radius:8px;padding:10px 12px;background:var(--surface);font-size:13px}
+.slack .ttl{font-weight:700}
+.slack dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:2px 10px;margin:8px 0 0}
+.slack dt{color:var(--muted)} .slack dd{margin:0}
+.steps{display:grid;gap:8px;margin:0;padding:0;list-style:none;counter-reset:s}
+.steps li{display:grid;grid-template-columns:26px minmax(0,1fr);gap:8px;align-items:start;font-size:13px}
+.steps li::before{counter-increment:s;content:counter(s);width:22px;height:22px;border-radius:50%;background:var(--sunken);display:grid;place-items:center;font-size:11px;font-weight:700}
+.switch{display:inline-flex;gap:6px;align-items:center;font-size:12px;color:var(--muted)}
+/* plan */
+.doc{max-width:860px}
+.doc h2{font-family:var(--f-display);font-size:20px;margin:28px 0 8px;text-wrap:balance}
+.doc h3{font-size:15px;margin:18px 0 6px}
+.doc p,.doc li{max-width:68ch}
+.doc pre{background:var(--sunken);border-radius:10px;padding:12px;overflow-x:auto;font-family:var(--f-mono);font-size:12px;line-height:1.5}
+.routes{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:12px 0}
+.route{border-radius:12px;padding:12px 14px;border:1px solid var(--line);background:var(--surface)}
+.route h4{margin:0 0 4px;font-size:14px}
+.route .big{font-family:var(--f-display);font-size:26px;font-weight:900;font-variant-numeric:tabular-nums}
+.route.a{border-top:4px solid var(--answer)} .route.r{border-top:4px solid var(--redirect)} .route.h{border-top:4px solid var(--handoff)}
+.toast{position:fixed;bottom:calc(16px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 16px;border-radius:999px;font-size:13px;z-index:20}
+@media (prefers-reduced-motion:no-preference){.bub{animation:pop .18s ease-out}@keyframes pop{from{transform:translateY(4px);opacity:.4}to{transform:none;opacity:1}}}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>JOPT LINE FAQ データベース</h1>
+      <p class="sub">LINE公式アカウント（お客様対応窓口）用・ボタン選択式 自動応答 v1 ／ 2025年6月〜2026年10月・お客様2,630人分のチャット履歴をもとに作成</p>
+    </div>
+    <div class="counts" id="counts"></div>
+  </header>
+
+  <nav class="tabs" role="tablist" id="tabs">
+    <button role="tab" data-tab="preview">プレビュー</button>
+    <button role="tab" data-tab="nodes">メニュー・回答</button>
+    <button role="tab" data-tab="channels">誘導先LINE</button>
+    <button role="tab" data-tab="handoffs">担当者対応</button>
+    <button role="tab" data-tab="vars">開催回の変数</button>
+    <button role="tab" data-tab="plan">運用設計</button>
+    <button role="tab" data-tab="export">書き出し</button>
+  </nav>
+
+  <div style="margin:0 0 12px"><a href="https://script.google.com/a/macros/japanopenpoker.com/s/AKfycbxYnHkRif6scTpk6yrbKhlwfxVIB0WYQ5jU1vyM-LGtJnCgMSzivshc386MMrzmEsvt-g/exec" target="_top" style="display:inline-block;background:#0f7a52;color:#fff;text-decoration:none;border-radius:10px;padding:8px 16px;font-weight:600">← かんたん編集に戻る</a></div>
+  <div id="ro" class="banner" hidden>閲覧のみの権限です。内容の編集はオーナーまたは編集者が行えます。</div>
+  <div id="nodb" class="banner" hidden><strong>データベースに接続できません。</strong> claude.ai にサインインした状態で開くと、データの表示と編集ができます。</div>
+
+  <!-- PREVIEW -->
+  <section data-panel="preview" hidden>
+    <div class="pv">
+      <div>
+        <div class="phone" aria-label="LINEトーク画面のプレビュー">
+          <div class="bar"><span>JOPTお客様対応窓口</span><button class="btn" id="pvReset" style="padding:3px 10px;font-size:12px">最初から</button></div>
+          <div class="log" id="pvLog" aria-live="polite"></div>
+          <div class="qr" id="pvQr"></div>
+          <form class="compose" id="pvForm"><input id="pvInput" type="text" placeholder="自由入力を試す（v1の動き）" aria-label="自由入力"><button class="btn" type="submit">送信</button></form>
+        </div>
+      </div>
+      <div class="side panel">
+        <div class="toolbar" style="justify-content:space-between">
+          <h3 style="margin:0">裏側で起きること</h3>
+          <label class="switch"><input type="checkbox" id="pvHours" checked> 営業時間内として表示</label>
+        </div>
+        <div id="pvSide"><p class="sub">左のボタンを押すと、選んだ項目の種類（回答・LINE誘導・担当者対応）と、Harness・Slackで行われる処理がここに表示されます。</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- NODES -->
+  <section data-panel="nodes" hidden>
+    <div class="grid2">
+      <div class="panel">
+        <div class="toolbar">
+          <input type="search" id="nq" placeholder="ボタン名・本文で検索" aria-label="検索">
+          <select id="nt" aria-label="種類で絞り込み"><option value="">すべての種類</option><option value="menu">メニュー</option><option value="answer">回答</option><option value="redirect">引導（他のLINE）</option><option value="check">半引導（確認→担当者）</option><option value="handoff">人工（担当者）</option></select>
+          <label class="switch"><input type="checkbox" id="nr"> 要確認のみ</label>
+        </div>
+        <ul class="tree" id="tree"></ul>
+      </div>
+      <div class="panel" id="nedit"></div>
+    </div>
+  </section>
+
+  <!-- GENERIC TABLES -->
+  <section data-panel="channels" hidden><div class="grid2"><div class="panel"><h2>誘導先LINE</h2><p class="sub">ほかの公式LINEへ案内するときのリンクはここで一元管理します。リンクが変わったら、ここを1か所直せば全メニューに反映されます。</p><div class="tablebox" id="tblChannels"></div></div><div class="panel" id="edChannels"></div></div></section>
+  <section data-panel="handoffs" hidden><div class="grid2"><div class="panel"><h2>担当者対応の種類</h2><p class="sub">担当者につなぐときの優先度、Slackの通知先、お客様に最初に聞く項目を種類ごとに決めます。</p><div class="tablebox" id="tblHandoffs"></div></div><div class="panel" id="edHandoffs"></div></div></section>
+  <section data-panel="vars" hidden><div class="grid2"><div class="panel"><h2>開催回の変数</h2><p class="sub">回答文の中の <span class="mono">{{event_name}}</span> などに入る値です。開催回が変わるたびに、ここだけ更新します。有効期限を過ぎた値は赤で表示されます。</p><div class="tablebox" id="tblVars"></div><h2 style="margin-top:22px">共通メッセージ</h2><div class="tablebox" id="tblMessages"></div></div><div class="panel" id="edVars"></div></div></section>
+
+  <!-- PLAN -->
+  <section data-panel="plan" hidden>
+    <article class="doc">
+      <p class="sub">この設計は、2025年6月〜2026年10月のトーク履歴（会話2,630件、お客様メッセージ約10,000件）、同僚が作成した回答例141件、LINE Harness（v0.13.2）のソースコードをもとにしています。</p>
+
+      <h2>1. 基本方針</h2>
+      <ul>
+        <li>v1は<strong>ボタン選択式</strong>です。お客様がボタンを順に選ぶと、データベースに登録済みの文面だけを返します。AIによる文章生成はしません。</li>
+        <li>すべての項目を3種類に分けます。<strong>回答</strong>（その場で解決）／<strong>LINE誘導</strong>（担当窓口が別）／<strong>担当者対応</strong>（個別の確認が必要）。</li>
+        <li>担当者につなぐ前に、確認に必要な情報（GameIDなど）をお客様に先に送ってもらいます。今は担当者が「GameIDを教えてください」と聞き返すやり取りが返信の約2割を占めています。</li>
+        <li>開催回ごとに変わる情報（フォームURL・年齢制限・日程）は変数として分け、本文を書き換えなくても更新できるようにします。</li>
+      </ul>
+
+      <h2>2. 3つのルートと想定割合</h2>
+      <div class="routes">
+        <div class="route a"><h4>回答</h4><div class="big" id="cntA">–</div><p class="sub">支払い方法、年齢制限、チケットの使い方、領収書フォームなど。回答後に「解決した／担当者に相談」を表示します。</p></div>
+        <div class="route r"><h4>LINE誘導</h4><div class="big" id="cntR">–</div><p class="sub">コイン残高（ポーカーギルド）、JOPT選手契約、JOPT Games、GameID、店舗様、ディーラー。過去12か月の約13%がこのルートです。</p></div>
+        <div class="route h"><h4>担当者対応</h4><div class="big" id="cntH">–</div><p class="sub">プライズ未付与、誤送金、忘れ物、事前申込の確認など。Slackへ通知し、Harnessの未対応一覧に優先度つきで並べます。</p></div>
+      </div>
+      <p>過去12か月の会話2,382件を、キーワードでこのメニューに当てはめた粗い試算です。LINE誘導だけで完結するのが約13%、回答を先に見せられるのが約60%（うち「プライズが届かない」など、最終的に担当者の確認が必要なものも含みます）、最初から担当者対応が約10%、キーワードで判定できない自由入力が約18%でした。v1では、自由入力にもメニューを返して選んでもらいます。</p>
+
+      <h2>3. お客様側の流れ</h2>
+<pre class="mermaid">
+flowchart TD
+  A[お客様がメッセージを送る / リッチメニュー「お問い合わせ」] --> B{対応中の案件がある?}
+  B -- はい --> C[ボットは返信しない<br>担当者の未対応一覧へ]
+  B -- いいえ --> D[トップメニューをボタンで表示]
+  D --> E{選んだ項目の種類}
+  E -- 回答 --> F[登録済みの回答を返信] --> G{解決した?}
+  G -- 解決した --> H[チャットを解決済みにする]
+  G -- 担当者に相談 --> I
+  E -- LINE誘導 --> J[案内文と窓口リンクを返信]
+  E -- 担当者対応 --> I[確認項目を案内<br>案件を作成] --> K[Slack通知 / Harnessで未対応・タグ付け]
+</pre>
+
+      <h2>4. 担当者への通知（Slack）</h2>
+      <ol>
+        <li><strong>案件の作成</strong>：お客様が担当者対応の項目を押すと、ボットが確認項目の一覧を返信し、<span class="mono">faq_tickets</span> に案件を1件作ります。Harnessのチャットは「未対応（unread）」にし、メモに <span class="mono">[要対応] プライズ未付与／高</span> のように書き込み、タグ「要対応/プライズ」を付けます。</li>
+        <li><strong>Slackへの通知</strong>：Slackアプリのボットトークン（<span class="mono">chat.postMessage</span>）で、優先度「高」は <span class="mono">#cs-line-urgent</span>、それ以外は <span class="mono">#cs-line</span> に投稿します。Harnessのチャット画面へのリンクを付けます。</li>
+        <li><strong>情報の追記</strong>：案件作成から30分以内にお客様が送った内容（GameID、スクリーンショットの有無など）は、同じSlack投稿のスレッドに追記します。</li>
+        <li><strong>営業時間外</strong>：お客様には「翌営業日以降の返信」と案内します。Slackへは🌙を付けて投稿し、メンションはしません。営業日の10:00に、未対応の案件をまとめて1回投稿します。</li>
+        <li><strong>放置の防止</strong>：営業時間内に目標時間（高＝2時間、中＝当日中、低＝2営業日）を過ぎてもHarnessで未対応のままなら、スレッドで当番にメンションします。</li>
+        <li><strong>状態の同期</strong>：担当者がHarnessから返信するとチャットは「対応中」になり、Slack投稿を「対応中」に更新します。Harnessで「解決済み」にすると、Slack投稿に✅を付けます。</li>
+      </ol>
+      <div class="slack" style="max-width:520px"><div class="ttl">🔴 担当者対応：プライズ未付与（優先度：高）</div>
+        <dl><dt>お客様</dt><dd>LINE表示名（Harnessへのリンク）</dd><dt>選んだ項目</dt><dd>入賞・プライズ › 期限を過ぎても届かない</dd><dt>受付</dt><dd>10/22 15:40（営業時間内）／目標：2時間以内</dd><dt>確認項目</dt><dd>GameID・大会名・開催日・順位・選手契約の有無</dd></dl>
+        <p class="sub" style="margin:8px 0 0">スレッド：お客様の追記がここに並びます</p></div>
+
+      <h2>5. LINE Harness への組み込み</h2>
+      <p>Harnessは自社でデプロイしたものを改修できる前提です。FAQのテーブルは同じD1データベースに置き、ボットの返信もHarnessのトーク履歴に残るようにします。</p>
+      <ul>
+        <li><span class="mono">apps/worker/src/routes/webhook.ts</span>：postbackの処理で、<span class="mono">data</span> が <span class="mono">faq:</span> で始まるものを新しい <span class="mono">services/faq-router.ts</span> に渡します。ボタンは postback（表示テキスト＝ボタン名）で作るので、トーク画面にはお客様が押したボタン名が表示されます。</li>
+        <li>テキストメッセージで既存の自動応答に一致しなかった場合は、<span class="mono">faq-router</span> がメニューを返します。対応中の案件があるお客様には返信せず、今まで通り未対応一覧に入れます。</li>
+        <li>返信は replyToken を使う replyMessage（無料・送信数の上限に数えられない）で送り、<span class="mono">messages_log</span> に <span class="mono">source='faq_bot'</span> で記録します。</li>
+        <li><span class="mono">scheduled.ts</span>（cron）に、目標時間を過ぎた案件の再通知、10:00のまとめ投稿、チャットの状態とSlack投稿の同期を追加します。</li>
+        <li>リッチメニューに「お問い合わせ」ボタン（postback <span class="mono">faq:node=root</span>）を置きます。</li>
+      </ul>
+<pre>-- D1 に追加するテーブル（このページの「書き出し」でデータ入りのSQLを出力できます）
+CREATE TABLE faq_nodes (
+  id TEXT PRIMARY KEY, parent_id TEXT, sort_order INTEGER NOT NULL DEFAULT 0,
+  label TEXT NOT NULL,                       -- ボタン名（20文字以内）
+  type TEXT NOT NULL CHECK (type IN ('menu','answer','redirect','handoff')),
+  body TEXT, channel_id TEXT, handoff_id TEXT, follow INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT '確認済', review TEXT, evidence TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1, updated_at TEXT);
+CREATE TABLE faq_channels (id TEXT PRIMARY KEY, name TEXT, url TEXT, scope TEXT, status TEXT, note TEXT);
+CREATE TABLE faq_handoff_types (id TEXT PRIMARY KEY, name TEXT, team TEXT,
+  priority TEXT CHECK (priority IN ('高','中','低')), slack_channel TEXT, sla TEXT,
+  fields TEXT /* JSON配列 */, note TEXT);
+CREATE TABLE faq_vars (key TEXT PRIMARY KEY, value TEXT, valid_until TEXT, note TEXT);
+CREATE TABLE faq_messages (id TEXT PRIMARY KEY, title TEXT, text TEXT);
+CREATE TABLE faq_tickets (
+  id TEXT PRIMARY KEY, friend_id TEXT NOT NULL, node_id TEXT, handoff_id TEXT,
+  priority TEXT, status TEXT CHECK (status IN ('open','notified','in_progress','resolved')),
+  collected TEXT, slack_channel TEXT, slack_ts TEXT,
+  created_at TEXT, notified_at TEXT, first_reply_at TEXT, resolved_at TEXT);
+CREATE TABLE faq_events (          -- 改善用ログ：どのボタンが押され、どこで担当者へ流れたか
+  id TEXT PRIMARY KEY, friend_id TEXT, node_id TEXT,
+  action TEXT CHECK (action IN ('tap','freetext','resolved','handoff')), created_at TEXT);</pre>
+
+      <h2>6. 進め方</h2>
+      <ol>
+        <li><strong>内容の確定</strong>（Harnessの改修と並行）：「要確認」の項目を担当者が確認し、誘導先LINEのリンクを確定します。現在の要確認は <span id="reviewCount">–</span> 件です。</li>
+        <li><strong>テスト用アカウントで検証</strong>：社内メンバーだけが友だちのテスト用LINEで、全項目を押して確認します。</li>
+        <li><strong>本番公開</strong>：営業時間内に公開し、最初の1週間はSlack通知と未対応一覧を重点的に見ます。</li>
+        <li><strong>毎週の見直し</strong>：<span class="mono">faq_events</span> から「担当者に相談」が多い回答、よく来る自由入力を確認し、項目を追加・修正します。</li>
+        <li><strong>v2（Dify連携）</strong>：自由入力をDifyで分類し、<em>項目のIDだけ</em>を返してもらいます。返信する文面は引き続きこのデータベースから取るので、AIが勝手な案内をすることはありません。</li>
+      </ol>
+
+      <h2>7. 見る指標</h2>
+      <ul>
+        <li>自己解決率：回答を見たあと「解決した」を押した割合</li>
+        <li>担当者対応率と、種類ごとの件数</li>
+        <li>初回返信までの時間（<span class="mono">faq_tickets.first_reply_at</span>）</li>
+        <li>メニュー未選択率：自由入力のあと、どのボタンも押されなかった割合</li>
+      </ul>
+    </article>
+  </section>
+
+  <!-- EXPORT -->
+  <section data-panel="export" hidden>
+    <div class="panel" style="max-width:900px">
+      <h2>書き出し</h2>
+      <p class="sub">現在のデータベースの内容を、LINE HarnessのD1に入れるSQL、またはJSONとして書き出します。</p>
+      <div class="toolbar">
+        <button class="btn primary" id="dlSql">SQLを保存</button>
+        <button class="btn" id="dlJson">JSONを保存</button>
+        <button class="btn" id="cpSql">SQLをコピー</button>
+      </div>
+      <pre id="sqlOut" class="mono" style="background:var(--sunken);border-radius:10px;padding:12px;max-height:60vh;overflow:auto;white-space:pre"></pre>
+    </div>
+  </section>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+const S = { nodes:{}, channels:{}, handoffs:{}, vars:{}, messages:{} };
+const COL = { nodes:"faq_nodes", channels:"faq_channels", handoffs:"faq_handoffs", vars:"faq_vars", messages:"faq_messages" };
+let db = true, canWrite = true, selNode = null;
+const $ = (s, r=document) => r.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const TYPE = { menu:"メニュー", answer:"自動（回答）", check:"半引導（確認→担当者）", redirect:"引導（他のLINE）", handoff:"人工（担当者）" };
+function toast(t){ const el=$("#toast"); el.textContent=t; el.hidden=false; clearTimeout(toast.t); toast.t=setTimeout(()=>el.hidden=true,2200); }
+
+/* ---------- tabs ---------- */
+const tabs=[...document.querySelectorAll("#tabs button")];
+function showTab(name){
+  if(!tabs.some(b=>b.dataset.tab===name)) name="preview";
+  tabs.forEach(b=>b.setAttribute("aria-selected", b.dataset.tab===name));
+  document.querySelectorAll("[data-panel]").forEach(p=>p.hidden = p.dataset.panel!==name);
+  try{ history.replaceState(null,"","#"+name);}catch(e){}
+}
+tabs.forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)));
+showTab((location.hash||"").slice(1));
+
+/* ---------- helpers ---------- */
+const nodeList = () => Object.values(S.nodes);
+const children = pid => nodeList().filter(n => (n.parent||"")===pid).sort((a,b)=>(a.order||0)-(b.order||0));
+function pathOf(n){ const p=[]; let c=n; let g=0; while(c && c.parent && g++<10){ c=S.nodes[c.parent]; if(c && c.id!=="root") p.unshift(c.label);} return p; }
+function expand(text){
+  return esc(text).replace(/\{\{\s*([\w]+)\s*\}\}/g,(m,k)=>{
+    if(k==="msg_root" && S.messages.msg_root) return esc(S.messages.msg_root.text);
+    if(S.vars[k]) return esc(S.vars[k].value);
+    if(S.channels[k]) return esc(S.channels[k].url);
+    return `<span class="var">{{${esc(k)}}}</span>`;
+  }).replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener">$1</a>');
+}
+function fieldsText(h){ return (h?.fields||[]).map(f=>"・"+f+"：").join("\n"); }
+
+/* ---------- counts ---------- */
+function renderCounts(){
+  const ns=nodeList(); const c={menu:0,answer:0,redirect:0,handoff:0,check:0}; ns.forEach(n=>c[n.type]=(c[n.type]||0)+1);
+  const rev = ns.filter(n=>n.status==="要確認").length + Object.values(S.channels).filter(x=>x.status==="要確認").length;
+  $("#counts").innerHTML = ns.length ? `<span class="chip t-answer">自動 ${c.answer}</span><span class="chip t-check">半引導 ${c.check}</span><span class="chip t-redirect">引導 ${c.redirect}</span><span class="chip t-handoff">人工 ${c.handoff}</span><span class="chip t-menu">メニュー ${c.menu}</span><span class="chip t-warn">要確認 ${rev}</span>` : "";
+  $("#cntA").textContent = c.answer+"項目"; $("#cntR").textContent=c.redirect+"項目"; $("#cntH").textContent=c.handoff+"項目";
+  $("#reviewCount").textContent = rev;
+}
+
+/* ---------- preview ---------- */
+let pvState = { log:[], qr:[], side:null };
+function bot(html){ pvState.log.push({k:"bot",html}); }
+function user(t){ pvState.log.push({k:"user",html:esc(t)}); }
+function sys(t){ pvState.log.push({k:"sys",html:esc(t)}); }
+function qrFor(n){ return children(n.id).map(c=>({label:c.label,go:c.id})); }
+const TOP = {label:"トップに戻る", go:"root"};
+function pvStart(){
+  pvState={log:[],qr:[],side:null};
+  const root=S.nodes.root;
+  if(!root){ renderPreview(); return; }
+  bot(expand(root.body||"")); pvState.qr=qrFor(root); renderPreview();
+}
+function pvGo(id, label){
+  const n=S.nodes[id]; if(!n) return;
+  if(label) user(label);
+  const inHours=$("#pvHours").checked;
+  pvState.side={node:n};
+  if(n.type==="menu"){ if(n.body) bot(expand(n.body)); pvState.qr=[...qrFor(n), ...(n.id==="root"?[]:[TOP])]; }
+  else if(n.type==="answer"||n.type==="check"){ bot(expand(n.body)); const lk=(n.links||[]).filter(x=>S.nodes[x]).map(x=>({label:S.nodes[x].label,go:x})); if(n.follow){ bot(expand(S.messages.msg_followup?.text||"ご不明点は解決しましたか？")); pvState.qr=[...lk,{label:"解決した",act:"resolved"}, ...(n.handoff?[{label:"担当者に相談",act:"handoff",h:n.handoff,from:n.id}]:[]), TOP]; } else pvState.qr=[...lk,TOP]; }
+  else if(n.type==="redirect"){ const ch=S.channels[n.channel]; bot(expand(n.body)+(ch?`\n\n▶ ${esc(ch.name)}\n<a href="${esc(ch.url)}" target="_blank" rel="noopener">${esc(ch.url)}</a>`:"\n\n<span class='var'>誘導先が未設定</span>")); pvState.qr=[TOP]; }
+  else if(n.type==="handoff"){ doHandoff(n.handoff, n, inHours); }
+  renderPreview();
+}
+function doHandoff(hid, n, inHours){
+  const h=S.handoffs[hid];
+  if(n.type==="handoff" && n.body) bot(expand(n.body));
+  const m = S.messages[inHours?"msg_handoff_in":"msg_handoff_out"];
+  bot(expand((m?.text||"担当者が確認します。\n{{fields}}").replace("{{fields}}", fieldsText(h))));
+  sys("担当者対応の案件を作成しました");
+  pvState.qr=[]; pvState.side={node:n, handoff:h, inHours};
+}
+function pvAct(q){
+  if(q.go) return pvGo(q.go, q.label);
+  user(q.label);
+  if(q.act==="resolved"){ bot(expand(S.messages.msg_resolved?.text||"ご利用ありがとうございました。")); sys("チャットを解決済みにしました"); pvState.qr=[TOP]; pvState.side={resolved:true}; }
+  if(q.act==="handoff"){ doHandoff(q.h, S.nodes[q.from]||{type:"answer"}, $("#pvHours").checked); }
+  renderPreview();
+}
+function renderPreview(){
+  const log=$("#pvLog");
+  if(!nodeList().length){ log.innerHTML=`<div class="empty"><b>メニューがまだ登録されていません</b>「メニュー・回答」タブで項目を追加すると、ここでLINEの画面として確認できます。</div>`; $("#pvQr").innerHTML=""; return; }
+  log.innerHTML = pvState.log.map(m=> m.k==="sys"?`<div class="sys">${m.html}</div>`:`<div class="bub ${m.k}">${m.html}</div>`).join("");
+  log.scrollTop = log.scrollHeight;
+  const qr=$("#pvQr"); qr.innerHTML="";
+  pvState.qr.forEach(q=>{ const b=document.createElement("button"); b.type="button"; b.textContent=q.label; b.addEventListener("click",()=>pvAct(q)); qr.appendChild(b); });
+  renderSide();
+}
+function renderSide(){
+  const s=pvState.side, el=$("#pvSide");
+  if(!s){ el.innerHTML=`<p class="sub">左のボタンを押すと、選んだ項目の種類（回答・LINE誘導・担当者対応）と、Harness・Slackで行われる処理がここに表示されます。</p>`; return; }
+  if(s.resolved){ el.innerHTML=`<ol class="steps"><li>faq_events に「resolved」を記録</li><li>Harnessのチャットを「解決済み」に変更（未対応一覧に出ない）</li></ol>`; return; }
+  if(s.freetext){ el.innerHTML=`<ol class="steps"><li>faq_events に「freetext」を記録（v2でDifyの学習・見直しに使う）</li><li>メニューを返信。15分以内にどのボタンも押されなければ、Harnessの未対応一覧に「自由入力」タグ付きで入れる</li><li>対応中の案件があるお客様の場合は、返信せず担当者へ</li></ol>`; return; }
+  const n=s.node; const path=[...pathOf(n), n.label].join(" › ");
+  let html=`<p style="margin:0 0 8px"><span class="chip t-${n.type}">${TYPE[n.type]}</span> <span class="sub">${esc(path)}</span> <span class="mono sub">${esc(n.id)}</span></p>`;
+  if(n.status==="要確認") html+=`<p class="banner" style="margin:6px 0"><span class="warnflag">要確認</span> ${esc(n.review)}</p>`;
+  if(s.handoff){
+    const h=s.handoff, emo=h.priority==="高"?"🔴":h.priority==="中"?"🟠":"⚪";
+    html+=`<h3>Harness</h3><ol class="steps"><li>faq_tickets に案件を作成（${esc(h.id)}）</li><li>チャットを「未対応」に。メモに <span class="mono">[要対応] ${esc(h.name)}／${esc(h.priority)}</span>、タグ「要対応/${esc(h.name)}」</li><li>30分以内のお客様の追記をSlackスレッドへ転送</li></ol>
+    <h3 style="margin-top:14px">Slack ${esc(h.slack)}</h3>
+    <div class="slack"><div class="ttl">${s.inHours?"":"🌙 "}${emo} 担当者対応：${esc(h.name)}（優先度：${esc(h.priority)}）</div>
+    <dl><dt>選んだ項目</dt><dd>${esc(path)}</dd><dt>担当</dt><dd>${esc(h.team)}</dd><dt>目標</dt><dd>${esc(h.sla)}${s.inHours?"":"（営業時間外：翌営業日10:00のまとめに含める）"}</dd><dt>確認項目</dt><dd>${esc((h.fields||[]).join("・"))}</dd></dl></div>`;
+  } else if(n.type==="redirect"){
+    const ch=S.channels[n.channel];
+    html+=`<ol class="steps"><li>案内文と窓口リンクを返信（replyMessage・無料）</li><li>チャットは未対応にしない</li><li>誘導先：${ch?esc(ch.name)+` <span class="chip ${ch.status==="要確認"?"t-warn":"t-ok"}">${esc(ch.status)}</span>`:"未設定"}</li></ol>`;
+  } else if(n.type==="answer"||n.type==="check"){
+    html+=`<ol class="steps"><li>登録済みの回答を返信（変数は開催回の値に置き換え）</li><li>「解決した」→ 解決済み ／「担当者に相談」→ ${esc(S.handoffs[n.handoff]?.name||"未設定")}</li></ol>${n.evidence?`<p class="sub">根拠：${esc(n.evidence)}</p>`:""}`;
+  } else html+=`<p class="sub">下位の項目をボタンで表示します（最大13個）。</p>`;
+  el.innerHTML=html;
+}
+$("#pvReset").addEventListener("click",pvStart);
+$("#pvForm").addEventListener("submit",e=>{ e.preventDefault(); const v=$("#pvInput").value.trim(); if(!v||!S.nodes.root) return; user(v); $("#pvInput").value=""; bot(expand(S.messages.msg_freetext?.text||"")); pvState.qr=qrFor(S.nodes.root); pvState.side={freetext:true}; renderPreview(); });
+
+/* ---------- nodes editor ---------- */
+function renderTree(){
+  const q=$("#nq").value.trim().toLowerCase(), t=$("#nt").value, r=$("#nr").checked;
+  const ul=$("#tree"); ul.innerHTML="";
+  if(!nodeList().length){ ul.innerHTML=`<li class="empty"><b>まだ項目がありません</b>右の「トップ項目を追加」から作成できます。</li>`; return; }
+  const match=n=>(!t||n.type===t)&&(!r||n.status==="要確認")&&(!q||(n.label+" "+(n.body||"")+" "+n.id).toLowerCase().includes(q));
+  const walk=(pid,depth)=>{ children(pid).forEach(n=>{ const sub=[]; const show=match(n);
+      if(show||!(q||t||r)){ const li=document.createElement("li"); li.innerHTML=`<button type="button" style="padding-left:${8+depth*18}px" ${selNode===n.id?'aria-current="true"':""}><span class="dot d-${n.type}" title="${TYPE[n.type]}"></span><span class="lbl">${esc(n.label)}</span>${n.status==="要確認"?'<span class="warnflag">要確認</span>':""}</button>`; li.firstChild.addEventListener("click",()=>{selNode=n.id; renderTree(); renderNodeEditor();}); ul.appendChild(li);}
+      walk(n.id,depth+1); }); };
+  walk("",0);
+}
+["#nq","#nt","#nr"].forEach(s=>$(s).addEventListener("input",renderTree));
+function opt(list,val,empty){ return (empty?`<option value="">${empty}</option>`:"")+list.map(([v,l])=>`<option value="${esc(v)}" ${v===val?"selected":""}>${esc(l)}</option>`).join(""); }
+function renderNodeEditor(){
+  const el=$("#nedit"); const n=S.nodes[selNode];
+  if(!n){ el.innerHTML=`<div class="empty"><b>項目を選んでください</b>左の一覧から選ぶと、ボタン名・回答文・誘導先などを編集できます。</div>${canWrite&&db?'<div class="toolbar" style="justify-content:center"><button class="btn" id="addTop">トップ項目を追加</button></div>':""}`; const a=$("#addTop"); if(a) a.onclick=()=>newNode("root"); return; }
+  const parents=nodeList().filter(x=>x.type==="menu"&&x.id!==n.id).map(x=>[x.id,[...pathOf(x),x.label].join(" › ")||x.label]);
+  const dis = canWrite&&db ? "" : "disabled";
+  el.innerHTML=`<div class="toolbar" style="justify-content:space-between"><h2 style="margin:0">${esc(n.label)}</h2><span class="mono sub">${esc(n.id)}</span></div>
+  <form class="form" id="nf">
+   <div class="row"><label>ボタン名（20文字以内）<input type="text" id="f_label" value="${esc(n.label)}" ${dis}><span class="hint" id="lblc"></span></label>
+   <label>種類<select id="f_type" ${dis}>${opt(Object.entries(TYPE),n.type)}</select></label></div>
+   <div class="row"><label>親メニュー<select id="f_parent" ${dis}>${opt(parents,n.parent,"（なし：最上位）")}</select></label><label>並び順<input type="text" id="f_order" inputmode="numeric" value="${esc(n.order??0)}" ${dis}></label></div>
+   <label>返信する文面（{{event_name}} などの変数、{{ch_…}} で誘導先URLが使えます）<textarea id="f_body" ${dis}>${esc(n.body||"")}</textarea></label>
+   <div class="row"><label>誘導先LINE<select id="f_channel" ${dis}>${opt(Object.values(S.channels).map(c=>[c.id,c.name]),n.channel,"（なし）")}</select></label>
+   <label>担当者対応の種類<select id="f_handoff" ${dis}>${opt(Object.values(S.handoffs).map(h=>[h.id,h.name+"（"+h.priority+"）"]),n.handoff,"（なし）")}</select></label></div>
+   <label class="check"><input type="checkbox" id="f_follow" ${n.follow?"checked":""} ${dis}> 回答のあとに「解決した／担当者に相談」を表示する</label>
+   <label>回答のあとに表示する関連ボタン（項目IDをカンマ区切り）<input type="text" id="f_links" value="${esc((n.links||[]).join(","))}" ${dis}><span class="hint">${esc((n.links||[]).map(x=>S.nodes[x]?.label||x+"（見つかりません）").join(" ／ "))}</span></label>
+   <div class="row"><label>状態<select id="f_status" ${dis}>${opt([["確認済","確認済"],["要確認","要確認"]],n.status)}</select></label><label>根拠（ログの日付・件数）<input type="text" id="f_evidence" value="${esc(n.evidence||"")}" ${dis}></label></div>
+   <label>確認が必要な点<input type="text" id="f_review" value="${esc(n.review||"")}" ${dis}></label>
+   <div class="toolbar"><button class="btn primary" type="submit" ${dis}>保存</button>${n.type==="menu"?`<button class="btn" type="button" id="addChild" ${dis}>この下に項目を追加</button>`:""}<button class="btn" type="button" id="tryIt">プレビューで試す</button><button class="btn danger" type="button" id="delNode" ${dis}>削除</button></div>
+   <p class="hint" id="delMsg" hidden></p>
+  </form>`;
+  const lc=()=>{const v=$("#f_label").value; $("#lblc").textContent=`${v.length}/20`; $("#lblc").className="hint"+(v.length>20?" over":"");}; lc(); $("#f_label").addEventListener("input",lc);
+  $("#nf").addEventListener("submit",async e=>{ e.preventDefault(); const d={...n, label:$("#f_label").value.trim(), type:$("#f_type").value, parent:$("#f_parent").value, order:Number($("#f_order").value)||0, body:$("#f_body").value, channel:$("#f_channel").value||null, handoff:$("#f_handoff").value||null, follow:$("#f_follow").checked, links:$("#f_links").value.split(",").map(s=>s.trim()).filter(Boolean), status:$("#f_status").value, evidence:$("#f_evidence").value, review:$("#f_review").value};
+    if(!d.label){toast("ボタン名を入力してください");return;} if(d.label.length>20){toast("ボタン名は20文字以内にしてください");return;}
+    if(d.parent && children(d.parent).filter(x=>x.id!==n.id).length>=13){toast("1つのメニューに置けるボタンは13個までです");return;}
+    await save("nodes",d); });
+  const ac=$("#addChild"); if(ac) ac.onclick=()=>newNode(n.id);
+  $("#tryIt").onclick=()=>{ showTab("preview"); pvStart(); const chain=[]; let c=n; let g=0; while(c&&c.id!=="root"&&g++<10){chain.unshift(c); c=S.nodes[c.parent];} chain.forEach(x=>pvGo(x.id,x.label)); };
+  let armed=false; $("#delNode").onclick=async()=>{ if(children(n.id).length){ const m=$("#delMsg"); m.hidden=false; m.textContent="下位の項目があるため削除できません。先に下位の項目を移動または削除してください。"; return;} if(!armed){armed=true; $("#delNode").textContent="もう一度押すと削除"; return;} await remove("nodes",n.id); selNode=n.parent||null; renderNodeEditor(); };
+}
+async function newNode(parent){
+  if(children(parent).length>=13){toast("1つのメニューに置けるボタンは13個までです");return;}
+  const id="n_"+Math.random().toString(36).slice(2,8);
+  const d={id,parent,order:children(parent).length+1,label:"新しい項目",type:"answer",body:"",channel:null,handoff:"H_GENERAL",follow:true,status:"要確認",review:"新規作成",evidence:""};
+  await save("nodes",d); selNode=id; renderTree(); renderNodeEditor();
+}
+
+/* ---------- generic record tables ---------- */
+const DEF = {
+  channels:{ cols:[["name","窓口"],["url","リンク"],["status","状態"]], fields:[["id","ID","ro"],["name","窓口名"],["url","リンク（URL）"],["scope","案内する内容","area"],["status","状態","status"],["last_seen","最後に使われた日"],["uses","過去の使用回数"],["note","メモ","area"]], tbl:"#tblChannels", ed:"#edChannels" },
+  handoffs:{ cols:[["name","種類"],["priority","優先度"],["slack","Slack"],["sla","目標"]], fields:[["id","ID","ro"],["name","種類名"],["team","担当"],["priority","優先度","prio"],["slack","Slackチャンネル"],["sla","目標時間"],["fields","お客様に聞く項目（1行に1つ）","list"],["note","メモ","area"]], tbl:"#tblHandoffs", ed:"#edHandoffs" },
+  vars:{ cols:[["key","変数"],["value","値"],["valid_until","有効期限"]], fields:[["key","変数名","ro"],["value","値","area"],["valid_until","有効期限（YYYY-MM-DD、空欄＝なし）"],["note","メモ","area"]], tbl:"#tblVars", ed:"#edVars", idf:"key" },
+  messages:{ cols:[["title","用途"],["text","文面"]], fields:[["id","ID","ro"],["title","用途"],["text","文面（{{fields}} に確認項目が入ります）","area"]], tbl:"#tblMessages", ed:"#edVars" },
+};
+const sel = {};
+const today = new Date().toISOString().slice(0,10);
+function renderTable(kind){
+  const d=DEF[kind], rows=Object.values(S[kind]), idf=d.idf||"id";
+  const box=$(d.tbl);
+  if(!rows.length){ box.innerHTML=`<div class="empty"><b>データがありません</b>データベースに登録されると、ここに一覧が表示されます。</div>`; return; }
+  box.innerHTML=`<table class="data"><thead><tr>${d.cols.map(c=>`<th>${c[1]}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr data-id="${esc(r[idf])}" ${sel[kind]===r[idf]?'aria-current="true"':""} tabindex="0">${d.cols.map(([k])=>{ let v=r[k]; if(k==="status") return `<td><span class="chip ${v==="要確認"?"t-warn":"t-ok"}">${esc(v)}</span></td>`; if(k==="priority") return `<td><span class="chip ${v==="高"?"t-handoff":v==="中"?"t-warn":"t-menu"}">${esc(v)}</span></td>`; if(k==="valid_until") return `<td class="mono" style="${v&&v<today?"color:var(--danger);font-weight:700":""}">${esc(v||"—")}</td>`; if(k==="url") return `<td class="url">${esc(v)}</td>`; if(k==="text"||k==="value") return `<td>${esc(String(v??"").slice(0,70))}${String(v??"").length>70?"…":""}</td>`; return `<td>${esc(v)}</td>`; }).join("")}</tr>`).join("")}</tbody></table>`;
+  box.querySelectorAll("tr[data-id]").forEach(tr=>{ const go=()=>{ sel[kind]=tr.dataset.id; if(kind==="vars") sel.messages=null; if(kind==="messages") sel.vars=null; renderTable(kind); if(kind==="vars"||kind==="messages"){renderTable(kind==="vars"?"messages":"vars");} renderRecordEditor(kind); }; tr.addEventListener("click",go); tr.addEventListener("keydown",e=>{if(e.key==="Enter")go();}); });
+}
+function renderRecordEditor(kind){
+  const d=DEF[kind], idf=d.idf||"id", r=S[kind][sel[kind]], el=$(d.ed);
+  if(!r){ el.innerHTML=`<div class="empty"><b>行を選んでください</b>一覧の行を選ぶと、ここで編集できます。</div>`; return; }
+  const dis=canWrite&&db?"":"disabled";
+  el.innerHTML=`<h2>${esc(r.name||r.title||r.key)}</h2><form class="form" id="rf">${d.fields.map(([k,l,t])=>{ const v=r[k];
+    if(t==="ro") return `<label>${l}<input type="text" value="${esc(v)}" disabled></label>`;
+    if(t==="area") return `<label>${l}<textarea data-k="${k}" style="min-height:90px" ${dis}>${esc(v)}</textarea></label>`;
+    if(t==="list") return `<label>${l}<textarea data-k="${k}" data-list="1" style="min-height:110px" ${dis}>${esc((v||[]).join("\n"))}</textarea></label>`;
+    if(t==="status") return `<label>${l}<select data-k="${k}" ${dis}>${opt([["確認済","確認済"],["要確認","要確認"]],v)}</select></label>`;
+    if(t==="prio") return `<label>${l}<select data-k="${k}" ${dis}>${opt([["高","高"],["中","中"],["低","低"]],v)}</select></label>`;
+    return `<label>${l}<input type="text" data-k="${k}" value="${esc(v)}" ${dis}></label>`; }).join("")}
+    <div class="toolbar"><button class="btn primary" type="submit" ${dis}>保存</button></div></form>`;
+  $("#rf").addEventListener("submit",async e=>{ e.preventDefault(); const o={...r}; el.querySelectorAll("[data-k]").forEach(f=>{ o[f.dataset.k]= f.dataset.list ? f.value.split("\n").map(s=>s.trim()).filter(Boolean) : f.value; }); if(kind==="channels") o.uses=Number(o.uses)||0; await save(kind,o,o[idf]); });
+}
+
+/* ---------- export ---------- */
+const q = v => v===null||v===undefined||v==="" ? "NULL" : "'"+String(v).replace(/'/g,"''")+"'";
+function buildSql(){
+  const L=["-- JOPT LINE FAQ bot v1 / generated "+new Date().toISOString().slice(0,16).replace("T"," "),"BEGIN TRANSACTION;","DELETE FROM faq_nodes; DELETE FROM faq_channels; DELETE FROM faq_handoff_types; DELETE FROM faq_vars; DELETE FROM faq_messages;"];
+  nodeList().sort((a,b)=>(a.parent||"").localeCompare(b.parent||"")||(a.order||0)-(b.order||0)).forEach(n=>L.push(`INSERT INTO faq_nodes (id,parent_id,sort_order,label,type,body,channel_id,handoff_id,follow,status,review,evidence) VALUES (${q(n.id)},${q(n.parent)},${Number(n.order)||0},${q(n.label)},${q(n.type)},${q(n.body)},${q(n.channel)},${q(n.handoff)},${n.follow?1:0},${q(n.status)},${q(n.review)},${q(n.evidence)});`));
+  Object.values(S.channels).forEach(c=>L.push(`INSERT INTO faq_channels (id,name,url,scope,status,note) VALUES (${q(c.id)},${q(c.name)},${q(c.url)},${q(c.scope)},${q(c.status)},${q(c.note)});`));
+  Object.values(S.handoffs).forEach(h=>L.push(`INSERT INTO faq_handoff_types (id,name,team,priority,slack_channel,sla,fields,note) VALUES (${q(h.id)},${q(h.name)},${q(h.team)},${q(h.priority)},${q(h.slack)},${q(h.sla)},${q(JSON.stringify(h.fields||[]))},${q(h.note)});`));
+  Object.values(S.vars).forEach(v=>L.push(`INSERT INTO faq_vars (key,value,valid_until,note) VALUES (${q(v.key)},${q(v.value)},${q(v.valid_until)},${q(v.note)});`));
+  Object.values(S.messages).forEach(m=>L.push(`INSERT INTO faq_messages (id,title,text) VALUES (${q(m.id)},${q(m.title)},${q(m.text)});`));
+  L.push("COMMIT;"); return L.join("\n");
+}
+function renderExport(){ $("#sqlOut").textContent = nodeList().length ? buildSql() : "-- データがまだありません"; }
+async function dl(name, text, type){
+  try{ const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([text],{type})); a.download=name; document.body.appendChild(a); a.click(); a.remove(); }catch(e){ toast("保存されませんでした"); }
+}
+$("#dlSql").onclick=()=>dl("jopt_faq_seed.sql", buildSql(), "application/sql");
+$("#dlJson").onclick=()=>dl("jopt_faq.json", JSON.stringify({nodes:nodeList(),channels:Object.values(S.channels),handoffs:Object.values(S.handoffs),vars:Object.values(S.vars),messages:Object.values(S.messages)},null,1), "application/json");
+$("#cpSql").onclick=async()=>{ try{ await navigator.clipboard.writeText(buildSql()); toast("コピーしました"); }catch(e){ const r=document.createRange(); r.selectNodeContents($("#sqlOut")); const s=getSelection(); s.removeAllRanges(); s.addRange(r); toast("選択しました。Ctrl+C でコピーしてください"); } };
+
+/* ---------- db ---------- */
+function gs(fn,...args){ return new Promise((res,rej)=>google.script.run.withSuccessHandler(res).withFailureHandler(rej)[fn](...args)); }
+function applyAll(d){ ["nodes","channels","handoffs","vars","messages"].forEach(k=>S[k]=d[k]||{}); if(d.user) window.__me=d.user; renderAll(); }
+async function save(kind,obj,id){
+  const o=JSON.parse(JSON.stringify(obj)); if(id&&!o.id&&kind!=="vars") o.id=id;
+  try{ toast("保存中…"); applyAll(await gs("saveDoc",kind,o)); toast("保存しました（スプレッドシートに反映）"); }
+  catch(e){ toast("保存できませんでした："+(e&&e.message||e)); }
+}
+async function remove(kind,id){ try{ applyAll(await gs("deleteDoc",kind,id)); toast("削除しました"); }catch(e){ toast("削除できませんでした"); } }
+let pvStarted=false;
+function renderAll(){
+  renderCounts(); renderTree(); renderNodeEditor();
+  ["channels","handoffs","vars","messages"].forEach(k=>{ renderTable(k); });
+  ["channels","handoffs"].forEach(k=>renderRecordEditor(k)); if(sel.messages) renderRecordEditor("messages"); else renderRecordEditor("vars");
+  renderExport();
+  if(!pvStarted && S.nodes.root){ pvStarted=true; pvStart(); } else if(!S.nodes.root) renderPreview();
+}
+renderAll();
+(async()=>{
+  $("#nodb").hidden=false; $("#nodb").innerHTML="読み込み中…";
+  try{ applyAll(await gs("getAll")); $("#nodb").hidden=true; }
+  catch(e){ $("#nodb").innerHTML="<strong>読み込めませんでした。</strong> ページを再読み込みしてください。"; return; }
+  setInterval(async()=>{ const a=document.activeElement; if(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName)) return; try{ applyAll(await gs("getAll")); }catch(e){} }, 30000);
+})();
+})();
+</script>

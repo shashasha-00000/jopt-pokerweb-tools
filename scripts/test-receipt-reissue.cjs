@@ -230,4 +230,65 @@ test('Unconfirmed Game ID holds retained rows instead of deleting them', () => {
   assert.equal(rows.length, 1); assert.equal(rows[0]['確認状態'], '未確定');
   assert.equal(rows[0]['確認OK'], false); assert.equal(rows[0]['送信OK'], false);
 });
+test('Pre-registration payment outside application period is included with original payment date', () => {
+  const request = { ...app, instruction: '自動', allDates: false,
+    startDate: '2026-10-08', endDate: '2026-10-12',
+    applicationKey: 'REQ__76474162__2026-10-08__2026-10-12' };
+  const rows = checkRows([], request);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]['年'], '2026'); assert.equal(rows[0]['月'], '8'); assert.equal(rows[0]['日'], '15');
+  assert.equal(rows[0]['購入時間'], base.purchaseTime);
+  assert.equal(rows[0]['判定'], 'OK');
+  const result = { byGameId: { [base.gameId]: [{ ...base, rowNo: 2 }] }, invalid: [] };
+  assert.equal(a.findUnmatchedApplications_({ [request.applicationKey]: request }, result).length, 0);
+  // Menu 4a uses this same predicate after grouping by the corrected Game ID.
+  assert.equal(a.pwMatchesApplicationPeriod_(result.byGameId[base.gameId][0], request), true);
+});
+
+test('Removing payment-date filter still requires matching Game ID and actual PW rows', () => {
+  const request = { ...app, instruction: '自動', allDates: false,
+    startDate: '2026-10-08', endDate: '2026-10-12' };
+  const requests = { [request.applicationKey]: request };
+  const unrelated = { byGameId: { '12345678': [{ ...base, gameId: '12345678', rowNo: 2 }] }, invalid: [] };
+  assert.equal(a.buildReceiptCheckRows_(requests, unrelated, a.buildLedgerMap_([]), {}, {}, false).length, 0);
+  assert.equal(a.findUnmatchedApplications_(requests, unrelated).length, 1);
+  assert.equal(a.findUnmatchedApplications_(requests, { byGameId: {} }).length, 1);
+});
+test('Two requests for one Game ID process each PW payment only once', () => {
+  const first = { ...app, instruction: '自動', eventName: '【Test 2026】', applicationKey: 'REQ__76474162__2026-07-01__2026-10-15' };
+  const second = { ...first, eventName: 'Other event', applicationKey: 'REQ__76474162__2026-09-01__2026-10-15' };
+  const pw = [{ ...base, rowNo: 2 }, { ...base, tournament: 'Other event #1', rowNo: 3 }];
+  const rows = a.buildReceiptCheckRows_({ [first.applicationKey]: first, [second.applicationKey]: second },
+    { byGameId: { [base.gameId]: pw } }, a.buildLedgerMap_([]), {}, {}, false).map(r => asRow(a.CHECK_HEADERS, r));
+  assert.equal(rows.length, 2); assert(rows.every(r => r['判定'] === 'OK'));
+  assert.equal(rows[0]['申請キー'], first.applicationKey); assert.equal(rows[1]['申請キー'], second.applicationKey);
+});
+
+test('Genuine duplicate TSV payments remain flagged', () => {
+  const normal = { ...app, instruction: '自動' };
+  const rows = a.buildReceiptCheckRows_({ [normal.applicationKey]: normal },
+    { byGameId: { [base.gameId]: [{ ...base, rowNo: 2 }, { ...base, rowNo: 3 }] } },
+    a.buildLedgerMap_([]), {}, {}, false).map(r => asRow(a.CHECK_HEADERS, r));
+  assert.equal(rows.length, 2); assert.equal(rows[1]['処理方針'], '重複として除外');
+});
+
+test('Multiple request identities require manual confirmation', () => {
+  const first = { ...app, instruction: '自動' };
+  const second = { ...first, email: 'other@example.com', applicationKey: 'REQ__76474162__2026-09-01__2026-10-15' };
+  const rows = a.buildReceiptCheckRows_({ [first.applicationKey]: first, [second.applicationKey]: second },
+    { byGameId: { [base.gameId]: [{ ...base, rowNo: 2 }] } }, a.buildLedgerMap_([]), {}, {}, false)
+    .map(r => asRow(a.CHECK_HEADERS, r));
+  assert.equal(rows.length, 1); assert.equal(rows[0]['判定'], '確認必要'); assert.equal(rows[0]['確認OK'], false);
+});
+
+test('Unconfirmed false duplicate recovers without overriding a confirmed exclusion', () => {
+  const normal = { ...app, instruction: '自動' };
+  const previous = checkRows([], normal)[0];
+  Object.assign(previous, { '処理方針': '重複として除外', '確認内容': '同じPW TSV内に同一paymentKeyがあります', confirmedHash: '' });
+  let row = checkRows([], normal, { [previous.checkKey]: previous })[0];
+  assert.equal(row['処理方針'], '新規発行'); assert.equal(row['判定'], '確認必要'); assert.equal(row['確認OK'], false);
+  previous.confirmedHash = 'manual-confirmation';
+  row = checkRows([], normal, { [previous.checkKey]: previous })[0];
+  assert.equal(row['処理方針'], '重複として除外');
+});
 console.log(`${passed} regression groups passed. Apps Script parsed successfully.`);
