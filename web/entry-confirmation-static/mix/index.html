@@ -16,6 +16,7 @@
     .no-nlh-mark { position: absolute; top: clamp(22px, 3.2vh, 34px); left: clamp(22px, 3.2vw, 40px); z-index: 2; width: clamp(76px, 8vw, 98px); aspect-ratio: 1; display: grid; place-items: center; border: clamp(7px, .7vw, 9px) solid var(--red); border-radius: 50%; background: #fff; color: #232323; font-size: clamp(21px, 2.3vw, 29px); font-weight: 950; letter-spacing: -.06em; }
     .no-nlh-mark::after { content: ""; position: absolute; width: 112%; height: clamp(7px, .7vw, 9px); border-radius: 999px; background: var(--red); transform: rotate(-45deg); }
     .sound-toggle { position: absolute; top: clamp(18px, 3vh, 30px); right: clamp(18px, 3vw, 34px); z-index: 2; min-width: 112px; min-height: 42px; padding: 7px 12px; border: 1px solid #c9c9c9; border-radius: 999px; background: rgba(255,255,255,.9); color: #333; font-size: 15px; font-weight: 800; cursor: pointer; }
+    .fullscreen-toggle { position: absolute; top: clamp(18px, 3vh, 30px); right: clamp(142px, 16vw, 170px); z-index: 3; min-height: 42px; padding: 7px 12px; border: 1px solid #c9c9c9; border-radius: 999px; background: rgba(255,255,255,.95); color: #333; font-size: 15px; font-weight: 800; cursor: pointer; }
     .content { min-height: 0; display: grid; place-items: center; align-content: center; padding: clamp(74px, 9vh, 96px) clamp(34px, 7vw, 100px) 12px; }
     .primary { text-align: center; }
     h1 { margin: 0; font-weight: 800; line-height: 1.18; }
@@ -87,6 +88,7 @@
   <main class="shell">
     <section class="card" aria-labelledby="mainTitle">
       <div class="no-nlh-mark" aria-label="NLHではありません">NLH</div>
+      <button id="fullscreenToggle" class="fullscreen-toggle" type="button">⛶ 全画面</button>
       <button id="soundToggle" class="sound-toggle" type="button" aria-pressed="true">🔊 音声 ON</button>
       <div class="content">
         <div class="primary">
@@ -117,6 +119,31 @@
     </div>
   </section>
   <script>
+    const fullscreenToggle = document.getElementById('fullscreenToggle');
+    function syncFullscreenButton() {
+      const active = !!(document.fullscreenElement || document.webkitFullscreenElement);
+      fullscreenToggle.textContent = active ? '⛶ 全画面終了' : '⛶ 全画面';
+      fullscreenToggle.setAttribute('aria-pressed', String(active));
+    }
+    fullscreenToggle.addEventListener('click', async () => {
+      try {
+        if (document.fullscreenElement || document.webkitFullscreenElement) {
+          const exit = document.exitFullscreen || document.webkitExitFullscreen;
+          if (exit) await exit.call(document);
+        } else {
+          const root = document.documentElement;
+          const enter = root.requestFullscreen || root.webkitRequestFullscreen;
+          if (enter) await enter.call(root);
+          else window.alert('このブラウザは全画面表示に対応していません。ブラウザのメニューから「ホーム画面に追加」して開いてください。');
+        }
+      } catch (_) {
+        window.alert('全画面に切り替えられませんでした。ブラウザのメニューから全画面表示を選択してください。');
+      }
+      syncFullscreenButton();
+    });
+    document.addEventListener('fullscreenchange', syncFullscreenButton);
+    document.addEventListener('webkitfullscreenchange', syncFullscreenButton);
+    syncFullscreenButton();
     const confirmBtn = document.getElementById('confirmBtn');
     const soundToggle = document.getElementById('soundToggle');
     const status = document.getElementById('status');
@@ -133,6 +160,15 @@
     });
     confirmBtn.addEventListener('click', () => {
       if (busy) return;
+      if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+        const enter = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
+        if (enter) {
+          try {
+            const pending = enter.call(document.documentElement);
+            if (pending && pending.catch) pending.catch(() => {});
+          } catch (_) {}
+        }
+      }
       busy = true;
       confirmBtn.disabled = true;
       status.classList.add('show');
